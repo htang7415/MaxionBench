@@ -22,6 +22,14 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_parser = subparsers.add_parser("validate", help="Validate output artifacts")
     validate_parser.add_argument("--input", required=True)
+    validate_parser.add_argument("--json", action="store_true")
+
+    migrate_parser = subparsers.add_parser(
+        "migrate-stage-timing",
+        help="Backfill legacy results with stage timing columns",
+    )
+    migrate_parser.add_argument("--input", required=True)
+    migrate_parser.add_argument("--dry-run", action="store_true")
 
     report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
     report_parser.add_argument("--input", required=True)
@@ -60,9 +68,19 @@ def main(argv: list[str] | None = None) -> int:
             run_argv.extend(["--d3-params", args.d3_params])
         return run_main(run_argv)
     if args.command == "validate":
-        from maxionbench.tools.validate_outputs import validate_run_directory
+        from maxionbench.tools.validate_outputs import validate_path
+        import json
 
-        validate_run_directory(Path(args.input).resolve())
+        summary = validate_path(Path(args.input).resolve())
+        if args.json:
+            print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "migrate-stage-timing":
+        from maxionbench.tools.migrate_stage_timing import backfill_path
+        import json
+
+        summary = backfill_path(Path(args.input).resolve(), dry_run=args.dry_run)
+        print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
     if args.command == "report":
         from maxionbench.reports.paper_exports import generate_report_bundle

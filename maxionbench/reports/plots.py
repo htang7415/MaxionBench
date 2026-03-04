@@ -263,10 +263,10 @@ def _render_stage_timing(*, ax: Any, frame: pd.DataFrame) -> None:
         ax.set_xticks([])
         ax.set_yticks([])
         return
+    setup_s = float(frame.get("setup_elapsed_s", pd.Series([0.0])).median())
     warmup_s = float(frame.get("warmup_elapsed_s", pd.Series([0.0])).median())
     measure_s = float(frame.get("measure_elapsed_s", pd.Series([0.0])).median())
-    setup_s = float(frame.get("rtt_baseline_ms_p99", pd.Series([0.0])).median()) / 1000.0
-    export_s = 0.0
+    export_s = float(frame.get("export_elapsed_s", pd.Series([0.0])).median())
     labels = ["setup", "warmup", "measure", "export"]
     values = [setup_s, warmup_s, measure_s, export_s]
     ax.bar(labels, values)
