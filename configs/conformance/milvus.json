@@ -1,0 +1,7 @@
+{
+  "adapter": "milvus",
+  "adapter_options_json": "{\"host\":\"127.0.0.1\",\"port\":19530}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}

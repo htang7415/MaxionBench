@@ -61,6 +61,12 @@ class ResultRow:
     errors: int
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    warmup_target_s: float = 0.0
+    warmup_elapsed_s: float = 0.0
+    warmup_requests: int = 0
+    measure_target_s: float = 0.0
+    measure_elapsed_s: float = 0.0
+    measure_requests: int = 0
 
 
 @dataclass(frozen=True)
@@ -87,6 +93,7 @@ class RunMetadata:
     no_retry: bool
     clients_read_grid: list[int] | None = None
     quality_targets: list[float] | None = None
+    hardware_runtime: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
         if not self.no_retry:

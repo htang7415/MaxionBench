@@ -1,0 +1,7 @@
+engine: weaviate
+engine_version: "1.x"
+adapter_options:
+  host: 127.0.0.1
+  port: 8080
+  scheme: http
+  timeout_s: 30.0

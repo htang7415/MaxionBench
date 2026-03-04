@@ -1,0 +1,37 @@
+engine: mock
+engine_version: "0.1.0"
+scenario: s6_fusion
+dataset_bundle: D4
+dataset_hash: d4-local-bundles-v1
+seed: 42
+repeats: 3
+no_retry: true
+output_dir: artifacts/runs/s6_fusion_d4_real_mock
+quality_target: 0.35
+clients_read: 16
+clients_write: 0
+warmup_s: 120
+steady_state_s: 300
+rpc_baseline_requests: 1000
+sla_threshold_ms: 180.0
+vector_dim: 64
+num_vectors: 5000
+num_queries: 200
+top_k: 10
+rrf_k: 60
+s6_dense_a_candidates: 200
+s6_dense_b_candidates: 200
+s6_bm25_candidates: 200
+d4_use_real_data: true
+d4_beir_root: data/beir
+d4_beir_subsets:
+  - trec-covid
+  - nfcorpus
+  - fiqa
+  - scifact
+  - hotpotqa
+d4_beir_split: test
+d4_crag_path: data/crag_task_1_and_2_dev_v4.jsonl.bz2
+d4_include_crag: true
+d4_max_docs: 200000
+d4_max_queries: 5000

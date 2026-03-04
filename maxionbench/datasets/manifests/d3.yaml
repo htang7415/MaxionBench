@@ -1,0 +1,5 @@
+dataset_bundle: D3
+approx_bytes_dataset: 32212254720
+approx_bytes_engine: 51539607552
+approx_bytes_temp: 12884901888
+fallback_config: configs/scenarios/s2_filtered_ann.yaml

@@ -14,9 +14,13 @@ import yaml
 from maxionbench.adapters import create_adapter
 from maxionbench.datasets.d3_generator import D3Params, params_from_mapping
 from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_hdf5
+from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
+from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
+from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.metrics.cost_rhu import rhu_hours, rhu_rate
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 from maxionbench.runtime.rpc_baseline import measure_rpc_baseline
+from maxionbench.runtime.system_info import collect_system_info
 from maxionbench.scenarios.calibrate_d3 import CalibrateD3Config, run as run_calibrate_d3
 from maxionbench.scenarios.matched_quality import MatchedQualityCandidate, select_candidate
 from maxionbench.scenarios.s1_ann_frontier import S1Config, S1Data, run_with_data as run_s1_with_data
@@ -53,6 +57,43 @@ class _SweepRun:
     rhu_h: float
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    warmup_target_s: float
+    warmup_elapsed_s: float
+    warmup_requests: int
+    measure_target_s: float
+    measure_elapsed_s: float
+    measure_requests: int
+
+
+@dataclass(frozen=True)
+class _RagCandidate:
+    label: str
+    search_payload: dict[str, Any]
+    p50_ms: float
+    p95_ms: float
+    p99_ms: float
+    qps: float
+    recall_at_10: float
+    ndcg_at_10: float
+    mrr_at_10: float
+    sla_violation_rate: float
+    errors: int
+    rhu_h: float
+    rtt_baseline_ms_p50: float
+    rtt_baseline_ms_p99: float
+    warmup_target_s: float
+    warmup_elapsed_s: float
+    warmup_requests: int
+    measure_target_s: float
+    measure_elapsed_s: float
+    measure_requests: int
+
+
+_RAG_NDCG_BANDS: list[tuple[str, float, float]] = [
+    ("low", 0.00, 0.35),
+    ("medium", 0.35, 0.55),
+    ("high", 0.55, 1.0000001),
+]
 
 
 def parse_args(argv: list[str] | None = None) -> Namespace:
@@ -125,6 +166,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         no_retry=cfg.no_retry,
         clients_read_grid=list(cfg.clients_grid),
         quality_targets=list(cfg.quality_targets),
+        hardware_runtime=collect_system_info(),
     )
     write_run_metadata(output_dir / "run_metadata.json", metadata)
     write_resolved_config(output_dir / "config_resolved.yaml", config_payload)
@@ -177,6 +219,12 @@ def _run_calibrate_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_pa
         errors=0,
         rtt_baseline_ms_p50=0.0,
         rtt_baseline_ms_p99=0.0,
+        warmup_target_s=cfg.warmup_s,
+        warmup_elapsed_s=0.0,
+        warmup_requests=0,
+        measure_target_s=cfg.steady_state_s,
+        measure_elapsed_s=0.0,
+        measure_requests=0,
     )
     return [row]
 
@@ -222,6 +270,10 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
                 clients_read=cfg.clients_read,
                 sla_threshold_ms=cfg.sla_threshold_ms,
                 selectivities=list(cfg.s2_selectivities),
+                warmup_s=cfg.warmup_s,
+                steady_state_s=cfg.steady_state_s,
+                phase_timing_mode=cfg.phase_timing_mode,
+                phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
                 search_params=cfg.search_sweep[0] if cfg.search_sweep else None,
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),
@@ -231,7 +283,7 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
         adapter.drop(collection="maxionbench")
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
         for cond in scenario:
-            duration = float(cfg.num_queries) / max(cond.qps, 1e-9)
+            duration = max(cond.measured_elapsed_s, 1e-9)
             rows.append(
                 ResultRow(
                     run_id=_run_id(
@@ -273,6 +325,12 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
                     errors=cond.errors,
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    warmup_target_s=cfg.warmup_s,
+                    warmup_elapsed_s=cond.warmup_elapsed_s,
+                    warmup_requests=cond.warmup_requests,
+                    measure_target_s=cfg.steady_state_s,
+                    measure_elapsed_s=cond.measured_elapsed_s,
+                    measure_requests=cond.measured_requests,
                 )
             )
     return rows
@@ -297,6 +355,7 @@ def _run_s3b_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: st
 
 
 def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
@@ -312,58 +371,62 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 top_k=cfg.top_k,
                 clients_read=cfg.clients_read,
                 sla_threshold_ms=cfg.sla_threshold_ms,
+                warmup_s=cfg.warmup_s,
+                steady_state_s=cfg.steady_state_s,
+                phase_timing_mode=cfg.phase_timing_mode,
+                phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
                 dense_candidates=cfg.s4_dense_candidates,
                 bm25_candidates=cfg.s4_bm25_candidates,
                 rrf_k=cfg.rrf_k,
                 search_params=cfg.search_sweep[0] if cfg.search_sweep else None,
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),
+            dataset=d4_data,
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        candidates: list[_RagCandidate] = []
         for cond in scenario:
-            duration = float(cfg.num_queries) / max(cond.qps, 1e-9)
-            rows.append(
-                ResultRow(
-                    run_id=_run_id(
-                        config_fingerprint,
-                        repeat_idx,
-                        cfg.clients_read,
-                        cfg.quality_target,
-                        suffix=f"s4_{cond.mode}",
-                    ),
-                    timestamp_utc=utc_now_iso(),
-                    repeat_idx=repeat_idx,
-                    engine=cfg.engine,
-                    engine_version=cfg.engine_version,
-                    scenario=cfg.scenario,
-                    dataset_bundle=cfg.dataset_bundle,
-                    dataset_hash=cfg.dataset_hash,
-                    seed=cfg.seed,
-                    clients_read=cfg.clients_read,
-                    clients_write=cfg.clients_write,
-                    quality_target=cfg.quality_target,
-                    search_params_json=cond.info_json,
-                    recall_at_10=cond.recall_at_10,
-                    ndcg_at_10=cond.ndcg_at_10,
-                    mrr_at_10=cond.mrr_at_10,
+            duration = max(cond.measured_elapsed_s, 1e-9)
+            candidates.append(
+                _RagCandidate(
+                    label=cond.mode,
+                    search_payload=json.loads(cond.info_json),
                     p50_ms=cond.p50_ms,
                     p95_ms=cond.p95_ms,
                     p99_ms=cond.p99_ms,
                     qps=cond.qps,
-                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
-                    sla_threshold_ms=cfg.sla_threshold_ms,
+                    recall_at_10=cond.recall_at_10,
+                    ndcg_at_10=cond.ndcg_at_10,
+                    mrr_at_10=cond.mrr_at_10,
                     sla_violation_rate=cond.sla_violation_rate,
                     errors=cond.errors,
+                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    warmup_target_s=cfg.warmup_s,
+                    warmup_elapsed_s=cond.warmup_elapsed_s,
+                    warmup_requests=cond.warmup_requests,
+                    measure_target_s=cfg.steady_state_s,
+                    measure_elapsed_s=cond.measured_elapsed_s,
+                    measure_requests=cond.measured_requests,
                 )
             )
+        rows.extend(
+            _select_rag_band_rows(
+                cfg=cfg,
+                repeat_idx=repeat_idx,
+                config_fingerprint=config_fingerprint,
+                candidates=candidates,
+                suffix_prefix="s4",
+            )
+        )
     return rows
 
 
 def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
@@ -380,6 +443,10 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 clients_read=cfg.clients_read,
                 sla_threshold_ms=cfg.sla_threshold_ms,
                 candidate_budgets=list(cfg.s5_candidate_budgets),
+                warmup_s=cfg.warmup_s,
+                steady_state_s=cfg.steady_state_s,
+                phase_timing_mode=cfg.phase_timing_mode,
+                phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
                 reranker_model_id=cfg.s5_reranker_model_id,
                 reranker_revision_tag=cfg.s5_reranker_revision_tag,
                 reranker_max_seq_len=cfg.s5_reranker_max_seq_len,
@@ -389,54 +456,54 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 search_params=cfg.search_sweep[0] if cfg.search_sweep else None,
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),
+            dataset=d4_data,
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        candidates: list[_RagCandidate] = []
         for cond in scenario:
-            duration = float(cfg.num_queries) / max(cond.qps, 1e-9)
+            duration = max(cond.measured_elapsed_s, 1e-9)
             payload = json.loads(cond.info_json)
             payload["delta_ndcg_at_10"] = cond.delta_ndcg_at_10
-            rows.append(
-                ResultRow(
-                    run_id=_run_id(
-                        config_fingerprint,
-                        repeat_idx,
-                        cfg.clients_read,
-                        cfg.quality_target,
-                        suffix=f"s5_budget{cond.candidate_budget}",
-                    ),
-                    timestamp_utc=utc_now_iso(),
-                    repeat_idx=repeat_idx,
-                    engine=cfg.engine,
-                    engine_version=cfg.engine_version,
-                    scenario=cfg.scenario,
-                    dataset_bundle=cfg.dataset_bundle,
-                    dataset_hash=cfg.dataset_hash,
-                    seed=cfg.seed,
-                    clients_read=cfg.clients_read,
-                    clients_write=cfg.clients_write,
-                    quality_target=cfg.quality_target,
-                    search_params_json=json.dumps(payload, sort_keys=True),
-                    recall_at_10=cond.recall_at_10,
-                    ndcg_at_10=cond.ndcg_at_10,
-                    mrr_at_10=cond.mrr_at_10,
+            candidates.append(
+                _RagCandidate(
+                    label=f"budget{cond.candidate_budget}",
+                    search_payload=payload,
                     p50_ms=cond.p50_ms,
                     p95_ms=cond.p95_ms,
                     p99_ms=cond.p99_ms,
                     qps=cond.qps,
-                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
-                    sla_threshold_ms=cfg.sla_threshold_ms,
+                    recall_at_10=cond.recall_at_10,
+                    ndcg_at_10=cond.ndcg_at_10,
+                    mrr_at_10=cond.mrr_at_10,
                     sla_violation_rate=cond.sla_violation_rate,
                     errors=cond.errors,
+                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    warmup_target_s=cfg.warmup_s,
+                    warmup_elapsed_s=cond.warmup_elapsed_s,
+                    warmup_requests=cond.warmup_requests,
+                    measure_target_s=cfg.steady_state_s,
+                    measure_elapsed_s=cond.measured_elapsed_s,
+                    measure_requests=cond.measured_requests,
                 )
             )
+        rows.extend(
+            _select_rag_band_rows(
+                cfg=cfg,
+                repeat_idx=repeat_idx,
+                config_fingerprint=config_fingerprint,
+                candidates=candidates,
+                suffix_prefix="s5",
+            )
+        )
     return rows
 
 
 def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
@@ -452,6 +519,10 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 top_k=cfg.top_k,
                 clients_read=cfg.clients_read,
                 sla_threshold_ms=cfg.sla_threshold_ms,
+                warmup_s=cfg.warmup_s,
+                steady_state_s=cfg.steady_state_s,
+                phase_timing_mode=cfg.phase_timing_mode,
+                phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
                 rrf_k=cfg.rrf_k,
                 dense_a_candidates=cfg.s6_dense_a_candidates,
                 dense_b_candidates=cfg.s6_dense_b_candidates,
@@ -459,48 +530,119 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 search_params=cfg.search_sweep[0] if cfg.search_sweep else None,
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),
+            dataset=d4_data,
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        candidates: list[_RagCandidate] = []
         for cond in scenario:
-            duration = float(cfg.num_queries) / max(cond.qps, 1e-9)
-            rows.append(
-                ResultRow(
-                    run_id=_run_id(
-                        config_fingerprint,
-                        repeat_idx,
-                        cfg.clients_read,
-                        cfg.quality_target,
-                        suffix=cond.mode,
-                    ),
-                    timestamp_utc=utc_now_iso(),
-                    repeat_idx=repeat_idx,
-                    engine=cfg.engine,
-                    engine_version=cfg.engine_version,
-                    scenario=cfg.scenario,
-                    dataset_bundle=cfg.dataset_bundle,
-                    dataset_hash=cfg.dataset_hash,
-                    seed=cfg.seed,
-                    clients_read=cfg.clients_read,
-                    clients_write=cfg.clients_write,
-                    quality_target=cfg.quality_target,
-                    search_params_json=cond.info_json,
-                    recall_at_10=cond.recall_at_10,
-                    ndcg_at_10=cond.ndcg_at_10,
-                    mrr_at_10=cond.mrr_at_10,
+            duration = max(cond.measured_elapsed_s, 1e-9)
+            candidates.append(
+                _RagCandidate(
+                    label=cond.mode,
+                    search_payload=json.loads(cond.info_json),
                     p50_ms=cond.p50_ms,
                     p95_ms=cond.p95_ms,
                     p99_ms=cond.p99_ms,
                     qps=cond.qps,
-                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
-                    sla_threshold_ms=cfg.sla_threshold_ms,
+                    recall_at_10=cond.recall_at_10,
+                    ndcg_at_10=cond.ndcg_at_10,
+                    mrr_at_10=cond.mrr_at_10,
                     sla_violation_rate=cond.sla_violation_rate,
                     errors=cond.errors,
+                    rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    warmup_target_s=cfg.warmup_s,
+                    warmup_elapsed_s=cond.warmup_elapsed_s,
+                    warmup_requests=cond.warmup_requests,
+                    measure_target_s=cfg.steady_state_s,
+                    measure_elapsed_s=cond.measured_elapsed_s,
+                    measure_requests=cond.measured_requests,
                 )
             )
+        rows.extend(
+            _select_rag_band_rows(
+                cfg=cfg,
+                repeat_idx=repeat_idx,
+                config_fingerprint=config_fingerprint,
+                candidates=candidates,
+                suffix_prefix="s6",
+            )
+        )
+    return rows
+
+
+def _select_rag_band_rows(
+    *,
+    cfg: RunConfig,
+    repeat_idx: int,
+    config_fingerprint: str,
+    candidates: list[_RagCandidate],
+    suffix_prefix: str,
+) -> list[ResultRow]:
+    rows: list[ResultRow] = []
+    for band_name, low, high in _RAG_NDCG_BANDS:
+        feasible: list[_RagCandidate] = []
+        for candidate in candidates:
+            ndcg = candidate.ndcg_at_10
+            if ndcg < low:
+                continue
+            if band_name != "high" and ndcg >= high:
+                continue
+            if band_name == "high" and ndcg > high:
+                continue
+            feasible.append(candidate)
+        if not feasible:
+            continue
+        feasible.sort(key=lambda item: (item.rhu_h, item.p99_ms, -item.qps))
+        selected = feasible[0]
+        payload = dict(selected.search_payload)
+        payload["rag_ndcg_band"] = band_name
+        payload["rag_ndcg_range"] = [low, 1.0 if band_name == "high" else high]
+        rows.append(
+            ResultRow(
+                run_id=_run_id(
+                    config_fingerprint,
+                    repeat_idx,
+                    cfg.clients_read,
+                    low,
+                    suffix=f"{suffix_prefix}_{band_name}_{selected.label}",
+                ),
+                timestamp_utc=utc_now_iso(),
+                repeat_idx=repeat_idx,
+                engine=cfg.engine,
+                engine_version=cfg.engine_version,
+                scenario=cfg.scenario,
+                dataset_bundle=cfg.dataset_bundle,
+                dataset_hash=cfg.dataset_hash,
+                seed=cfg.seed,
+                clients_read=cfg.clients_read,
+                clients_write=cfg.clients_write,
+                quality_target=low,
+                search_params_json=json.dumps(payload, sort_keys=True),
+                recall_at_10=selected.recall_at_10,
+                ndcg_at_10=selected.ndcg_at_10,
+                mrr_at_10=selected.mrr_at_10,
+                p50_ms=selected.p50_ms,
+                p95_ms=selected.p95_ms,
+                p99_ms=selected.p99_ms,
+                qps=selected.qps,
+                rhu_h=selected.rhu_h,
+                sla_threshold_ms=cfg.sla_threshold_ms,
+                sla_violation_rate=selected.sla_violation_rate,
+                errors=selected.errors,
+                rtt_baseline_ms_p50=selected.rtt_baseline_ms_p50,
+                rtt_baseline_ms_p99=selected.rtt_baseline_ms_p99,
+                warmup_target_s=selected.warmup_target_s,
+                warmup_elapsed_s=selected.warmup_elapsed_s,
+                warmup_requests=selected.warmup_requests,
+                measure_target_s=selected.measure_target_s,
+                measure_elapsed_s=selected.measure_elapsed_s,
+                measure_requests=selected.measure_requests,
+            )
+        )
     return rows
 
 
@@ -524,6 +666,9 @@ def _run_s3_like_rows(
             num_queries=cfg.num_queries,
             top_k=cfg.top_k,
             sla_threshold_ms=cfg.sla_threshold_ms,
+            warmup_s=cfg.warmup_s,
+            steady_state_s=cfg.steady_state_s,
+            phase_timing_mode=cfg.phase_timing_mode,
             lambda_req_s=cfg.lambda_req_s,
             read_rate=cfg.s3_read_rate,
             insert_rate=cfg.s3_insert_rate,
@@ -558,7 +703,7 @@ def _run_s3_like_rows(
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read + cfg.clients_write)
-        duration = float(cfg.num_queries) / max(result.qps, 1e-9)
+        duration = max(result.measured_elapsed_s, 1e-9)
         rows.append(
             ResultRow(
                 run_id=_run_id(config_fingerprint, repeat_idx, cfg.clients_read, cfg.quality_target, suffix=suffix),
@@ -587,6 +732,12 @@ def _run_s3_like_rows(
                 errors=result.errors,
                 rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                 rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                warmup_target_s=cfg.warmup_s,
+                warmup_elapsed_s=result.warmup_elapsed_s,
+                warmup_requests=result.warmup_requests,
+                measure_target_s=cfg.steady_state_s,
+                measure_elapsed_s=result.measured_elapsed_s,
+                measure_requests=result.measured_requests,
             )
         )
     return rows
@@ -620,6 +771,10 @@ def _run_s1_sweep_for_client(
             top_k=cfg.top_k,
             clients_read=client_count,
             sla_threshold_ms=cfg.sla_threshold_ms,
+            warmup_s=cfg.warmup_s,
+            steady_state_s=cfg.steady_state_s,
+            phase_timing_mode=cfg.phase_timing_mode,
+            phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
             search_params=search_params,
         )
         result = run_s1_with_data(adapter=adapter, cfg=scenario_cfg, rng=candidate_rng, data=s1_data)
@@ -627,7 +782,7 @@ def _run_s1_sweep_for_client(
         adapter.drop(collection="maxionbench")
 
         rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count + cfg.clients_write)
-        duration = float(cfg.num_queries) / max(result.qps, 1e-9)
+        duration = max(result.measured_elapsed_s, 1e-9)
         runs.append(
             _SweepRun(
                 client_count=client_count,
@@ -644,6 +799,12 @@ def _run_s1_sweep_for_client(
                 rhu_h=rhu_hours(duration_s=duration, rate=rate),
                 rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                 rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                warmup_target_s=cfg.warmup_s,
+                warmup_elapsed_s=result.warmup_elapsed_s,
+                warmup_requests=result.warmup_requests,
+                measure_target_s=cfg.steady_state_s,
+                measure_elapsed_s=result.measured_elapsed_s,
+                measure_requests=result.measured_requests,
             )
         )
     return runs
@@ -695,6 +856,12 @@ def _select_matched_quality_rows(
                 errors=run.errors,
                 rtt_baseline_ms_p50=run.rtt_baseline_ms_p50,
                 rtt_baseline_ms_p99=run.rtt_baseline_ms_p99,
+                warmup_target_s=run.warmup_target_s,
+                warmup_elapsed_s=run.warmup_elapsed_s,
+                warmup_requests=run.warmup_requests,
+                measure_target_s=run.measure_target_s,
+                measure_elapsed_s=run.measure_elapsed_s,
+                measure_requests=run.measure_requests,
             )
         )
     return rows
@@ -732,7 +899,19 @@ def _rhu_rate_for_cfg(*, cfg: RunConfig, stats: Any, client_count: int) -> float
 
 def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:
     if cfg.dataset_bundle != "D1":
-        return None
+        if cfg.dataset_bundle != "D2":
+            return None
+        if not cfg.d2_base_fvecs_path or not cfg.d2_query_fvecs_path:
+            return None
+        dataset_d2 = load_d2_bigann(
+            base_fvecs=Path(cfg.d2_base_fvecs_path),
+            query_fvecs=Path(cfg.d2_query_fvecs_path),
+            gt_ivecs=Path(cfg.d2_gt_ivecs_path) if cfg.d2_gt_ivecs_path else None,
+            max_vectors=cfg.num_vectors,
+            max_queries=cfg.num_queries,
+            top_k=max(cfg.top_k, 10),
+        )
+        return _to_s1_data_d2(dataset_d2)
     if not cfg.dataset_path:
         return None
     dataset = load_d1_ann_hdf5(
@@ -744,7 +923,36 @@ def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:
     return _to_s1_data(dataset)
 
 
+def _maybe_load_d4_data(cfg: RunConfig) -> D4RetrievalDataset | None:
+    if cfg.dataset_bundle != "D4":
+        return None
+    if not cfg.d4_use_real_data:
+        return None
+    beir_root = Path(cfg.d4_beir_root) if cfg.d4_beir_root else None
+    crag_path = Path(cfg.d4_crag_path) if cfg.d4_crag_path else None
+    return load_d4_from_local_bundles(
+        vector_dim=cfg.vector_dim,
+        seed=cfg.seed,
+        beir_root=beir_root,
+        beir_subsets=list(cfg.d4_beir_subsets),
+        beir_split=cfg.d4_beir_split,
+        crag_path=crag_path,
+        include_crag=cfg.d4_include_crag,
+        max_docs=cfg.d4_max_docs,
+        max_queries=cfg.d4_max_queries,
+    )
+
+
 def _to_s1_data(dataset: D1AnnDataset) -> S1Data:
+    return S1Data(
+        ids=list(dataset.ids),
+        vectors=np.asarray(dataset.vectors, dtype=np.float32),
+        queries=np.asarray(dataset.queries, dtype=np.float32),
+        ground_truth_ids=list(dataset.ground_truth_ids),
+    )
+
+
+def _to_s1_data_d2(dataset: D2BigAnnDataset) -> S1Data:
     return S1Data(
         ids=list(dataset.ids),
         vectors=np.asarray(dataset.vectors, dtype=np.float32),

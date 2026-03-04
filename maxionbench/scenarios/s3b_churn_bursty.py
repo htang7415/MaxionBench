@@ -53,4 +53,8 @@ def run(
         sla_violation_rate=result.sla_violation_rate,
         errors=result.errors,
         info_json=result.info_json,
+        measured_requests=result.measured_requests,
+        measured_elapsed_s=result.measured_elapsed_s,
+        warmup_requests=result.warmup_requests,
+        warmup_elapsed_s=result.warmup_elapsed_s,
     )

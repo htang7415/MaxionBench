@@ -9,7 +9,7 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class D4SyntheticDataset:
+class D4RetrievalDataset:
     doc_ids: list[str]
     doc_vectors: np.ndarray
     doc_texts: list[str]
@@ -22,6 +22,10 @@ class D4SyntheticDataset:
     idf: dict[str, float]
 
 
+# Backward-compatible alias.
+D4SyntheticDataset = D4RetrievalDataset
+
+
 def generate_d4_synthetic_dataset(
     *,
     num_docs: int,
@@ -29,7 +33,7 @@ def generate_d4_synthetic_dataset(
     vector_dim: int,
     seed: int,
     num_topics: int = 64,
-) -> D4SyntheticDataset:
+) -> D4RetrievalDataset:
     if num_docs < 1:
         raise ValueError("num_docs must be >= 1")
     if num_queries < 1:
@@ -46,14 +50,14 @@ def generate_d4_synthetic_dataset(
     doc_ids = [f"doc-{idx:07d}" for idx in range(num_docs)]
     doc_vectors = _topic_vectors(rng, topic_centroids, doc_topics, noise_scale=0.18)
     doc_texts = [_doc_text(topic=int(topic), index=idx, rng=rng) for idx, topic in enumerate(doc_topics)]
-    doc_token_sets = [set(_tokenize(text)) for text in doc_texts]
-    idf = _compute_idf(doc_token_sets)
+    doc_token_sets = [set(tokenize_text(text)) for text in doc_texts]
+    idf = compute_idf(doc_token_sets)
 
     query_topics = rng.integers(0, num_topics, size=num_queries)
     query_ids = [f"query-{idx:05d}" for idx in range(num_queries)]
     query_vectors = _topic_vectors(rng, topic_centroids, query_topics, noise_scale=0.12)
     query_texts = [_query_text(topic=int(topic), index=idx, rng=rng) for idx, topic in enumerate(query_topics)]
-    query_token_sets = [set(_tokenize(text)) for text in query_texts]
+    query_token_sets = [set(tokenize_text(text)) for text in query_texts]
 
     qrels = _build_qrels(
         query_ids=query_ids,
@@ -62,7 +66,7 @@ def generate_d4_synthetic_dataset(
         doc_vectors=doc_vectors,
         graded_cutoffs=(3, 10, 25),
     )
-    return D4SyntheticDataset(
+    return D4RetrievalDataset(
         doc_ids=doc_ids,
         doc_vectors=doc_vectors,
         doc_texts=doc_texts,
@@ -132,11 +136,11 @@ def _query_text(topic: int, index: int, rng: np.random.Generator) -> str:
     return f"{t0} {t1} query-{index:05d} {intent}"
 
 
-def _tokenize(text: str) -> list[str]:
+def tokenize_text(text: str) -> list[str]:
     return [token for token in text.lower().split() if token]
 
 
-def _compute_idf(doc_terms: list[set[str]]) -> dict[str, float]:
+def compute_idf(doc_terms: list[set[str]]) -> dict[str, float]:
     n_docs = float(len(doc_terms))
     dfs: dict[str, int] = {}
     for terms in doc_terms:

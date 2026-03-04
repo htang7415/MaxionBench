@@ -23,12 +23,15 @@ class S3Config:
     num_queries: int
     top_k: int
     sla_threshold_ms: float
+    warmup_s: float
+    steady_state_s: float
     lambda_req_s: float
     read_rate: float
     insert_rate: float
     update_rate: float
     delete_rate: float
     maintenance_interval_s: float
+    phase_timing_mode: str = "bounded"
     max_events: int = 5000
 
 
@@ -44,6 +47,10 @@ class S3Result:
     sla_violation_rate: float
     errors: int
     info_json: str
+    measured_requests: int
+    measured_elapsed_s: float
+    warmup_requests: int
+    warmup_elapsed_s: float
 
 
 def run(
@@ -59,72 +66,90 @@ def run(
     state = _ChurnState.from_dataset(dataset)
     _ingest_state(adapter, state)
 
-    latencies_ms: list[float] = []
-    recalls: list[float] = []
-    errors = 0
-    reads = 0
-    next_maintenance_s = cfg.maintenance_interval_s
+    warmup_events = _phase_event_count(cfg, phase_s=cfg.warmup_s)
+    measure_events = _phase_event_count(cfg, phase_s=cfg.steady_state_s)
     total_rate = max(cfg.lambda_req_s, 1.0)
-    num_events = int(min(cfg.max_events, max(cfg.num_queries, cfg.lambda_req_s * 30)))
-    start = time.perf_counter()
+    next_maintenance_s = cfg.maintenance_interval_s
+    phase_cursor = 0
 
-    for event_idx in range(num_events):
-        sim_t = float(event_idx) / total_rate
-        if sim_t >= next_maintenance_s:
-            adapter.optimize_or_compact()
-            next_maintenance_s += cfg.maintenance_interval_s
+    def run_phase(*, event_count: int, collect_metrics: bool) -> tuple[list[float], list[float], int, int, float]:
+        nonlocal next_maintenance_s, phase_cursor
+        latencies_ms: list[float] = []
+        recalls: list[float] = []
+        errors = 0
+        reads = 0
+        started = time.perf_counter()
+        for offset in range(event_count):
+            event_idx = phase_cursor + offset
+            sim_t = float(event_idx) / total_rate
+            if sim_t >= next_maintenance_s:
+                adapter.optimize_or_compact()
+                next_maintenance_s += cfg.maintenance_interval_s
 
-        multiplier = burst_multiplier_fn(sim_t) if burst_multiplier_fn else 1.0
-        op = _sample_operation(cfg, rng, write_multiplier=multiplier)
-        if op == "read":
-            reads += 1
-            q_idx = int(rng.integers(0, max(1, state.vectors.shape[0])))
-            qvec = state.vectors[q_idx]
-            exact = state.exact_topk(qvec, cfg.top_k)
-            t0 = time.perf_counter()
-            try:
-                rows = adapter.query(QueryRequest(vector=qvec.tolist(), top_k=cfg.top_k))
-                got = [row.id for row in rows]
-            except Exception:
-                got = []
-                errors += 1
-            latencies_ms.append((time.perf_counter() - t0) * 1000.0)
-            recalls.append(recall_at_k(got, exact, k=min(10, cfg.top_k)))
-            continue
-
-        if op == "insert":
-            state.insert_one(rng)
-            record = state.latest_record()
-            adapter.insert(record)
-            adapter.flush_or_commit()
-        elif op == "update":
-            target = state.sample_id(rng)
-            if target is None:
+            multiplier = burst_multiplier_fn(sim_t) if burst_multiplier_fn else 1.0
+            op = _sample_operation(cfg, rng, write_multiplier=multiplier)
+            if op == "read":
+                reads += 1
+                q_idx = int(rng.integers(0, max(1, state.vectors.shape[0])))
+                qvec = state.vectors[q_idx]
+                exact = state.exact_topk(qvec, cfg.top_k)
+                t0 = time.perf_counter()
+                try:
+                    rows = adapter.query(QueryRequest(vector=qvec.tolist(), top_k=cfg.top_k))
+                    got = [row.id for row in rows]
+                except Exception:
+                    got = []
+                    errors += 1
+                if collect_metrics:
+                    latencies_ms.append((time.perf_counter() - t0) * 1000.0)
+                    recalls.append(recall_at_k(got, exact, k=min(10, cfg.top_k)))
                 continue
-            new_vec = _random_unit_vector(cfg.vector_dim, rng)
-            state.update_vector(target, new_vec)
-            adapter.update_vectors([target], [new_vec.tolist()])
-            adapter.flush_or_commit()
-        elif op == "delete":
-            target = state.sample_id(rng)
-            if target is None:
-                continue
-            state.delete_id(target)
-            adapter.delete([target])
-            adapter.flush_or_commit()
 
-    elapsed = max(time.perf_counter() - start, 1e-9)
+            if op == "insert":
+                state.insert_one(rng)
+                record = state.latest_record()
+                adapter.insert(record)
+                adapter.flush_or_commit()
+            elif op == "update":
+                target = state.sample_id(rng)
+                if target is None:
+                    continue
+                new_vec = _random_unit_vector(cfg.vector_dim, rng)
+                state.update_vector(target, new_vec)
+                adapter.update_vectors([target], [new_vec.tolist()])
+                adapter.flush_or_commit()
+            elif op == "delete":
+                target = state.sample_id(rng)
+                if target is None:
+                    continue
+                state.delete_id(target)
+                adapter.delete([target])
+                adapter.flush_or_commit()
+        elapsed_s = time.perf_counter() - started
+        phase_cursor += event_count
+        return latencies_ms, recalls, errors, reads, elapsed_s
+
+    _, _, _, _, warmup_elapsed = run_phase(event_count=warmup_events, collect_metrics=False)
+    latencies_ms, recalls, errors, reads, measure_elapsed = run_phase(event_count=measure_events, collect_metrics=True)
+
+    elapsed = max(measure_elapsed, 1e-9)
     summary = latency_summary(latencies_ms)
     over_sla = sum(1 for x in latencies_ms if x > cfg.sla_threshold_ms)
     info = {
         "mode": "s3_smooth",
-        "events": num_events,
+        "events": measure_events,
         "reads": reads,
         "lambda_req_s": cfg.lambda_req_s,
         "read_rate": cfg.read_rate,
         "insert_rate": cfg.insert_rate,
         "update_rate": cfg.update_rate,
         "delete_rate": cfg.delete_rate,
+        "phase": {
+            "warmup_events": warmup_events,
+            "warmup_elapsed_s": warmup_elapsed,
+            "measure_events": measure_events,
+            "measure_elapsed_s": measure_elapsed,
+        },
     }
     mean_recall = float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0
     return S3Result(
@@ -138,7 +163,21 @@ def run(
         sla_violation_rate=sla_violation_rate(total_requests=max(1, reads), over_sla=over_sla, errors=errors),
         errors=errors,
         info_json=json.dumps(info, sort_keys=True),
+        measured_requests=reads,
+        measured_elapsed_s=measure_elapsed,
+        warmup_requests=warmup_events,
+        warmup_elapsed_s=warmup_elapsed,
     )
+
+
+def _phase_event_count(cfg: S3Config, *, phase_s: float) -> int:
+    if phase_s <= 0:
+        base = max(1, cfg.num_queries)
+    elif cfg.phase_timing_mode == "strict":
+        base = max(1, int(cfg.lambda_req_s * phase_s))
+    else:
+        base = max(cfg.num_queries, int(cfg.lambda_req_s * phase_s))
+    return int(min(cfg.max_events, max(1, base)))
 
 
 class _ChurnState:

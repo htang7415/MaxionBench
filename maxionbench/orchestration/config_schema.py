@@ -9,6 +9,7 @@ from typing import Any, Mapping
 import yaml
 
 from maxionbench.metrics.cost_rhu import RHUReferences, RHUWeights
+from maxionbench.datasets.loaders.d4_text import DEFAULT_BEIR_SUBSETS
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,17 @@ class RunConfig:
     dataset_bundle: str = "D1"
     dataset_hash: str = "synthetic-d1-v1"
     dataset_path: str | None = None
+    d2_base_fvecs_path: str | None = None
+    d2_query_fvecs_path: str | None = None
+    d2_gt_ivecs_path: str | None = None
+    d4_use_real_data: bool = False
+    d4_beir_root: str | None = None
+    d4_beir_subsets: list[str] = field(default_factory=lambda: list(DEFAULT_BEIR_SUBSETS))
+    d4_beir_split: str = "test"
+    d4_crag_path: str | None = None
+    d4_include_crag: bool = True
+    d4_max_docs: int = 200000
+    d4_max_queries: int = 5000
     seed: int = 42
     repeats: int = 3
     no_retry: bool = True
@@ -36,6 +48,8 @@ class RunConfig:
             {"hnsw_ef": 256},
         ]
     )
+    phase_timing_mode: str = "bounded"
+    phase_max_requests_per_phase: int | None = None
     warmup_s: int = 120
     steady_state_s: int = 300
     rpc_baseline_requests: int = 1000
@@ -140,6 +154,14 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("num_vectors must be >= 1")
     if cfg.num_queries < 1:
         raise ValueError("num_queries must be >= 1")
+    if cfg.warmup_s < 0:
+        raise ValueError("warmup_s must be >= 0")
+    if cfg.steady_state_s <= 0:
+        raise ValueError("steady_state_s must be > 0")
+    if cfg.phase_timing_mode not in {"bounded", "strict"}:
+        raise ValueError("phase_timing_mode must be bounded or strict")
+    if cfg.phase_max_requests_per_phase is not None and cfg.phase_max_requests_per_phase < 1:
+        raise ValueError("phase_max_requests_per_phase must be >= 1 when set")
     if not cfg.no_retry:
         raise ValueError("Retries must be disabled during timed measurements.")
     if not cfg.quality_targets:
@@ -172,3 +194,9 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("s5_reranker_truncation must be left or right")
     if cfg.s6_dense_a_candidates < 1 or cfg.s6_dense_b_candidates < 1 or cfg.s6_bm25_candidates < 1:
         raise ValueError("s6 candidate budgets must be >= 1")
+    if cfg.d4_max_docs < 1 or cfg.d4_max_queries < 1:
+        raise ValueError("d4_max_docs and d4_max_queries must be >= 1")
+    if cfg.d4_use_real_data and not cfg.d4_beir_root and not cfg.d4_crag_path:
+        raise ValueError("d4_use_real_data requires at least d4_beir_root or d4_crag_path")
+    if cfg.d4_use_real_data and cfg.d4_beir_root and not cfg.d4_beir_subsets:
+        raise ValueError("d4_beir_subsets must not be empty when d4_beir_root is set")

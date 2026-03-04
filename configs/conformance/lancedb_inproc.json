@@ -1,0 +1,7 @@
+{
+  "adapter": "lancedb-inproc",
+  "adapter_options_json": "{\"uri\":\"artifacts/lancedb/conformance\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}
