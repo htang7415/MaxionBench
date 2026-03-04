@@ -7,3 +7,4 @@ Implemented v0.1 harness components include:
 - D4 local bundle loader for pinned BEIR subsets + CRAG slice
 - report bundle generation for milestone/final figures and core paper tables (T1-T4)
 - phased warmup/steady-state execution controls (`phase_timing_mode`, phase request caps)
+- strict output validation plus legacy stage-timing backfill tooling (`maxionbench validate`, `maxionbench migrate-stage-timing`)

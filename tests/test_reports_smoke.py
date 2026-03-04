@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import pandas as pd
+import pytest
 import yaml
 
 from maxionbench.cli import main as cli_main
@@ -77,3 +79,17 @@ def test_report_cli_smoke(tmp_path: Path) -> None:
     assert any(out_dir.glob("*.png"))
     assert (out_dir / "F5_deferred_note.md").exists()
     assert (out_dir / "F5_deferred_note.meta.json").exists()
+
+
+def test_report_preflight_legacy_stage_timing_has_migration_hint(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    results_path = run_dir / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    legacy = frame.drop(columns=["setup_elapsed_s", "warmup_elapsed_s", "measure_elapsed_s", "export_elapsed_s"])
+    legacy.to_parquet(results_path, index=False)
+
+    with pytest.raises(RuntimeError, match="migrate-stage-timing"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=tmp_path / "figures_legacy", mode="milestones")
+
+    with pytest.raises(RuntimeError, match="migrate-stage-timing"):
+        cli_main(["report", "--input", str(run_dir.parent), "--mode", "milestones", "--out", str(tmp_path / "cli_legacy")])

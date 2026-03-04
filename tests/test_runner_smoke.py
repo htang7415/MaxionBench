@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 from maxionbench.orchestration.runner import run_from_config
@@ -122,7 +123,55 @@ def test_runner_phase_fields_and_strict_mode_cap(tmp_path: Path) -> None:
     frame = pd.read_parquet(out_dir / "results.parquet")
     assert len(frame) == 1
     row = frame.iloc[0]
+    assert float(row["setup_elapsed_s"]) >= 0.0
     assert int(row["warmup_requests"]) > 0
     assert int(row["measure_requests"]) > 0
     assert int(row["measure_requests"]) <= 12
     assert float(row["measure_elapsed_s"]) >= 0.0
+    assert float(row["export_elapsed_s"]) >= 0.0
+
+
+def test_validate_outputs_rejects_missing_or_negative_stage_timing(tmp_path: Path) -> None:
+    config = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "synthetic-d1-v1",
+        "seed": 43,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-validate"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 12,
+        "num_vectors": 120,
+        "num_queries": 8,
+        "top_k": 10,
+        "warmup_s": 0.02,
+        "steady_state_s": 0.02,
+        "phase_timing_mode": "strict",
+        "phase_max_requests_per_phase": 12,
+    }
+    cfg_path = tmp_path / "config-validate.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(config, handle, sort_keys=True)
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+
+    missing_col = frame.drop(columns=["setup_elapsed_s"])
+    missing_col.to_parquet(out_dir / "results.parquet", index=False)
+    with pytest.raises(ValueError, match="missing stage timing columns"):
+        validate_run_directory(out_dir)
+
+    frame.loc[:, "export_elapsed_s"] = -1.0
+    frame.to_parquet(out_dir / "results.parquet", index=False)
+    with pytest.raises(ValueError, match="negative values"):
+        validate_run_directory(out_dir)

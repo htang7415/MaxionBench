@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
@@ -57,6 +58,7 @@ class _SweepRun:
     rhu_h: float
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    setup_elapsed_s: float
     warmup_target_s: float
     warmup_elapsed_s: float
     warmup_requests: int
@@ -81,6 +83,7 @@ class _RagCandidate:
     rhu_h: float
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    setup_elapsed_s: float
     warmup_target_s: float
     warmup_elapsed_s: float
     warmup_requests: int
@@ -140,10 +143,8 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
 
     if not rows:
         raise RuntimeError("No rows were produced.")
-    write_results_parquet(output_dir / "results.parquet", rows)
-    for row in rows:
-        _append_log(output_dir / "logs" / "runner.log", row)
-
+    output_path = output_dir / "results.parquet"
+    log_path = output_dir / "logs" / "runner.log"
     first = rows[0]
     metadata = RunMetadata(
         run_id=first.run_id,
@@ -168,8 +169,16 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         quality_targets=list(cfg.quality_targets),
         hardware_runtime=collect_system_info(),
     )
+    export_start = time.perf_counter()
+    write_results_parquet(output_path, rows)
+    _write_runner_log(log_path, rows)
     write_run_metadata(output_dir / "run_metadata.json", metadata)
     write_resolved_config(output_dir / "config_resolved.yaml", config_payload)
+    export_elapsed_s = time.perf_counter() - export_start
+
+    rows_with_export = [replace(row, export_elapsed_s=export_elapsed_s) for row in rows]
+    write_results_parquet(output_path, rows_with_export)
+    _write_runner_log(log_path, rows_with_export)
     return output_dir
 
 
@@ -219,6 +228,7 @@ def _run_calibrate_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_pa
         errors=0,
         rtt_baseline_ms_p50=0.0,
         rtt_baseline_ms_p99=0.0,
+        setup_elapsed_s=0.0,
         warmup_target_s=cfg.warmup_s,
         warmup_elapsed_s=0.0,
         warmup_requests=0,
@@ -256,9 +266,11 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
     d3_params = _resolve_d3_params(cfg, d3_params_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s2(
             adapter=adapter,
@@ -325,6 +337,7 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
                     errors=cond.errors,
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    setup_elapsed_s=setup_elapsed_s,
                     warmup_target_s=cfg.warmup_s,
                     warmup_elapsed_s=cond.warmup_elapsed_s,
                     warmup_requests=cond.warmup_requests,
@@ -358,9 +371,11 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s4(
             adapter=adapter,
@@ -405,6 +420,7 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    setup_elapsed_s=setup_elapsed_s,
                     warmup_target_s=cfg.warmup_s,
                     warmup_elapsed_s=cond.warmup_elapsed_s,
                     warmup_requests=cond.warmup_requests,
@@ -429,9 +445,11 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s5(
             adapter=adapter,
@@ -482,6 +500,7 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    setup_elapsed_s=setup_elapsed_s,
                     warmup_target_s=cfg.warmup_s,
                     warmup_elapsed_s=cond.warmup_elapsed_s,
                     warmup_requests=cond.warmup_requests,
@@ -506,9 +525,11 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     d4_data = _maybe_load_d4_data(cfg)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s6(
             adapter=adapter,
@@ -554,6 +575,7 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     rhu_h=rhu_hours(duration_s=duration, rate=rate),
                     rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                     rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                    setup_elapsed_s=setup_elapsed_s,
                     warmup_target_s=cfg.warmup_s,
                     warmup_elapsed_s=cond.warmup_elapsed_s,
                     warmup_requests=cond.warmup_requests,
@@ -635,6 +657,7 @@ def _select_rag_band_rows(
                 errors=selected.errors,
                 rtt_baseline_ms_p50=selected.rtt_baseline_ms_p50,
                 rtt_baseline_ms_p99=selected.rtt_baseline_ms_p99,
+                setup_elapsed_s=selected.setup_elapsed_s,
                 warmup_target_s=selected.warmup_target_s,
                 warmup_elapsed_s=selected.warmup_elapsed_s,
                 warmup_requests=selected.warmup_requests,
@@ -656,9 +679,11 @@ def _run_s3_like_rows(
     d3_params = _resolve_d3_params(cfg, d3_params_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
 
         base_cfg = S3Config(
             vector_dim=cfg.vector_dim,
@@ -732,6 +757,7 @@ def _run_s3_like_rows(
                 errors=result.errors,
                 rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                 rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                setup_elapsed_s=setup_elapsed_s,
                 warmup_target_s=cfg.warmup_s,
                 warmup_elapsed_s=result.warmup_elapsed_s,
                 warmup_requests=result.warmup_requests,
@@ -760,10 +786,12 @@ def _run_s1_sweep_for_client(
     runs: list[_SweepRun] = []
     for search_params in cfg.search_sweep:
         candidate_rng = np.random.default_rng(cfg.seed + repeat_idx)
+        setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
 
         baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        setup_elapsed_s = time.perf_counter() - setup_start
         scenario_cfg = S1Config(
             vector_dim=cfg.vector_dim,
             num_vectors=cfg.num_vectors,
@@ -799,6 +827,7 @@ def _run_s1_sweep_for_client(
                 rhu_h=rhu_hours(duration_s=duration, rate=rate),
                 rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
                 rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                setup_elapsed_s=setup_elapsed_s,
                 warmup_target_s=cfg.warmup_s,
                 warmup_elapsed_s=result.warmup_elapsed_s,
                 warmup_requests=result.warmup_requests,
@@ -856,6 +885,7 @@ def _select_matched_quality_rows(
                 errors=run.errors,
                 rtt_baseline_ms_p50=run.rtt_baseline_ms_p50,
                 rtt_baseline_ms_p99=run.rtt_baseline_ms_p99,
+                setup_elapsed_s=run.setup_elapsed_s,
                 warmup_target_s=run.warmup_target_s,
                 warmup_elapsed_s=run.warmup_elapsed_s,
                 warmup_requests=run.warmup_requests,
@@ -965,18 +995,19 @@ def _slug(value: float) -> str:
     return str(value).replace(".", "p")
 
 
-def _append_log(path: Path, row: ResultRow) -> None:
-    payload = {
-        "run_id": row.run_id,
-        "repeat_idx": row.repeat_idx,
-        "scenario": row.scenario,
-        "p99_ms": row.p99_ms,
-        "qps": row.qps,
-        "recall_at_10": row.recall_at_10,
-        "errors": row.errors,
-    }
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(f"{payload}\n")
+def _write_runner_log(path: Path, rows: list[ResultRow]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            payload = {
+                "run_id": row.run_id,
+                "repeat_idx": row.repeat_idx,
+                "scenario": row.scenario,
+                "p99_ms": row.p99_ms,
+                "qps": row.qps,
+                "recall_at_10": row.recall_at_10,
+                "errors": row.errors,
+            }
+            handle.write(f"{payload}\n")
 
 
 def main(argv: list[str] | None = None) -> int:

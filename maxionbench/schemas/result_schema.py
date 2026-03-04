@@ -61,12 +61,14 @@ class ResultRow:
     errors: int
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    setup_elapsed_s: float = 0.0
     warmup_target_s: float = 0.0
     warmup_elapsed_s: float = 0.0
     warmup_requests: int = 0
     measure_target_s: float = 0.0
     measure_elapsed_s: float = 0.0
     measure_requests: int = 0
+    export_elapsed_s: float = 0.0
 
 
 @dataclass(frozen=True)
