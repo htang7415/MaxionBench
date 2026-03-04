@@ -2,6 +2,21 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
-# Placeholder calibration entrypoint; full D3 calibration implementation is on
-# the critical path after adapter integration.
-python -m maxionbench.orchestration.runner --config configs/scenarios/calibrate_d3.yaml
+CONFIG_PATH="${MAXIONBENCH_CALIBRATE_CONFIG:-configs/scenarios/calibrate_d3.yaml}"
+
+mb_require_tmpdir
+mb_allocate_ports
+mb_scratch_preflight "${CONFIG_PATH}"
+mb_prepare_output_paths "calibrate_d3"
+
+STAGED_CONFIG="$(mb_stage_config_to_tmp "${MB_PREFLIGHT_CONFIG}")"
+mb_log "staged config: ${STAGED_CONFIG}"
+mb_run_benchmark "${STAGED_CONFIG}" --seed "${MAXIONBENCH_SEED:-42}"
+
+mkdir -p "${ROOT_DIR}/artifacts/calibration"
+if [[ -f "${MB_OUTPUT_TMP}/d3_params.yaml" ]]; then
+  cp "${MB_OUTPUT_TMP}/d3_params.yaml" "${ROOT_DIR}/artifacts/calibration/d3_params.yaml"
+  mb_log "wrote calibration params to ${ROOT_DIR}/artifacts/calibration/d3_params.yaml"
+fi
+
+mb_copy_back_output

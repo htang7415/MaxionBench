@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import time
 from typing import Any, Mapping
@@ -12,6 +11,7 @@ import numpy as np
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import sla_violation_rate
+from maxionbench.scenarios.phased import run_query_phases
 from maxionbench.schemas.adapter_contract import QueryRequest, UpsertRecord
 
 
@@ -23,6 +23,10 @@ class S1Config:
     top_k: int
     clients_read: int
     sla_threshold_ms: float
+    warmup_s: float = 0.0
+    steady_state_s: float = 0.0
+    phase_timing_mode: str = "bounded"
+    phase_max_requests_per_phase: int | None = None
     search_params: Mapping[str, Any] | None = None
 
 
@@ -45,6 +49,10 @@ class S1Result:
     mrr_at_10: float
     sla_violation_rate: float
     errors: int
+    measured_requests: int
+    measured_elapsed_s: float
+    warmup_requests: int
+    warmup_elapsed_s: float
 
 
 def _exact_topk_ids(
@@ -119,15 +127,19 @@ def run_with_data(
         latency_ms = (time.perf_counter() - q_start) * 1000.0
         return latency_ms, retrieved_ids, err
 
-    t_start = time.perf_counter()
-    if cfg.clients_read <= 1:
-        query_outputs = [query_once(query_vec) for query_vec in query_vectors]
-    else:
-        with ThreadPoolExecutor(max_workers=cfg.clients_read) as pool:
-            query_outputs = list(pool.map(query_once, list(query_vectors)))
-    elapsed_s = max(time.perf_counter() - t_start, 1e-9)
+    measured, warmup_stats, measure_stats = run_query_phases(
+        total_queries=num_queries,
+        clients_read=cfg.clients_read,
+        warmup_s=cfg.warmup_s,
+        steady_state_s=cfg.steady_state_s,
+        evaluate_query=lambda idx: query_once(query_vectors[idx]),
+        strict_timing=cfg.phase_timing_mode == "strict",
+        max_requests_per_phase=cfg.phase_max_requests_per_phase,
+    )
+    if not measured:
+        raise RuntimeError("S1 measurement phase did not execute any query")
 
-    for index, (latency_ms, retrieved_ids, err) in enumerate(query_outputs):
+    for index, (latency_ms, retrieved_ids, err) in measured:
         latencies_ms.append(latency_ms)
         errors += err
         gt_ids = gt_rows[index]
@@ -143,16 +155,20 @@ def run_with_data(
         p50_ms=summary["p50_ms"],
         p95_ms=summary["p95_ms"],
         p99_ms=summary["p99_ms"],
-        qps=num_queries / elapsed_s,
+        qps=measure_stats.requests / max(measure_stats.elapsed_s, 1e-9),
         recall_at_10=float(np.mean(recall_values)),
         ndcg_at_10=float(np.mean(ndcg_values)),
         mrr_at_10=float(np.mean(mrr_values)),
         sla_violation_rate=sla_violation_rate(
-            total_requests=num_queries,
+            total_requests=measure_stats.requests,
             over_sla=over_sla,
             errors=errors,
         ),
         errors=errors,
+        measured_requests=measure_stats.requests,
+        measured_elapsed_s=measure_stats.elapsed_s,
+        warmup_requests=warmup_stats.requests,
+        warmup_elapsed_s=warmup_stats.elapsed_s,
     )
 
 

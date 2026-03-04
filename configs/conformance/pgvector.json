@@ -1,0 +1,7 @@
+{
+  "adapter": "pgvector",
+  "adapter_options_json": "{\"dsn\":\"postgresql://postgres:postgres@127.0.0.1:5432/postgres\",\"schema\":\"public\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}

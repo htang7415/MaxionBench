@@ -23,12 +23,25 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser = subparsers.add_parser("validate", help="Validate output artifacts")
     validate_parser.add_argument("--input", required=True)
 
+    report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
+    report_parser.add_argument("--input", required=True)
+    report_parser.add_argument("--mode", required=True, choices=["milestones", "final"])
+    report_parser.add_argument("--out", required=True)
+
     conformance_parser = subparsers.add_parser("conformance", help="Run adapter conformance tests")
     conformance_parser.add_argument("--adapter", default="mock")
     conformance_parser.add_argument("--adapter-options-json", default="{}")
     conformance_parser.add_argument("--collection", default="conformance")
     conformance_parser.add_argument("--dimension", type=int, default=4)
     conformance_parser.add_argument("--metric", default="ip")
+
+    conformance_matrix_parser = subparsers.add_parser(
+        "conformance-matrix",
+        help="Run conformance tests for all adapter configs",
+    )
+    conformance_matrix_parser.add_argument("--config-dir", default="configs/conformance")
+    conformance_matrix_parser.add_argument("--out-dir", default="artifacts/conformance")
+    conformance_matrix_parser.add_argument("--timeout-s", type=float, default=300.0)
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -51,6 +64,15 @@ def main(argv: list[str] | None = None) -> int:
 
         validate_run_directory(Path(args.input).resolve())
         return 0
+    if args.command == "report":
+        from maxionbench.reports.paper_exports import generate_report_bundle
+
+        generate_report_bundle(
+            input_dir=Path(args.input).resolve(),
+            out_dir=Path(args.out).resolve(),
+            mode=args.mode,
+        )
+        return 0
     if args.command == "conformance":
         conformance_argv = [
             "--adapter",
@@ -65,6 +87,19 @@ def main(argv: list[str] | None = None) -> int:
             args.metric,
         ]
         return conformance_main(conformance_argv)
+    if args.command == "conformance-matrix":
+        from maxionbench.conformance.matrix import main as conformance_matrix_main
+
+        return conformance_matrix_main(
+            [
+                "--config-dir",
+                args.config_dir,
+                "--out-dir",
+                args.out_dir,
+                "--timeout-s",
+                str(args.timeout_s),
+            ]
+        )
     raise ValueError(f"Unsupported command {args.command}")
 
 

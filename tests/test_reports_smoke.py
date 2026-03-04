@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from pathlib import Path
+import json
+
+import yaml
+
+from maxionbench.cli import main as cli_main
+from maxionbench.orchestration.runner import run_from_config
+from maxionbench.reports.paper_exports import generate_report_bundle
+
+
+def _make_run(tmp_path: Path) -> Path:
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "synthetic-d1-v1",
+        "seed": 7,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 10,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 16,
+        "num_vectors": 120,
+        "num_queries": 10,
+        "top_k": 10,
+    }
+    cfg_path = tmp_path / "config.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(cfg, handle, sort_keys=True)
+    return run_from_config(cfg_path, cli_overrides=None)
+
+
+def test_report_bundle_smoke(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    out_dir = tmp_path / "figures"
+    bundle = generate_report_bundle(input_dir=run_dir.parent, out_dir=out_dir, mode="milestones")
+
+    assert bundle["figures"]
+    assert bundle["tables"]
+    assert any(path.suffix == ".png" for path in bundle["figures"])
+    assert any(path.suffix == ".csv" for path in bundle["tables"])
+
+    first_png = next(path for path in bundle["figures"] if path.suffix == ".png")
+    first_meta = first_png.with_suffix(".meta.json")
+    assert first_meta.exists()
+    meta = json.loads(first_meta.read_text(encoding="utf-8"))
+    assert meta["run_ids"]
+    assert meta["config_fingerprints"]
+
+    assert (out_dir / "m8_deferred_note.md").exists()
+    assert (out_dir / "m8_deferred_note.meta.json").exists()
+    assert (out_dir / "T1_environment_runtime_pinning.csv").exists()
+    assert (out_dir / "T2_matched_quality_throughput_rhu.csv").exists()
+    assert (out_dir / "T3_robustness_summary.csv").exists()
+    assert (out_dir / "T4_decision_table.csv").exists()
+
+    summary_meta = json.loads((out_dir / "milestones_summary.meta.json").read_text(encoding="utf-8"))
+    assert summary_meta["run_ids"]
+    assert summary_meta["config_fingerprints"]
+
+
+def test_report_cli_smoke(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    out_dir = tmp_path / "figures_cli"
+    code = cli_main(["report", "--input", str(run_dir.parent), "--mode", "final", "--out", str(out_dir)])
+    assert code == 0
+    assert any(out_dir.glob("*.png"))
+    assert (out_dir / "F5_deferred_note.md").exists()
+    assert (out_dir / "F5_deferred_note.meta.json").exists()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import time
@@ -14,6 +13,7 @@ from maxionbench.datasets.d3_generator import D3Dataset, D3Params, generate_d3_d
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import p99_inflation, sla_violation_rate
+from maxionbench.scenarios.phased import run_query_phases
 from maxionbench.schemas.adapter_contract import QueryRequest, UpsertRecord
 
 
@@ -26,6 +26,10 @@ class S2Config:
     clients_read: int
     sla_threshold_ms: float
     selectivities: list[float]
+    warmup_s: float = 0.0
+    steady_state_s: float = 0.0
+    phase_timing_mode: str = "bounded"
+    phase_max_requests_per_phase: int | None = None
     search_params: Mapping[str, Any] | None = None
 
 
@@ -43,6 +47,10 @@ class S2ConditionResult:
     sla_violation_rate: float
     errors: int
     p99_inflation_vs_unfiltered: float
+    measured_requests: int = 0
+    measured_elapsed_s: float = 0.0
+    warmup_requests: int = 0
+    warmup_elapsed_s: float = 0.0
 
 
 def run(
@@ -76,6 +84,10 @@ def run(
             sla_threshold_ms=cfg.sla_threshold_ms,
             filt=filt,
             selectivity=selectivity,
+            warmup_s=cfg.warmup_s,
+            steady_state_s=cfg.steady_state_s,
+            phase_timing_mode=cfg.phase_timing_mode,
+            phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
         )
         if abs(selectivity - 1.0) < 1e-9:
             baseline_p99 = result.p99_ms
@@ -97,6 +109,10 @@ def run(
                 sla_violation_rate=item.sla_violation_rate,
                 errors=item.errors,
                 p99_inflation_vs_unfiltered=p99_inflation(item.p99_ms, baseline_p99),
+                measured_requests=item.measured_requests,
+                measured_elapsed_s=item.measured_elapsed_s,
+                warmup_requests=item.warmup_requests,
+                warmup_elapsed_s=item.warmup_elapsed_s,
             )
         )
     return final_results
@@ -121,6 +137,10 @@ def _run_condition(
     sla_threshold_ms: float,
     filt: Mapping[str, Any] | None,
     selectivity: float,
+    warmup_s: float,
+    steady_state_s: float,
+    phase_timing_mode: str,
+    phase_max_requests_per_phase: int | None,
 ) -> S2ConditionResult:
     latencies_ms: list[float] = []
     recalls: list[float] = []
@@ -140,15 +160,20 @@ def _run_condition(
             err = 1
         return (time.perf_counter() - start) * 1000.0, retrieved, err
 
-    t0 = time.perf_counter()
-    if clients_read <= 1:
-        outputs = [query_once(qv) for qv in query_vecs]
-    else:
-        with ThreadPoolExecutor(max_workers=clients_read) as pool:
-            outputs = list(pool.map(query_once, list(query_vecs)))
-    elapsed = max(time.perf_counter() - t0, 1e-9)
+    measured, warmup_stats, measure_stats = run_query_phases(
+        total_queries=int(query_vecs.shape[0]),
+        clients_read=clients_read,
+        warmup_s=warmup_s,
+        steady_state_s=steady_state_s,
+        evaluate_query=lambda idx: query_once(query_vecs[idx]),
+        strict_timing=phase_timing_mode == "strict",
+        max_requests_per_phase=phase_max_requests_per_phase,
+    )
+    if not measured:
+        raise RuntimeError("S2 measurement phase did not execute any query")
 
-    for qv, (lat, retrieved, err) in zip(query_vecs, outputs):
+    for idx, (lat, retrieved, err) in measured:
+        qv = query_vecs[idx]
         latencies_ms.append(lat)
         errors += err
         gt = _exact_filtered_topk(dataset, query_vec=qv, top_k=top_k, filt=filt)
@@ -165,13 +190,17 @@ def _run_condition(
         p50_ms=summary["p50_ms"],
         p95_ms=summary["p95_ms"],
         p99_ms=summary["p99_ms"],
-        qps=float(len(query_vecs)) / elapsed,
+        qps=float(measure_stats.requests) / max(measure_stats.elapsed_s, 1e-9),
         recall_at_10=float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0,
         ndcg_at_10=float(np.mean(np.asarray(ndcgs, dtype=np.float64))) if ndcgs else 0.0,
         mrr_at_10=float(np.mean(np.asarray(mrrs, dtype=np.float64))) if mrrs else 0.0,
-        sla_violation_rate=sla_violation_rate(total_requests=len(query_vecs), over_sla=over_sla, errors=errors),
+        sla_violation_rate=sla_violation_rate(total_requests=measure_stats.requests, over_sla=over_sla, errors=errors),
         errors=errors,
         p99_inflation_vs_unfiltered=0.0,
+        measured_requests=measure_stats.requests,
+        measured_elapsed_s=measure_stats.elapsed_s,
+        warmup_requests=warmup_stats.requests,
+        warmup_elapsed_s=warmup_stats.elapsed_s,
     )
 
 

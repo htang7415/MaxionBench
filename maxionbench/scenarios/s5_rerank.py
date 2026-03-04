@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import time
@@ -19,6 +18,7 @@ from maxionbench.datasets.loaders.d4_synthetic import (
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import sla_violation_rate
+from maxionbench.scenarios.phased import run_query_phases
 from maxionbench.schemas.adapter_contract import QueryRequest, UpsertRecord
 
 
@@ -31,6 +31,10 @@ class S5Config:
     clients_read: int
     sla_threshold_ms: float
     candidate_budgets: list[int]
+    warmup_s: float = 0.0
+    steady_state_s: float = 0.0
+    phase_timing_mode: str = "bounded"
+    phase_max_requests_per_phase: int | None = None
     reranker_model_id: str = "BAAI/bge-reranker-base"
     reranker_revision_tag: str = "2026-03-04"
     reranker_max_seq_len: int = 512
@@ -54,6 +58,10 @@ class S5BudgetResult:
     sla_violation_rate: float
     errors: int
     info_json: str
+    measured_requests: int = 0
+    measured_elapsed_s: float = 0.0
+    warmup_requests: int = 0
+    warmup_elapsed_s: float = 0.0
 
 
 def run(
@@ -74,7 +82,6 @@ def run(
     adapter.set_search_params(cfg.search_params or {})
 
     query_count = min(cfg.num_queries, len(data.query_ids))
-    query_indices = list(range(query_count))
     budgets = sorted({budget for budget in cfg.candidate_budgets if budget > 0})
     if not budgets:
         raise ValueError("candidate_budgets must include at least one positive value")
@@ -120,11 +127,17 @@ def run(
             baseline_ids = dense_ids[: cfg.top_k]
             return total_ms, candidate_ms, transfer_ms, rerank_ms, reranked_ids, baseline_ids, error
 
-        if cfg.clients_read <= 1:
-            outputs = [evaluate_query(i) for i in query_indices]
-        else:
-            with ThreadPoolExecutor(max_workers=cfg.clients_read) as pool:
-                outputs = list(pool.map(evaluate_query, query_indices))
+        measured, warmup_stats, measure_stats = run_query_phases(
+            total_queries=query_count,
+            clients_read=cfg.clients_read,
+            warmup_s=cfg.warmup_s,
+            steady_state_s=cfg.steady_state_s,
+            evaluate_query=evaluate_query,
+            strict_timing=cfg.phase_timing_mode == "strict",
+            max_requests_per_phase=cfg.phase_max_requests_per_phase,
+        )
+        if not measured:
+            raise RuntimeError("S5 measurement phase did not execute any query")
 
         latencies_ms: list[float] = []
         candidate_latencies_ms: list[float] = []
@@ -136,7 +149,7 @@ def run(
         deltas: list[float] = []
         errors = 0
 
-        for query_idx, output in enumerate(outputs):
+        for query_idx, output in measured:
             total_ms, cand_ms, xfer_ms, rr_ms, reranked_ids, baseline_ids, error = output
             qrels = data.qrels[data.query_ids[query_idx]]
             relevance = {doc_id: float(rel) for doc_id, rel in qrels.items()}
@@ -155,7 +168,6 @@ def run(
             errors += error
 
         summary = latency_summary(latencies_ms)
-        elapsed_s = max(sum(latencies_ms) / 1000.0, 1e-9)
         samples = max(1, len(latencies_ms))
         over_sla = sum(1 for lat in latencies_ms if lat > cfg.sla_threshold_ms)
         info = {
@@ -173,6 +185,13 @@ def run(
                 "transfer_p99": latency_summary(transfer_latencies_ms)["p99_ms"],
                 "rerank_p99": latency_summary(rerank_latencies_ms)["p99_ms"],
             },
+            "phase": {
+                "mode": cfg.phase_timing_mode,
+                "warmup_requests": warmup_stats.requests,
+                "warmup_elapsed_s": warmup_stats.elapsed_s,
+                "measure_requests": measure_stats.requests,
+                "measure_elapsed_s": measure_stats.elapsed_s,
+            },
         }
         results.append(
             S5BudgetResult(
@@ -180,7 +199,7 @@ def run(
                 p50_ms=summary["p50_ms"],
                 p95_ms=summary["p95_ms"],
                 p99_ms=summary["p99_ms"],
-                qps=float(samples) / elapsed_s,
+                qps=float(measure_stats.requests) / max(measure_stats.elapsed_s, 1e-9),
                 recall_at_10=float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0,
                 ndcg_at_10=float(np.mean(np.asarray(ndcgs, dtype=np.float64))) if ndcgs else 0.0,
                 mrr_at_10=float(np.mean(np.asarray(mrrs, dtype=np.float64))) if mrrs else 0.0,
@@ -188,6 +207,10 @@ def run(
                 sla_violation_rate=sla_violation_rate(total_requests=samples, over_sla=over_sla, errors=errors),
                 errors=errors,
                 info_json=json.dumps(info, sort_keys=True),
+                measured_requests=measure_stats.requests,
+                measured_elapsed_s=measure_stats.elapsed_s,
+                warmup_requests=warmup_stats.requests,
+                warmup_elapsed_s=warmup_stats.elapsed_s,
             )
         )
     return results

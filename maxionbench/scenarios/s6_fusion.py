@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import time
@@ -19,6 +18,7 @@ from maxionbench.datasets.loaders.d4_synthetic import (
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import sla_violation_rate
+from maxionbench.scenarios.phased import run_query_phases
 from maxionbench.schemas.adapter_contract import QueryRequest, UpsertRecord
 
 
@@ -30,6 +30,10 @@ class S6Config:
     top_k: int
     clients_read: int
     sla_threshold_ms: float
+    warmup_s: float = 0.0
+    steady_state_s: float = 0.0
+    phase_timing_mode: str = "bounded"
+    phase_max_requests_per_phase: int | None = None
     rrf_k: int = 60
     dense_a_candidates: int = 200
     dense_b_candidates: int = 200
@@ -50,6 +54,10 @@ class S6ConditionResult:
     sla_violation_rate: float
     errors: int
     info_json: str
+    measured_requests: int = 0
+    measured_elapsed_s: float = 0.0
+    warmup_requests: int = 0
+    warmup_elapsed_s: float = 0.0
 
 
 def run(
@@ -69,7 +77,6 @@ def run(
     adapter.set_search_params(cfg.search_params or {})
 
     query_count = min(cfg.num_queries, len(data.query_ids))
-    query_indices = list(range(query_count))
     alt_queries = _build_alt_queries(data.query_vectors[:query_count], rng=rng)
 
     def evaluate_query(query_idx: int) -> tuple[float, list[str], int, float, list[str], int]:
@@ -121,11 +128,17 @@ def run(
         s6b_ms = dense_a_ms + bm25_ms + fuse_b_ms
         return s6a_ms, s6a_ids, err_a + err_b, s6b_ms, s6b_ids, err_a
 
-    if cfg.clients_read <= 1:
-        outputs = [evaluate_query(i) for i in query_indices]
-    else:
-        with ThreadPoolExecutor(max_workers=cfg.clients_read) as pool:
-            outputs = list(pool.map(evaluate_query, query_indices))
+    measured, warmup_stats, measure_stats = run_query_phases(
+        total_queries=query_count,
+        clients_read=cfg.clients_read,
+        warmup_s=cfg.warmup_s,
+        steady_state_s=cfg.steady_state_s,
+        evaluate_query=evaluate_query,
+        strict_timing=cfg.phase_timing_mode == "strict",
+        max_requests_per_phase=cfg.phase_max_requests_per_phase,
+    )
+    if not measured:
+        raise RuntimeError("S6 measurement phase did not execute any query")
 
     s6a_lats: list[float] = []
     s6a_recalls: list[float] = []
@@ -139,7 +152,7 @@ def run(
     s6b_mrrs: list[float] = []
     s6b_errors = 0
 
-    for query_idx, output in enumerate(outputs):
+    for query_idx, output in measured:
         s6a_ms, s6a_ids, s6a_error, s6b_ms, s6b_ids, s6b_error = output
         qrels = data.qrels[data.query_ids[query_idx]]
         gt = top_relevant_ids(qrels, k=max(cfg.top_k, 10))
@@ -166,6 +179,10 @@ def run(
         errors=s6a_errors,
         sla_threshold_ms=cfg.sla_threshold_ms,
         cfg=cfg,
+        measured_requests=measure_stats.requests,
+        measured_elapsed_s=measure_stats.elapsed_s,
+        warmup_requests=warmup_stats.requests,
+        warmup_elapsed_s=warmup_stats.elapsed_s,
     )
     s6b = _aggregate(
         mode="s6b_dense_bm25_rrf",
@@ -176,6 +193,10 @@ def run(
         errors=s6b_errors,
         sla_threshold_ms=cfg.sla_threshold_ms,
         cfg=cfg,
+        measured_requests=measure_stats.requests,
+        measured_elapsed_s=measure_stats.elapsed_s,
+        warmup_requests=warmup_stats.requests,
+        warmup_elapsed_s=warmup_stats.elapsed_s,
     )
     return [s6a, s6b]
 
@@ -190,10 +211,13 @@ def _aggregate(
     errors: int,
     sla_threshold_ms: float,
     cfg: S6Config,
+    measured_requests: int,
+    measured_elapsed_s: float,
+    warmup_requests: int,
+    warmup_elapsed_s: float,
 ) -> S6ConditionResult:
     samples = max(1, len(latencies_ms))
     summary = latency_summary(latencies_ms)
-    elapsed_s = max(sum(latencies_ms) / 1000.0, 1e-9)
     over_sla = sum(1 for lat in latencies_ms if lat > sla_threshold_ms)
     info = {
         "mode": mode,
@@ -201,19 +225,30 @@ def _aggregate(
         "dense_a_candidates": cfg.dense_a_candidates,
         "dense_b_candidates": cfg.dense_b_candidates,
         "bm25_candidates": cfg.bm25_candidates,
+        "phase": {
+            "mode": cfg.phase_timing_mode,
+            "warmup_requests": warmup_requests,
+            "warmup_elapsed_s": warmup_elapsed_s,
+            "measure_requests": measured_requests,
+            "measure_elapsed_s": measured_elapsed_s,
+        },
     }
     return S6ConditionResult(
         mode=mode,
         p50_ms=summary["p50_ms"],
         p95_ms=summary["p95_ms"],
         p99_ms=summary["p99_ms"],
-        qps=float(samples) / elapsed_s,
+        qps=float(measured_requests) / max(measured_elapsed_s, 1e-9),
         recall_at_10=float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0,
         ndcg_at_10=float(np.mean(np.asarray(ndcgs, dtype=np.float64))) if ndcgs else 0.0,
         mrr_at_10=float(np.mean(np.asarray(mrrs, dtype=np.float64))) if mrrs else 0.0,
         sla_violation_rate=sla_violation_rate(total_requests=samples, over_sla=over_sla, errors=errors),
         errors=errors,
         info_json=json.dumps(info, sort_keys=True),
+        measured_requests=measured_requests,
+        measured_elapsed_s=measured_elapsed_s,
+        warmup_requests=warmup_requests,
+        warmup_elapsed_s=warmup_elapsed_s,
     )
 
 
