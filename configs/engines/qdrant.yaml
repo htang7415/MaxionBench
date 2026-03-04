@@ -1,0 +1,6 @@
+engine: qdrant
+engine_version: "server"
+adapter_options:
+  host: 127.0.0.1
+  port: 6333
+  timeout_s: 30.0

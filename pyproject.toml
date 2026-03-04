@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maxionbench"
+version = "0.1.0"
+description = "MaxionBench v0.1 benchmark harness for retrieval and RAG infrastructure"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pyarrow>=15.0",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "h5py>=3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+maxionbench = "maxionbench.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["maxionbench*"]

@@ -1,0 +1,7 @@
+{
+  "adapter": "qdrant",
+  "adapter_options_json": "{\"location\":\":memory:\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}
