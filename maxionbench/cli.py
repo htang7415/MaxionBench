@@ -31,6 +31,18 @@ def main(argv: list[str] | None = None) -> int:
     migrate_parser.add_argument("--input", required=True)
     migrate_parser.add_argument("--dry-run", action="store_true")
 
+    verify_branch_parser = subparsers.add_parser(
+        "verify-branch-protection",
+        help="Verify GitHub branch protection required checks",
+    )
+    verify_branch_parser.add_argument("--repo", required=True)
+    verify_branch_parser.add_argument("--branch", default="main")
+    verify_branch_parser.add_argument("--token", default=None)
+    verify_branch_parser.add_argument("--timeout-s", type=float, default=10.0)
+    verify_branch_parser.add_argument("--required-check", action="append", dest="required_checks", default=None)
+    verify_branch_parser.add_argument("--include-drift-check", action="store_true")
+    verify_branch_parser.add_argument("--json", action="store_true")
+
     report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
     report_parser.add_argument("--input", required=True)
     report_parser.add_argument("--mode", required=True, choices=["milestones", "final"])
@@ -82,6 +94,19 @@ def main(argv: list[str] | None = None) -> int:
         summary = backfill_path(Path(args.input).resolve(), dry_run=args.dry_run)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
+    if args.command == "verify-branch-protection":
+        from maxionbench.tools.verify_branch_protection import main as verify_branch_main
+
+        verify_argv: list[str] = ["--repo", args.repo, "--branch", args.branch, "--timeout-s", str(args.timeout_s)]
+        if args.token:
+            verify_argv.extend(["--token", args.token])
+        for check in args.required_checks or []:
+            verify_argv.extend(["--required-check", check])
+        if args.include_drift_check:
+            verify_argv.append("--include-drift-check")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_branch_main(verify_argv)
     if args.command == "report":
         from maxionbench.reports.paper_exports import generate_report_bundle
 

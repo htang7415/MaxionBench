@@ -69,6 +69,11 @@ class ResultRow:
     measure_elapsed_s: float = 0.0
     measure_requests: int = 0
     export_elapsed_s: float = 0.0
+    resource_cpu_vcpu: float = 0.0
+    resource_gpu_count: float = 0.0
+    resource_ram_gib: float = 0.0
+    resource_disk_tb: float = 0.0
+    rhu_rate: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,8 @@ class RunMetadata:
     no_retry: bool
     clients_read_grid: list[int] | None = None
     quality_targets: list[float] | None = None
+    rhu_references: Mapping[str, float] | None = None
+    resource_profile: Mapping[str, float] | None = None
     hardware_runtime: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
@@ -109,6 +116,12 @@ class RunMetadata:
             raise ValueError(f"missing required metadata fields: {missing}")
         if sorted(self.rhu_weights.keys()) != ["w_c", "w_d", "w_g", "w_r"]:
             raise ValueError("rhu_weights must include exactly w_c,w_g,w_r,w_d")
+        if self.rhu_references is not None:
+            if sorted(self.rhu_references.keys()) != ["c_ref_vcpu", "d_ref_tb", "g_ref_gpu", "r_ref_gib"]:
+                raise ValueError("rhu_references must include c_ref_vcpu,g_ref_gpu,r_ref_gib,d_ref_tb")
+        if self.resource_profile is not None:
+            if sorted(self.resource_profile.keys()) != ["cpu_vcpu", "disk_tb", "gpu_count", "ram_gib", "rhu_rate"]:
+                raise ValueError("resource_profile must include cpu_vcpu,gpu_count,ram_gib,disk_tb,rhu_rate")
 
 
 def utc_now_iso() -> str:

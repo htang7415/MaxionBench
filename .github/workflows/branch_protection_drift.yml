@@ -1,0 +1,48 @@
+name: branch-protection-drift
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  verify_branch_protection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Verify branch protection required checks
+        env:
+          BRANCH_PROTECTION_TOKEN: ${{ secrets.BRANCH_PROTECTION_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          TOKEN="${BRANCH_PROTECTION_TOKEN:-$GITHUB_TOKEN}"
+          maxionbench verify-branch-protection \
+            --repo "${GITHUB_REPOSITORY}" \
+            --branch main \
+            --token "${TOKEN}" \
+            --json | tee branch_protection_summary.json
+
+      - name: Upload branch protection summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-protection-summary
+          if-no-files-found: error
+          retention-days: 7
+          path: branch_protection_summary.json

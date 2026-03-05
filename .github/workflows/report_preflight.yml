@@ -1,0 +1,212 @@
+name: report-preflight
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  report_preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,reporting]"
+
+      - name: Write smoke scenario config
+        run: |
+          cat > ci_s1_smoke.yaml <<'YAML'
+          engine: mock
+          engine_version: "0.1.0"
+          scenario: s1_ann_frontier
+          dataset_bundle: D1
+          dataset_hash: synthetic-d1-v1
+          seed: 17
+          repeats: 1
+          no_retry: true
+          output_dir: artifacts/runs/ci_preflight
+          quality_target: 0.8
+          quality_targets: [0.8]
+          clients_read: 1
+          clients_write: 0
+          clients_grid: [1]
+          search_sweep:
+            - {hnsw_ef: 32}
+          rpc_baseline_requests: 5
+          sla_threshold_ms: 50.0
+          vector_dim: 12
+          num_vectors: 120
+          num_queries: 8
+          top_k: 10
+          warmup_s: 0.02
+          steady_state_s: 0.02
+          phase_timing_mode: strict
+          phase_max_requests_per_phase: 12
+          YAML
+
+      - name: Generate smoke run artifacts
+        run: |
+          maxionbench run \
+            --config ci_s1_smoke.yaml \
+            --seed 17 \
+            --repeats 1 \
+            --no-retry \
+            --output-dir artifacts/runs/ci_preflight
+
+      - name: Validate artifacts preflight
+        run: |
+          maxionbench validate --input artifacts/runs/ci_preflight --json
+
+      - name: Generate report bundle
+        run: |
+          maxionbench report \
+            --input artifacts/runs/ci_preflight \
+            --mode milestones \
+            --out artifacts/figures/ci_preflight
+
+      - name: Assert report outputs
+        run: |
+          test -f artifacts/figures/ci_preflight/m2_runner_stage_timing.png
+          test -f artifacts/figures/ci_preflight/T1_environment_runtime_pinning.csv
+
+      - name: Upload preflight artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-preflight-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ci_s1_smoke.yaml
+            artifacts/runs/ci_preflight/**
+            artifacts/figures/ci_preflight/**
+
+  legacy_migration_path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,reporting]"
+
+      - name: Write legacy scenario config
+        run: |
+          cat > ci_s1_legacy.yaml <<'YAML'
+          engine: mock
+          engine_version: "0.1.0"
+          scenario: s1_ann_frontier
+          dataset_bundle: D1
+          dataset_hash: synthetic-d1-v1
+          seed: 23
+          repeats: 1
+          no_retry: true
+          output_dir: artifacts/runs/ci_legacy
+          quality_target: 0.8
+          quality_targets: [0.8]
+          clients_read: 1
+          clients_write: 0
+          clients_grid: [1]
+          search_sweep:
+            - {hnsw_ef: 32}
+          rpc_baseline_requests: 5
+          sla_threshold_ms: 50.0
+          vector_dim: 12
+          num_vectors: 120
+          num_queries: 8
+          top_k: 10
+          warmup_s: 0.02
+          steady_state_s: 0.02
+          phase_timing_mode: strict
+          phase_max_requests_per_phase: 12
+          YAML
+
+      - name: Generate legacy smoke run artifacts
+        run: |
+          maxionbench run \
+            --config ci_s1_legacy.yaml \
+            --seed 23 \
+            --repeats 1 \
+            --no-retry \
+            --output-dir artifacts/runs/ci_legacy
+
+      - name: Drop stage timing fields to emulate legacy artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+
+          path = Path("artifacts/runs/ci_legacy/results.parquet")
+          frame = pd.read_parquet(path)
+          frame = frame.drop(columns=["setup_elapsed_s", "warmup_elapsed_s", "measure_elapsed_s", "export_elapsed_s"])
+          frame.to_parquet(path, index=False)
+          PY
+
+      - name: Assert report fails before migration
+        run: |
+          set +e
+          output="$(maxionbench report --input artifacts/runs/ci_legacy --mode milestones --out artifacts/figures/ci_legacy 2>&1)"
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "Expected report command to fail for legacy artifact"
+            exit 1
+          fi
+          echo "${output}" | grep -q "migrate-stage-timing"
+
+      - name: Backfill stage timing fields
+        run: |
+          maxionbench migrate-stage-timing --input artifacts/runs/ci_legacy
+
+      - name: Validate migrated artifacts
+        run: |
+          maxionbench validate --input artifacts/runs/ci_legacy --json
+
+      - name: Generate report after migration
+        run: |
+          maxionbench report \
+            --input artifacts/runs/ci_legacy \
+            --mode milestones \
+            --out artifacts/figures/ci_legacy
+
+      - name: Assert migrated report outputs
+        run: |
+          test -f artifacts/figures/ci_legacy/m2_runner_stage_timing.png
+          test -f artifacts/figures/ci_legacy/T1_environment_runtime_pinning.csv
+
+      - name: Upload legacy migration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-legacy-migration-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ci_s1_legacy.yaml
+            artifacts/runs/ci_legacy/**
+            artifacts/figures/ci_legacy/**
