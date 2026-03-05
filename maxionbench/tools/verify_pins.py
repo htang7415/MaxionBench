@@ -13,6 +13,7 @@ PINNED_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
 PINNED_RAG_CRAG_SOURCE = "facebookresearch/CRAG"
 PINNED_RAG_CRAG_PATH = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 PINNED_ANN_QUALITY_TARGETS = [0.80, 0.90, 0.95]
+D3_50M_MIN_VECTORS = 50_000_000
 
 
 def verify_scenario_config_dir(config_dir: Path) -> dict[str, Any]:
@@ -164,7 +165,8 @@ def _verify_d3_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     if cfg.dataset_bundle.upper() != "D3":
         return []
     errors: list[dict[str, Any]] = []
-    _expect_equal(errors, path, "d3_k_clusters", cfg.d3_k_clusters, 4096)
+    expected_k = 8192 if int(cfg.num_vectors) >= D3_50M_MIN_VECTORS else 4096
+    _expect_equal(errors, path, "d3_k_clusters", cfg.d3_k_clusters, expected_k)
     _expect_equal(errors, path, "d3_num_tenants", cfg.d3_num_tenants, 100)
     _expect_equal(errors, path, "d3_num_acl_buckets", cfg.d3_num_acl_buckets, 16)
     _expect_equal(errors, path, "d3_num_time_buckets", cfg.d3_num_time_buckets, 52)
