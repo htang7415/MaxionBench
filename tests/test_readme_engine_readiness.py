@@ -10,5 +10,9 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "allow-nonpass-status" in text
     assert "conformance_readiness_gate" in text
     assert "strict_readiness.yml" in text
+    assert "verify-promotion-gate" in text
+    assert "publish_benchmark_bundle.yml" in text
+    assert "include-strict-readiness-check" in text
+    assert "include-publish-bundle-check" in text
     assert "pre-run-gate" in text
     assert "pre-run-gate --config ci_s1_smoke.yaml --json" in text

@@ -10,6 +10,8 @@ Describe the change and why it is needed.
 - [ ] `report-preflight / legacy_resource_profile_path` passed
 - [ ] `report-preflight / legacy_ground_truth_metadata_path` passed
 - [ ] `branch-protection-drift / verify_branch_protection` passed (if enforced)
+- [ ] `strict-readiness / strict_readiness_gate` passed (if enforced)
+- [ ] `publish-benchmark-bundle / publish_result_bundle` passed (if enforced)
 
 ## Artifact/Report Notes
 

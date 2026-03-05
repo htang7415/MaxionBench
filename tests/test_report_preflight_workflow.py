@@ -275,6 +275,8 @@ def test_branch_protection_docs_and_pr_template_reference_required_checks() -> N
     check_legacy_resource = "report-preflight / legacy_resource_profile_path"
     check_legacy_ground_truth = "report-preflight / legacy_ground_truth_metadata_path"
     check_drift = "branch-protection-drift / verify_branch_protection"
+    check_strict_readiness = "strict-readiness / strict_readiness_gate"
+    check_publish_bundle = "publish-benchmark-bundle / publish_result_bundle"
 
     assert check_conformance in policy_text
     assert check_primary in policy_text
@@ -282,10 +284,14 @@ def test_branch_protection_docs_and_pr_template_reference_required_checks() -> N
     assert check_legacy_resource in policy_text
     assert check_legacy_ground_truth in policy_text
     assert check_drift in policy_text
+    assert check_strict_readiness in policy_text
+    assert check_publish_bundle in policy_text
     assert check_conformance in template_text
     assert check_primary in template_text
     assert check_legacy in template_text
     assert check_legacy_resource in template_text
     assert check_legacy_ground_truth in template_text
     assert check_drift in template_text
+    assert check_strict_readiness in template_text
+    assert check_publish_bundle in template_text
     assert "maxionbench validate --input artifacts/runs --strict-schema --json" in template_text

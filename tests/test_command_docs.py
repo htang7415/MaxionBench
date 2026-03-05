@@ -36,6 +36,8 @@ def _assert_common_commands(text: str) -> None:
         "maxionbench verify-promotion-gate --strict-readiness-summary "
         "artifacts/conformance_strict/engine_readiness_summary.json --json"
     ) in text
+    assert "if summary provenance is non-strict" in text
+    assert "allow_nonpass_status=true" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --json" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --enforce-protocol --json" in text
     assert "maxionbench validate --input artifacts/runs --legacy-ok --json" in text
@@ -50,9 +52,16 @@ def _assert_common_commands(text: str) -> None:
     ) in text
     assert "exits with code `2` when mismatches are detected" in text
     assert "exits with code `2` when sidecar policy checks fail" in text
+    assert "maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json" in text
+    assert "--include-drift-check --json" in text
+    assert "--include-strict-readiness-check --json" in text
+    assert "--include-publish-bundle-check --json" in text
+    assert "--include-strict-readiness-check --include-publish-bundle-check --json" in text
     assert "Preflight CI writes both policy artifacts together:" in text
     assert "`artifacts/ci/required_checks_snapshot.json`" in text
     assert "`artifacts/ci/report_output_policy_summary.json`" in text
+    assert "gh workflow run publish_benchmark_bundle.yml" in text
+    assert "-f bundle_name=benchmark-result-bundle" in text
 
 
 def _assert_no_stale_validate_invocation(text: str) -> None:

@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     verify_branch_parser.add_argument("--timeout-s", type=float, default=10.0)
     verify_branch_parser.add_argument("--required-check", action="append", dest="required_checks", default=None)
     verify_branch_parser.add_argument("--include-drift-check", action="store_true")
+    verify_branch_parser.add_argument("--include-strict-readiness-check", action="store_true")
+    verify_branch_parser.add_argument("--include-publish-bundle-check", action="store_true")
     verify_branch_parser.add_argument("--json", action="store_true")
 
     verify_pins_parser = subparsers.add_parser(
@@ -193,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
             verify_argv.extend(["--required-check", check])
         if args.include_drift_check:
             verify_argv.append("--include-drift-check")
+        if args.include_strict_readiness_check:
+            verify_argv.append("--include-strict-readiness-check")
+        if args.include_publish_bundle_check:
+            verify_argv.append("--include-publish-bundle-check")
         if args.json:
             verify_argv.append("--json")
         return verify_branch_main(verify_argv)

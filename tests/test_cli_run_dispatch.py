@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from maxionbench.cli import main as cli_main
 from maxionbench.orchestration import runner as runner_mod
+from maxionbench.tools import verify_branch_protection as verify_branch_mod
 
 
 def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -53,4 +54,46 @@ def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignor
         "--behavior-dir",
         "docs/behavior",
         "--allow-gpu-unavailable",
+    ]
+
+
+def test_cli_verify_branch_protection_dispatches_optional_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 37
+
+    monkeypatch.setattr(verify_branch_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-branch-protection",
+            "--repo",
+            "owner/repo",
+            "--branch",
+            "main",
+            "--timeout-s",
+            "12.5",
+            "--required-check",
+            "report-preflight / report_preflight",
+            "--include-drift-check",
+            "--include-strict-readiness-check",
+            "--include-publish-bundle-check",
+            "--json",
+        ]
+    )
+    assert code == 37
+    assert captured["argv"] == [
+        "--repo",
+        "owner/repo",
+        "--branch",
+        "main",
+        "--timeout-s",
+        "12.5",
+        "--required-check",
+        "report-preflight / report_preflight",
+        "--include-drift-check",
+        "--include-strict-readiness-check",
+        "--include-publish-bundle-check",
+        "--json",
     ]
