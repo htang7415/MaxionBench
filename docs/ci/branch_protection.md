@@ -92,6 +92,9 @@ Workflow:
 Behavior:
 - runs on schedule and on manual dispatch
 - executes `maxionbench verify-branch-protection` for `main`
+- manual dispatch supports:
+  - `include_strict_readiness_check=true` to require `strict-readiness / strict_readiness_gate`
+  - `include_publish_bundle_check=true` to require `publish-benchmark-bundle / publish_result_bundle`
 - uploads `branch_protection_summary.json` as an artifact
 
 Auth note:

@@ -116,6 +116,24 @@ def test_drift_workflow_required_checks_match_defaults() -> None:
     assert contexts == set(verify_mod.DEFAULT_REQUIRED_CHECKS)
 
 
+def test_drift_workflow_supports_optional_check_inputs() -> None:
+    workflow = Path(".github/workflows/branch_protection_drift.yml")
+    payload = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    on_block = payload.get("on", payload.get(True, {}))
+    assert isinstance(on_block, dict)
+    dispatch = on_block.get("workflow_dispatch", {})
+    assert isinstance(dispatch, dict)
+    inputs = dispatch.get("inputs", {})
+    assert isinstance(inputs, dict)
+    assert "include_strict_readiness_check" in inputs
+    assert "include_publish_bundle_check" in inputs
+
+    text = workflow.read_text(encoding="utf-8")
+    assert "--include-strict-readiness-check" in text
+    assert "--include-publish-bundle-check" in text
+
+
 def test_drift_workflow_report_preflight_jobs_match_report_preflight_workflow() -> None:
     workflow_jobs = set()
     for context in _report_preflight_contexts():

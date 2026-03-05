@@ -14,6 +14,15 @@ def test_branch_protection_drift_workflow_has_expected_schedule_and_command() ->
     assert isinstance(payload, dict)
     assert "jobs" in payload
     assert "verify_branch_protection" in payload["jobs"]
+    on_block = payload.get("on", payload.get(True, {}))
+    assert isinstance(on_block, dict)
+    assert "workflow_dispatch" in on_block
+    dispatch = on_block["workflow_dispatch"]
+    assert isinstance(dispatch, dict)
+    inputs = dispatch.get("inputs", {})
+    assert isinstance(inputs, dict)
+    assert "include_strict_readiness_check" in inputs
+    assert "include_publish_bundle_check" in inputs
 
     assert "schedule:" in text
     assert "workflow_dispatch:" in text
@@ -25,6 +34,10 @@ def test_branch_protection_drift_workflow_has_expected_schedule_and_command() ->
     assert '--required-check "report-preflight / legacy_migration_path"' in text
     assert '--required-check "report-preflight / legacy_resource_profile_path"' in text
     assert '--required-check "report-preflight / legacy_ground_truth_metadata_path"' in text
+    assert '--include-strict-readiness-check' in text
+    assert '--include-publish-bundle-check' in text
+    assert 'if [[ "${{ inputs.include_strict_readiness_check }}" == "true" ]]; then' in text
+    assert 'if [[ "${{ inputs.include_publish_bundle_check }}" == "true" ]]; then' in text
     assert "BRANCH_PROTECTION_TOKEN" in text
     assert "actions/upload-artifact@v4" in text
     assert "branch_protection_summary.json" in text
