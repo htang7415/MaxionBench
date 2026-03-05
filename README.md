@@ -14,6 +14,7 @@ Implemented v0.1 harness components include:
 - behavior-card coverage validation (`maxionbench verify-behavior-cards`)
 - engine readiness gate from conformance matrix + behavior cards (`maxionbench verify-engine-readiness`)
 - pre-run benchmark gate to block real-engine runs when readiness fails (`maxionbench pre-run-gate`)
+- promotion gate from strict readiness summary artifacts (`maxionbench verify-promotion-gate`)
 
 Artifact preflight before report generation:
 1. Validate artifacts: `maxionbench validate --input artifacts/runs --strict-schema --json`
@@ -58,6 +59,7 @@ Pre-merge automation:
 - `.github/workflows/report_preflight.yml` runs a fast smoke benchmark, validates artifacts with `maxionbench validate --strict-schema`, then runs `maxionbench report`.
 - The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status`.
 - Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`).
+- Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.
 - The workflow runs `maxionbench verify-behavior-cards --behavior-dir docs/behavior --json` to enforce behavior-card coverage/sections.
 - The smoke path runs `maxionbench pre-run-gate --config ci_s1_smoke.yaml --json` before `maxionbench run`.
@@ -76,6 +78,8 @@ Pre-merge automation:
 - The workflow enables pip dependency caching via `actions/setup-python` (`cache: pip`) to keep pre-merge runtime stable.
 - Optional policy drift check: `maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json`
 - To also require drift workflow status in verification: add `--include-drift-check`.
+- To also require strict-readiness workflow status in verification: add `--include-strict-readiness-check`.
+- To also require publish-benchmark-bundle workflow status in verification: add `--include-publish-bundle-check`.
 - Automated drift checker workflow: `.github/workflows/branch_protection_drift.yml`
 - Branch protection doc includes a policy-sync guard section describing the tests that enforce workflow/check-name alignment.
 

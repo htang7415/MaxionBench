@@ -43,5 +43,7 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     assert "--behavior-dir docs/behavior" in runs_blob
     assert "--allow-gpu-unavailable" in runs_blob
     assert "--allow-nonpass-status" not in runs_blob
+    assert "tee artifacts/conformance_strict/engine_readiness_summary.json" in runs_blob
     assert "strict-readiness-artifacts" in text
     assert "artifacts/conformance_strict/**" in text
+    assert "artifacts/conformance_strict/engine_readiness_summary.json" in text

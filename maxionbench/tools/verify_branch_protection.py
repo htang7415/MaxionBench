@@ -17,6 +17,13 @@ DEFAULT_REQUIRED_CHECKS = (
     "report-preflight / legacy_ground_truth_metadata_path",
 )
 OPTIONAL_DRIFT_CHECK = "branch-protection-drift / verify_branch_protection"
+OPTIONAL_STRICT_READINESS_CHECK = "strict-readiness / strict_readiness_gate"
+OPTIONAL_PUBLISH_BUNDLE_CHECK = "publish-benchmark-bundle / publish_result_bundle"
+OPTIONAL_REQUIRED_CHECKS = (
+    OPTIONAL_DRIFT_CHECK,
+    OPTIONAL_STRICT_READINESS_CHECK,
+    OPTIONAL_PUBLISH_BUNDLE_CHECK,
+)
 
 
 def extract_required_check_contexts(payload: Mapping[str, Any]) -> set[str]:
@@ -63,10 +70,16 @@ def resolve_required_checks(
     required_checks: Iterable[str] | None,
     *,
     include_drift_check: bool,
+    include_strict_readiness_check: bool,
+    include_publish_bundle_check: bool,
 ) -> list[str]:
     checks = list(required_checks) if required_checks is not None else list(DEFAULT_REQUIRED_CHECKS)
     if include_drift_check:
         checks.append(OPTIONAL_DRIFT_CHECK)
+    if include_strict_readiness_check:
+        checks.append(OPTIONAL_STRICT_READINESS_CHECK)
+    if include_publish_bundle_check:
+        checks.append(OPTIONAL_PUBLISH_BUNDLE_CHECK)
     deduped: list[str] = []
     seen: set[str] = set()
     for check in checks:
@@ -124,6 +137,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=f"Also require `{OPTIONAL_DRIFT_CHECK}`",
     )
+    parser.add_argument(
+        "--include-strict-readiness-check",
+        action="store_true",
+        help=f"Also require `{OPTIONAL_STRICT_READINESS_CHECK}`",
+    )
+    parser.add_argument(
+        "--include-publish-bundle-check",
+        action="store_true",
+        help=f"Also require `{OPTIONAL_PUBLISH_BUNDLE_CHECK}`",
+    )
     parser.add_argument("--json", action="store_true", help="Print summary JSON")
     args = parser.parse_args(argv)
 
@@ -131,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     required_checks = resolve_required_checks(
         args.required_checks,
         include_drift_check=bool(args.include_drift_check),
+        include_strict_readiness_check=bool(args.include_strict_readiness_check),
+        include_publish_bundle_check=bool(args.include_publish_bundle_check),
     )
     summary = verify_branch_protection(
         repo=args.repo,

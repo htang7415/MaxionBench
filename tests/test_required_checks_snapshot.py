@@ -21,6 +21,7 @@ def test_build_required_checks_snapshot_passes_on_repo_defaults() -> None:
     assert checks["jobs_vs_drift_workflow"] is True
     assert checks["jobs_vs_branch_protection_doc"] is True
     assert checks["jobs_vs_pr_template"] is True
+    assert checks["pr_template_optional_contexts_valid"] is True
 
 
 def test_snapshot_required_checks_cli_writes_artifact(tmp_path: Path) -> None:
@@ -98,3 +99,30 @@ def test_snapshot_required_checks_cli_dispatches_arguments(monkeypatch) -> None:
         "--strict",
         "--json",
     ]
+
+
+def test_snapshot_required_checks_strict_mode_fails_on_unexpected_optional_pr_context(tmp_path: Path) -> None:
+    template_src = Path(".github/pull_request_template.md")
+    text = template_src.read_text(encoding="utf-8")
+    mutated = text + "\n- [ ] `random-workflow / unknown_gate` passed (if enforced)\n"
+    template_mut = tmp_path / "pull_request_template.md"
+    template_mut.write_text(mutated, encoding="utf-8")
+    out_path = tmp_path / "required_checks_snapshot.json"
+
+    code = cli_main(
+        [
+            "snapshot-required-checks",
+            "--output",
+            str(out_path),
+            "--pr-template",
+            str(template_mut),
+            "--strict",
+            "--json",
+        ]
+    )
+    assert code == 2
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["pass"] is False
+    assert payload["checks"]["jobs_vs_pr_template"] is False
+    assert payload["checks"]["pr_template_optional_contexts_valid"] is False
+    assert payload["diff"]["unexpected_optional_vs_pr_template"] == ["random-workflow / unknown_gate"]

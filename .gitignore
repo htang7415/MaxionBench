@@ -10,3 +10,12 @@ command-mac.md
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+*.sh
+
+# Local generated benchmark outputs
+artifacts/ci/
+artifacts/conformance/
+artifacts/figures/
+artifacts/runs/
+ci_s1_smoke_local.yaml

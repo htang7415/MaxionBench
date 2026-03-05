@@ -20,16 +20,38 @@ def verify_promotion_gate(
     if not isinstance(payload, dict):
         raise ValueError("Strict readiness summary must be a JSON object")
 
-    pass_value = bool(payload.get("pass", False))
+    pass_raw = payload.get("pass")
+    pass_value = pass_raw if isinstance(pass_raw, bool) else False
     required_adapters = payload.get("required_adapters")
+    allow_nonpass_status_raw = payload.get("allow_nonpass_status")
+    allow_nonpass_status = (
+        allow_nonpass_status_raw if isinstance(allow_nonpass_status_raw, bool) else None
+    )
     error_count = payload.get("error_count", 0)
     conformance_rows = payload.get("conformance_rows", 0)
+    behavior_cards_ok_raw = payload.get("behavior_cards_ok")
+    behavior_cards_ok = behavior_cards_ok_raw if isinstance(behavior_cards_ok_raw, bool) else None
+    errors_field = payload.get("errors")
 
     reasons: list[str] = []
+    if not isinstance(pass_raw, bool):
+        reasons.append("strict readiness summary missing boolean `pass` field")
     if not pass_value:
         reasons.append("strict readiness summary reports pass=false")
     if not isinstance(required_adapters, list) or not required_adapters:
         reasons.append("strict readiness summary missing required_adapters")
+    if allow_nonpass_status is None:
+        reasons.append("strict readiness summary missing boolean `allow_nonpass_status` field")
+    elif allow_nonpass_status:
+        reasons.append("strict readiness summary was generated with allow_nonpass_status=true")
+    if behavior_cards_ok is None:
+        reasons.append("strict readiness summary missing boolean `behavior_cards_ok` field")
+    elif not behavior_cards_ok:
+        reasons.append("strict readiness summary reports behavior_cards_ok=false")
+    if not isinstance(errors_field, list):
+        reasons.append("strict readiness summary missing list `errors` field")
+    elif errors_field:
+        reasons.append("strict readiness summary errors list is not empty")
     try:
         conformance_rows_int = int(conformance_rows)
     except (TypeError, ValueError):
@@ -47,6 +69,13 @@ def verify_promotion_gate(
         "strict_readiness_summary_path": str(path),
         "ready_for_promotion": len(reasons) == 0,
         "reasons": reasons,
+        "strict_readiness_checks": {
+            "pass_field": isinstance(pass_raw, bool),
+            "allow_nonpass_status_field": allow_nonpass_status is not None,
+            "allow_nonpass_status": allow_nonpass_status,
+            "behavior_cards_ok_field": behavior_cards_ok is not None,
+            "behavior_cards_ok": behavior_cards_ok,
+        },
         "summary": payload,
         "pass": len(reasons) == 0,
     }

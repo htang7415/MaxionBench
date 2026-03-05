@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from maxionbench.tools.verify_branch_protection import DEFAULT_REQUIRED_CHECKS
+from maxionbench.tools.verify_branch_protection import DEFAULT_REQUIRED_CHECKS, OPTIONAL_REQUIRED_CHECKS
 
 
 def build_required_checks_snapshot(
@@ -45,6 +45,14 @@ def build_required_checks_snapshot(
     extra_report_preflight_vs_pr = sorted(
         context for context in extra_vs_pr if context.startswith("report-preflight / ")
     )
+    extra_non_report_preflight_vs_pr = sorted(
+        context for context in extra_vs_pr if not context.startswith("report-preflight / ")
+    )
+    unexpected_optional_vs_pr = sorted(
+        context
+        for context in extra_non_report_preflight_vs_pr
+        if context not in set(OPTIONAL_REQUIRED_CHECKS)
+    )
 
     checks = {
         "jobs_vs_defaults": not missing_vs_defaults and not extra_vs_defaults,
@@ -52,8 +60,14 @@ def build_required_checks_snapshot(
         "jobs_vs_branch_protection_doc": not missing_vs_doc and not extra_vs_doc,
         # PR template may include optional checks from other workflows (for example
         # `branch-protection-drift / verify_branch_protection`) as long as all required
-        # report-preflight contexts are present and there are no stale report-preflight contexts.
-        "jobs_vs_pr_template": not missing_vs_pr and not extra_report_preflight_vs_pr,
+        # report-preflight contexts are present, there are no stale report-preflight
+        # contexts, and optional contexts are in the allowlist.
+        "jobs_vs_pr_template": (
+            (not missing_vs_pr)
+            and (not extra_report_preflight_vs_pr)
+            and (not unexpected_optional_vs_pr)
+        ),
+        "pr_template_optional_contexts_valid": not unexpected_optional_vs_pr,
     }
 
     return {
@@ -80,6 +94,8 @@ def build_required_checks_snapshot(
             "missing_vs_pr_template": missing_vs_pr,
             "extra_vs_pr_template": extra_vs_pr,
             "extra_report_preflight_vs_pr_template": extra_report_preflight_vs_pr,
+            "extra_non_report_preflight_vs_pr_template": extra_non_report_preflight_vs_pr,
+            "unexpected_optional_vs_pr_template": unexpected_optional_vs_pr,
         },
         "checks": checks,
         "pass": all(checks.values()),

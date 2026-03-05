@@ -20,6 +20,10 @@ Required checks:
 Optional (recommended once token permissions are stable):
 - `branch-protection-drift / verify_branch_protection`
 
+Optional (manual workflow enforcement, only enable if your policy runs these workflows):
+- `strict-readiness / strict_readiness_gate`
+- `publish-benchmark-bundle / publish_result_bundle`
+
 ## Why these checks are required
 
 - `conformance_readiness_gate` verifies pre-run readiness policy wiring:
@@ -73,6 +77,7 @@ You can verify current GitHub branch protection status via API:
 ```bash
 maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json
 maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --include-drift-check --json
+maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --include-strict-readiness-check --include-publish-bundle-check --json
 ```
 
 Notes:
