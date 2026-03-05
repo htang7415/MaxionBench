@@ -17,11 +17,14 @@ def test_report_preflight_workflow_validates_before_report() -> None:
 
     validate_cmd = "maxionbench validate --input artifacts/runs/ci_preflight --strict-schema --json"
     verify_pins_cmd = "maxionbench verify-pins --config-dir configs/scenarios --json"
+    verify_hygiene_cmd = "pytest -q tests/test_repo_hygiene.py"
     report_cmd = "maxionbench report"
     assert verify_pins_cmd in text
+    assert verify_hygiene_cmd in text
     assert validate_cmd in text
     assert report_cmd in text
     assert text.index(verify_pins_cmd) < text.index(validate_cmd)
+    assert text.index(verify_hygiene_cmd) < text.index(validate_cmd)
     assert text.index(validate_cmd) < text.index(report_cmd)
 
     upload_marker = "uses: actions/upload-artifact@v4"
