@@ -10,6 +10,7 @@ from typing import Any
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 
 PINNED_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
+PINNED_RAG_CRAG_SOURCE = "facebookresearch/CRAG"
 PINNED_RAG_CRAG_PATH = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 PINNED_ANN_QUALITY_TARGETS = [0.80, 0.90, 0.95]
 
@@ -183,6 +184,7 @@ def _verify_d4_real_data_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]
     _expect_equal(errors, path, "d4_max_queries", cfg.d4_max_queries, 5000)
     _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, True)
     if cfg.d4_include_crag:
+        _expect_equal(errors, path, "d4_crag_source", cfg.d4_crag_source, PINNED_RAG_CRAG_SOURCE)
         _expect_equal(errors, path, "d4_crag_path", cfg.d4_crag_path, PINNED_RAG_CRAG_PATH)
     return errors
 

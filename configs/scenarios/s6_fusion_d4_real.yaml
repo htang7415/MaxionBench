@@ -32,6 +32,7 @@ d4_beir_subsets:
   - scifact
   - hotpotqa
 d4_beir_split: test
+d4_crag_source: facebookresearch/CRAG
 d4_crag_path: data/crag_task_1_and_2_dev_v4.jsonl.bz2
 d4_include_crag: true
 d4_max_docs: 200000
