@@ -80,6 +80,22 @@ def test_verify_pins_detects_missing_required_crag_path_for_d4_real(tmp_path: Pa
     assert any("d4_crag_path" in msg for msg in messages)
 
 
+def test_verify_pins_detects_required_crag_source_drift_for_d4_real(tmp_path: Path) -> None:
+    src = Path("configs/scenarios/s4_hybrid_d4_real.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["d4_crag_source"] = "other-org/CRAG"
+
+    out = tmp_path / "s4_hybrid_d4_real.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path)
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("d4_crag_source" in msg for msg in messages)
+
+
 def test_verify_pins_detects_s4_clients_grid_drift(tmp_path: Path) -> None:
     src = Path("configs/scenarios/s4_hybrid.yaml")
     payload = yaml.safe_load(src.read_text(encoding="utf-8"))

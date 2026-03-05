@@ -28,6 +28,7 @@ class RunConfig:
     d4_beir_root: str | None = None
     d4_beir_subsets: list[str] = field(default_factory=lambda: list(DEFAULT_BEIR_SUBSETS))
     d4_beir_split: str = "test"
+    d4_crag_source: str = "facebookresearch/CRAG"
     d4_crag_path: str | None = None
     d4_include_crag: bool = True
     d4_max_docs: int = 200000
