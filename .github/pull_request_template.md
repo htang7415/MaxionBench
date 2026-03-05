@@ -13,7 +13,7 @@ Describe the change and why it is needed.
 ## Artifact/Report Notes
 
 - [ ] If artifact schema/report paths changed, I ran:
-  - `maxionbench validate --input artifacts/runs --json`
+  - `maxionbench validate --input artifacts/runs --strict-schema --json`
   - `maxionbench migrate-stage-timing --input artifacts/runs --dry-run` (if needed)
   - `maxionbench report --input artifacts/runs --mode milestones --out artifacts/figures/milestones`
 

@@ -184,3 +184,4 @@ def test_branch_protection_docs_and_pr_template_reference_required_checks() -> N
     assert check_legacy_resource in template_text
     assert check_legacy_ground_truth in template_text
     assert check_drift in template_text
+    assert "maxionbench validate --input artifacts/runs --strict-schema --json" in template_text
