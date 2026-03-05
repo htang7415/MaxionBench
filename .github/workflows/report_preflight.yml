@@ -101,6 +101,26 @@ jobs:
         run: |
           pytest -q tests/test_branch_protection_policy_sync.py
 
+      - name: Verify Slurm plan consistency
+        run: |
+          mkdir -p artifacts/ci
+          maxionbench verify-slurm-plan --json | tee artifacts/ci/slurm_plan_verify.json
+
+      - name: Verify Slurm plan consistency (GPU omitted mode)
+        run: |
+          mkdir -p artifacts/ci
+          maxionbench verify-slurm-plan --skip-gpu --json | tee artifacts/ci/slurm_plan_verify_skip_gpu.json
+
+      - name: Verify Slurm submit plan dependency topology (dry-run)
+        run: |
+          mkdir -p artifacts/ci
+          maxionbench submit-slurm-plan --dry-run --json | tee artifacts/ci/slurm_submit_plan_dry_run.json
+
+      - name: Verify Slurm submit plan dependency topology (dry-run, GPU omitted)
+        run: |
+          mkdir -p artifacts/ci
+          maxionbench submit-slurm-plan --skip-gpu --dry-run --json | tee artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
+
       - name: Write required checks snapshot
         run: |
           maxionbench snapshot-required-checks \
@@ -187,6 +207,10 @@ jobs:
             ci_s1_smoke.yaml
             artifacts/ci/required_checks_snapshot.json
             artifacts/ci/report_output_policy_summary.json
+            artifacts/ci/slurm_plan_verify.json
+            artifacts/ci/slurm_plan_verify_skip_gpu.json
+            artifacts/ci/slurm_submit_plan_dry_run.json
+            artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
             artifacts/runs/ci_preflight/**
             artifacts/figures/ci_preflight/**
 
