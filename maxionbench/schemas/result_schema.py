@@ -91,6 +91,10 @@ class RunMetadata:
     clients_read: int
     clients_write: int
     quality_target: float
+    ground_truth_source: str
+    ground_truth_metric: str
+    ground_truth_k: int
+    ground_truth_engine: str
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
     sla_threshold_ms: float
@@ -116,6 +120,14 @@ class RunMetadata:
             raise ValueError(f"missing required metadata fields: {missing}")
         if sorted(self.rhu_weights.keys()) != ["w_c", "w_d", "w_g", "w_r"]:
             raise ValueError("rhu_weights must include exactly w_c,w_g,w_r,w_d")
+        if not self.ground_truth_source.strip():
+            raise ValueError("ground_truth_source must be non-empty")
+        if not self.ground_truth_metric.strip():
+            raise ValueError("ground_truth_metric must be non-empty")
+        if not self.ground_truth_engine.strip():
+            raise ValueError("ground_truth_engine must be non-empty")
+        if self.ground_truth_k < 0:
+            raise ValueError("ground_truth_k must be >= 0")
         if self.rhu_references is not None:
             if sorted(self.rhu_references.keys()) != ["c_ref_vcpu", "d_ref_tb", "g_ref_gpu", "r_ref_gib"]:
                 raise ValueError("rhu_references must include c_ref_vcpu,g_ref_gpu,r_ref_gib,d_ref_tb")

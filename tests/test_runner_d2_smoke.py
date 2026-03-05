@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -73,3 +74,7 @@ def test_runner_s1_with_d2_paths(tmp_path: Path) -> None:
     frame = pd.read_parquet(out_dir / "results.parquet")
     assert len(frame) == 1
     assert frame.iloc[0]["dataset_bundle"] == "D2"
+    metadata = json.loads((out_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["ground_truth_source"] == "bigann_ivecs"
+    assert metadata["ground_truth_engine"] == "provided_ground_truth"
+    assert int(metadata["ground_truth_k"]) == 2

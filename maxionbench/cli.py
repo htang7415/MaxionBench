@@ -22,6 +22,9 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_parser = subparsers.add_parser("validate", help="Validate output artifacts")
     validate_parser.add_argument("--input", required=True)
+    validate_mode_group = validate_parser.add_mutually_exclusive_group()
+    validate_mode_group.add_argument("--strict-schema", action="store_true")
+    validate_mode_group.add_argument("--legacy-ok", action="store_true")
     validate_parser.add_argument("--json", action="store_true")
 
     migrate_parser = subparsers.add_parser(
@@ -42,6 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     verify_branch_parser.add_argument("--required-check", action="append", dest="required_checks", default=None)
     verify_branch_parser.add_argument("--include-drift-check", action="store_true")
     verify_branch_parser.add_argument("--json", action="store_true")
+
+    verify_pins_parser = subparsers.add_parser(
+        "verify-pins",
+        help="Verify pinned scenario config values",
+    )
+    verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
+    verify_pins_parser.add_argument("--json", action="store_true")
 
     report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
     report_parser.add_argument("--input", required=True)
@@ -83,7 +93,10 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.validate_outputs import validate_path
         import json
 
-        summary = validate_path(Path(args.input).resolve())
+        summary = validate_path(
+            Path(args.input).resolve(),
+            strict_schema=not bool(args.legacy_ok),
+        )
         if args.json:
             print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
@@ -107,6 +120,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_branch_main(verify_argv)
+    if args.command == "verify-pins":
+        from maxionbench.tools.verify_pins import main as verify_pins_main
+
+        verify_argv: list[str] = ["--config-dir", args.config_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_pins_main(verify_argv)
     if args.command == "report":
         from maxionbench.reports.paper_exports import generate_report_bundle
 

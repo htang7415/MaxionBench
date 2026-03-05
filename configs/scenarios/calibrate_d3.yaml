@@ -14,7 +14,7 @@ clients_write: 0
 clients_grid: [1]
 search_sweep:
   - {}
-rpc_baseline_requests: 10
+rpc_baseline_requests: 1000
 sla_threshold_ms: 80.0
 vector_dim: 64
 num_vectors: 10000

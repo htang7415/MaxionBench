@@ -157,6 +157,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     output_path = output_dir / "results.parquet"
     log_path = output_dir / "logs" / "runner.log"
     first = rows[0]
+    ground_truth = _ground_truth_descriptor(cfg)
     metadata = RunMetadata(
         run_id=first.run_id,
         timestamp_utc=utc_now_iso(),
@@ -169,6 +170,10 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         clients_read=cfg.clients_read,
         clients_write=cfg.clients_write,
         quality_target=cfg.quality_target,
+        ground_truth_source=ground_truth["source"],
+        ground_truth_metric=ground_truth["metric"],
+        ground_truth_k=ground_truth["k"],
+        ground_truth_engine=ground_truth["engine"],
         rtt_baseline_ms_p50=first.rtt_baseline_ms_p50,
         rtt_baseline_ms_p99=first.rtt_baseline_ms_p99,
         sla_threshold_ms=cfg.sla_threshold_ms,
@@ -981,6 +986,61 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
         beta_time=cfg.d3_beta_time,
         seed=cfg.d3_seed,
     )
+
+
+def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:
+    ann_k = max(1, min(10, int(cfg.top_k)))
+    scenario = cfg.scenario.lower()
+    dataset = cfg.dataset_bundle.upper()
+
+    if scenario == "calibrate_d3":
+        return {
+            "source": "d3_calibration_eval",
+            "metric": "calibration_proxy",
+            "k": 0,
+            "engine": "synthetic_calibration",
+        }
+    if dataset == "D4":
+        if cfg.d4_use_real_data:
+            return {
+                "source": "official_beir_crag_qrels",
+                "metric": "ndcg_at_10",
+                "k": 10,
+                "engine": "beir_crag_qrels",
+            }
+        return {
+            "source": "synthetic_d4_qrels",
+            "metric": "ndcg_at_10",
+            "k": 10,
+            "engine": "synthetic_qrels",
+        }
+    if dataset == "D3":
+        return {
+            "source": "exact_filtered_subset",
+            "metric": "recall_at_10",
+            "k": ann_k,
+            "engine": "numpy_exact",
+        }
+    if dataset == "D2" and cfg.d2_gt_ivecs_path:
+        return {
+            "source": "bigann_ivecs",
+            "metric": "recall_at_10",
+            "k": ann_k,
+            "engine": "provided_ground_truth",
+        }
+    if dataset in {"D1", "D2"}:
+        return {
+            "source": "exact_topk",
+            "metric": "recall_at_10",
+            "k": ann_k,
+            "engine": "numpy_exact",
+        }
+    return {
+        "source": "unknown",
+        "metric": "unknown",
+        "k": ann_k,
+        "engine": "unknown",
+    }
 
 
 def _resource_profile_and_rate_for_cfg(*, cfg: RunConfig, stats: Any, client_count: int) -> tuple[ResourceProfile, float]:

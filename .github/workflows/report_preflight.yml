@@ -27,6 +27,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,reporting]"
 
+      - name: Verify pinned scenario configs
+        run: |
+          maxionbench verify-pins --config-dir configs/scenarios --json
+
       - name: Write smoke scenario config
         run: |
           cat > ci_s1_smoke.yaml <<'YAML'
@@ -69,7 +73,7 @@ jobs:
 
       - name: Validate artifacts preflight
         run: |
-          maxionbench validate --input artifacts/runs/ci_preflight --json
+          maxionbench validate --input artifacts/runs/ci_preflight --strict-schema --json
 
       - name: Generate report bundle
         run: |
@@ -185,7 +189,7 @@ jobs:
 
       - name: Validate migrated artifacts
         run: |
-          maxionbench validate --input artifacts/runs/ci_legacy --json
+          maxionbench validate --input artifacts/runs/ci_legacy --strict-schema --json
 
       - name: Generate report after migration
         run: |
@@ -210,3 +214,242 @@ jobs:
             ci_s1_legacy.yaml
             artifacts/runs/ci_legacy/**
             artifacts/figures/ci_legacy/**
+
+  legacy_resource_profile_path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,reporting]"
+
+      - name: Write legacy resource scenario config
+        run: |
+          cat > ci_s1_legacy_resource.yaml <<'YAML'
+          engine: mock
+          engine_version: "0.1.0"
+          scenario: s1_ann_frontier
+          dataset_bundle: D1
+          dataset_hash: synthetic-d1-v1
+          seed: 31
+          repeats: 1
+          no_retry: true
+          output_dir: artifacts/runs/ci_legacy_resource
+          quality_target: 0.8
+          quality_targets: [0.8]
+          clients_read: 1
+          clients_write: 0
+          clients_grid: [1]
+          search_sweep:
+            - {hnsw_ef: 32}
+          rpc_baseline_requests: 5
+          sla_threshold_ms: 50.0
+          vector_dim: 12
+          num_vectors: 120
+          num_queries: 8
+          top_k: 10
+          warmup_s: 0.02
+          steady_state_s: 0.02
+          phase_timing_mode: strict
+          phase_max_requests_per_phase: 12
+          YAML
+
+      - name: Generate legacy resource smoke run artifacts
+        run: |
+          maxionbench run \
+            --config ci_s1_legacy_resource.yaml \
+            --seed 31 \
+            --repeats 1 \
+            --no-retry \
+            --output-dir artifacts/runs/ci_legacy_resource
+
+      - name: Drop RHU resource fields to emulate legacy artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+
+          run_dir = Path("artifacts/runs/ci_legacy_resource")
+          results_path = run_dir / "results.parquet"
+          frame = pd.read_parquet(results_path)
+          frame = frame.drop(columns=["resource_cpu_vcpu", "resource_gpu_count", "resource_ram_gib", "resource_disk_tb", "rhu_rate"])
+          frame.to_parquet(results_path, index=False)
+
+          metadata_path = run_dir / "run_metadata.json"
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          metadata.pop("resource_profile", None)
+          metadata.pop("rhu_references", None)
+          metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Assert strict validation fails for legacy resource artifact
+        run: |
+          set +e
+          output="$(maxionbench validate --input artifacts/runs/ci_legacy_resource --strict-schema --json 2>&1)"
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "Expected strict validation to fail for legacy resource artifact"
+            exit 1
+          fi
+          echo "${output}" | grep -q "missing resource columns"
+
+      - name: Capture legacy-compatible validation warnings
+        run: |
+          maxionbench validate --input artifacts/runs/ci_legacy_resource --legacy-ok --json \
+            > artifacts/runs/ci_legacy_resource/legacy_ok_validate.json
+          cat artifacts/runs/ci_legacy_resource/legacy_ok_validate.json
+
+      - name: Assert report fails before regeneration
+        run: |
+          set +e
+          output="$(maxionbench report --input artifacts/runs/ci_legacy_resource --mode milestones --out artifacts/figures/ci_legacy_resource 2>&1)"
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "Expected report command to fail for legacy resource artifact"
+            exit 1
+          fi
+          echo "${output}" | grep -q "RHU resource profile"
+
+      - name: Upload legacy resource artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-legacy-resource-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ci_s1_legacy_resource.yaml
+            artifacts/runs/ci_legacy_resource/**
+            artifacts/figures/ci_legacy_resource/**
+
+  legacy_ground_truth_metadata_path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,reporting]"
+
+      - name: Write legacy ground-truth scenario config
+        run: |
+          cat > ci_s1_legacy_ground_truth.yaml <<'YAML'
+          engine: mock
+          engine_version: "0.1.0"
+          scenario: s1_ann_frontier
+          dataset_bundle: D1
+          dataset_hash: synthetic-d1-v1
+          seed: 41
+          repeats: 1
+          no_retry: true
+          output_dir: artifacts/runs/ci_legacy_ground_truth
+          quality_target: 0.8
+          quality_targets: [0.8]
+          clients_read: 1
+          clients_write: 0
+          clients_grid: [1]
+          search_sweep:
+            - {hnsw_ef: 32}
+          rpc_baseline_requests: 5
+          sla_threshold_ms: 50.0
+          vector_dim: 12
+          num_vectors: 120
+          num_queries: 8
+          top_k: 10
+          warmup_s: 0.02
+          steady_state_s: 0.02
+          phase_timing_mode: strict
+          phase_max_requests_per_phase: 12
+          YAML
+
+      - name: Generate legacy ground-truth smoke run artifacts
+        run: |
+          maxionbench run \
+            --config ci_s1_legacy_ground_truth.yaml \
+            --seed 41 \
+            --repeats 1 \
+            --no-retry \
+            --output-dir artifacts/runs/ci_legacy_ground_truth
+
+      - name: Drop ground-truth metadata fields to emulate legacy artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          metadata_path = Path("artifacts/runs/ci_legacy_ground_truth/run_metadata.json")
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          metadata.pop("ground_truth_source", None)
+          metadata.pop("ground_truth_metric", None)
+          metadata.pop("ground_truth_k", None)
+          metadata.pop("ground_truth_engine", None)
+          metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Assert strict validation fails for legacy ground-truth artifact
+        run: |
+          set +e
+          output="$(maxionbench validate --input artifacts/runs/ci_legacy_ground_truth --strict-schema --json 2>&1)"
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "Expected strict validation to fail for legacy ground-truth artifact"
+            exit 1
+          fi
+          echo "${output}" | grep -q "missing ground truth metadata keys"
+
+      - name: Capture legacy-compatible ground-truth validation warnings
+        run: |
+          maxionbench validate --input artifacts/runs/ci_legacy_ground_truth --legacy-ok --json \
+            > artifacts/runs/ci_legacy_ground_truth/legacy_ok_validate.json
+          cat artifacts/runs/ci_legacy_ground_truth/legacy_ok_validate.json
+
+      - name: Assert report fails before regeneration
+        run: |
+          set +e
+          output="$(maxionbench report --input artifacts/runs/ci_legacy_ground_truth --mode milestones --out artifacts/figures/ci_legacy_ground_truth 2>&1)"
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "Expected report command to fail for legacy ground-truth artifact"
+            exit 1
+          fi
+          echo "${output}" | grep -q "ground truth metadata"
+
+      - name: Upload legacy ground-truth artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-legacy-ground-truth-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ci_s1_legacy_ground_truth.yaml
+            artifacts/runs/ci_legacy_ground_truth/**
+            artifacts/figures/ci_legacy_ground_truth/**

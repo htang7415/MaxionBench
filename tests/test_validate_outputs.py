@@ -54,6 +54,8 @@ def test_validate_path_supports_parent_directory(tmp_path: Path) -> None:
     run2 = _make_run(runs_root, name="run-b", seed=19)
     summary = validate_path(runs_root)
     assert {Path(item["run_path"]) for item in summary["runs"]} == {run1, run2}
+    assert summary["strict_schema"] is True
+    assert summary["warning_count"] == 0
     assert int(summary["run_count"]) == 2
     assert int(summary["total_rows"]) == 2
 
@@ -140,3 +142,65 @@ def test_validate_run_directory_rejects_missing_resource_metadata(tmp_path: Path
 
     with pytest.raises(ValueError, match="missing required RHU metadata mapping: resource_profile"):
         validate_run_directory(run_dir)
+
+
+def test_validate_run_directory_rejects_missing_ground_truth_metadata(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-missing-ground-truth-meta", seed=45)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("ground_truth_source", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing ground truth metadata keys"):
+        validate_run_directory(run_dir)
+
+
+def test_validate_run_directory_rejects_non_integer_ground_truth_k(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-bad-ground-truth-k", seed=46)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["ground_truth_k"] = 10.5
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="ground_truth_k"):
+        validate_run_directory(run_dir)
+
+
+def test_validate_path_legacy_ok_allows_schema_drift_with_warnings(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-legacy-ok", seed=47)
+    results_path = run_dir / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    legacy = frame.drop(columns=["resource_cpu_vcpu", "resource_gpu_count", "resource_ram_gib", "resource_disk_tb", "rhu_rate"])
+    legacy = legacy.drop(columns=["setup_elapsed_s", "warmup_elapsed_s", "measure_elapsed_s", "export_elapsed_s"])
+    legacy.to_parquet(results_path, index=False)
+    (run_dir / "logs" / "runner.log").unlink()
+
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("resource_profile", None)
+    metadata.pop("ground_truth_engine", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    summary = validate_path(run_dir, strict_schema=False)
+    assert summary["strict_schema"] is False
+    assert int(summary["warning_count"]) > 0
+    run_summary = summary["runs"][0]
+    assert run_summary["stage_timing_ok"] is False
+    assert run_summary["resource_fields_ok"] is False
+    assert run_summary["ground_truth_metadata_ok"] is False
+    assert run_summary["resource_metadata_ok"] is False
+    assert run_summary["logs_ok"] is False
+
+
+def test_validate_cli_legacy_ok_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run_dir = _make_run(tmp_path, name="run-cli-legacy", seed=53)
+    results_path = run_dir / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    legacy = frame.drop(columns=["resource_cpu_vcpu", "resource_gpu_count", "resource_ram_gib", "resource_disk_tb", "rhu_rate"])
+    legacy.to_parquet(results_path, index=False)
+
+    code = cli_main(["validate", "--input", str(run_dir), "--legacy-ok", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strict_schema"] is False
+    assert int(payload["warning_count"]) > 0
