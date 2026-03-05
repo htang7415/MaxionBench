@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from typing import Any
 
 from .plots import generate_figures, load_results
 from .tables import export_tables
 from maxionbench.tools.validate_outputs import validate_path
 
-_MILESTONE_ROOT = Path("artifacts/figures/milestones").resolve()
 _MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
 
 
@@ -50,22 +50,24 @@ def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict
         raise
     frame = load_results(input_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    figure_paths = generate_figures(input_dir=input_dir, out_dir=out_dir, mode=mode)
-    table_paths = export_tables(frame=frame, out_dir=out_dir, mode=mode)
+    output_policy = _report_output_policy(mode=mode, out_dir=out_dir)
+    figure_paths = generate_figures(input_dir=input_dir, out_dir=out_dir, mode=mode, output_policy=output_policy)
+    table_paths = export_tables(frame=frame, out_dir=out_dir, mode=mode, output_policy=output_policy)
     return {"figures": figure_paths, "tables": table_paths}
 
 
 def _enforce_report_output_path_policy(*, mode: str, out_dir: Path) -> None:
     if mode != "milestones":
         return
+    milestone_root = _milestone_root()
     resolved_out = out_dir.resolve()
-    if resolved_out == _MILESTONE_ROOT:
+    if resolved_out == milestone_root:
         raise ValueError(
             "Milestone report output must use an explicit milestone directory `artifacts/figures/milestones/Mx` "
             "(for example `artifacts/figures/milestones/M3`)."
         )
     try:
-        rel = resolved_out.relative_to(_MILESTONE_ROOT)
+        rel = resolved_out.relative_to(milestone_root)
     except ValueError:
         return
     if not rel.parts:
@@ -77,3 +79,31 @@ def _enforce_report_output_path_policy(*, mode: str, out_dir: Path) -> None:
             "Milestone report output under `artifacts/figures/milestones/` must start with an `Mx` directory "
             "(for example `artifacts/figures/milestones/M2`)."
         )
+
+
+def _report_output_policy(*, mode: str, out_dir: Path) -> dict[str, Any]:
+    resolved_out = out_dir.resolve()
+    policy: dict[str, Any] = {
+        "mode": mode,
+        "resolved_out_dir": str(resolved_out),
+        "output_path_class": "final",
+        "milestone_id": None,
+    }
+    if mode != "milestones":
+        return policy
+
+    policy["output_path_class"] = "milestones_noncanonical"
+    milestone_root = _milestone_root()
+    policy["milestone_root"] = str(milestone_root)
+    try:
+        rel = resolved_out.relative_to(milestone_root)
+    except ValueError:
+        return policy
+    if rel.parts and _MILESTONE_ID_RE.fullmatch(rel.parts[0]):
+        policy["output_path_class"] = "milestones_mx"
+        policy["milestone_id"] = rel.parts[0]
+    return policy
+
+
+def _milestone_root() -> Path:
+    return Path("artifacts/figures/milestones").resolve()

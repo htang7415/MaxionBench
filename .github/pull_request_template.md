@@ -4,6 +4,7 @@ Describe the change and why it is needed.
 
 ## Validation
 
+- [ ] `report-preflight / conformance_readiness_gate` passed
 - [ ] `report-preflight / report_preflight` passed
 - [ ] `report-preflight / legacy_migration_path` passed
 - [ ] `report-preflight / legacy_resource_profile_path` passed

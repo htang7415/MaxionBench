@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 
 import pandas as pd
 import pytest
@@ -217,3 +218,91 @@ def test_gpu_count_resolution() -> None:
 
     explicit_cfg = RunConfig(engine="mock", adapter_options={"gpu_count": 2}, no_retry=True)
     assert _gpu_count_for_cfg(explicit_cfg) == 2.0
+
+
+def test_runner_enforce_readiness_allows_mock_without_matrix(tmp_path: Path) -> None:
+    config = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "synthetic-d1-v1",
+        "seed": 83,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-readiness-mock"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 12,
+        "num_vectors": 120,
+        "num_queries": 8,
+        "top_k": 10,
+    }
+    cfg_path = tmp_path / "config-readiness-mock.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(config, handle, sort_keys=True)
+
+    out_dir = run_from_config(
+        cfg_path,
+        cli_overrides={
+            "enforce_readiness": True,
+            "conformance_matrix": str(tmp_path / "missing_conformance.csv"),
+            "behavior_dir": str(tmp_path / "missing_behavior"),
+        },
+    )
+    assert (out_dir / "results.parquet").exists()
+    resolved = yaml.safe_load((out_dir / "config_resolved.yaml").read_text(encoding="utf-8"))
+    assert isinstance(resolved, dict)
+    readiness = resolved.get("readiness")
+    assert isinstance(readiness, dict)
+    assert readiness.get("enforced") is True
+
+
+def test_runner_enforce_readiness_blocks_real_engine_when_not_ready(tmp_path: Path) -> None:
+    config = {
+        "engine": "qdrant",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "synthetic-d1-v1",
+        "seed": 89,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-readiness-qdrant"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 12,
+        "num_vectors": 120,
+        "num_queries": 8,
+        "top_k": 10,
+    }
+    cfg_path = tmp_path / "config-readiness-qdrant.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(config, handle, sort_keys=True)
+
+    conformance_matrix = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame([{"adapter": "mock", "status": "pass"}]).to_csv(conformance_matrix, index=False)
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    with pytest.raises(RuntimeError, match="pre-run readiness gate failed"):
+        run_from_config(
+            cfg_path,
+            cli_overrides={
+                "enforce_readiness": True,
+                "conformance_matrix": str(conformance_matrix),
+                "behavior_dir": str(behavior_dir),
+            },
+        )

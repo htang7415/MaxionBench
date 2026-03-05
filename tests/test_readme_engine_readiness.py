@@ -1,0 +1,14 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
+    text = Path("README.md").read_text(encoding="utf-8")
+    assert "verify-behavior-cards" in text
+    assert "verify-engine-readiness" in text
+    assert "allow-nonpass-status" in text
+    assert "conformance_readiness_gate" in text
+    assert "strict_readiness.yml" in text
+    assert "pre-run-gate" in text
+    assert "pre-run-gate --config ci_s1_smoke.yaml --json" in text

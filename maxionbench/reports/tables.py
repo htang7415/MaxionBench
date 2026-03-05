@@ -9,7 +9,13 @@ from typing import Any
 import pandas as pd
 
 
-def export_tables(*, frame: pd.DataFrame, out_dir: Path, mode: str) -> list[Path]:
+def export_tables(
+    *,
+    frame: pd.DataFrame,
+    out_dir: Path,
+    mode: str,
+    output_policy: dict[str, Any] | None = None,
+) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
 
@@ -47,6 +53,7 @@ def export_tables(*, frame: pd.DataFrame, out_dir: Path, mode: str) -> list[Path
         "config_fingerprints": sorted(
             {str(v) for v in frame.get("__meta_config_fingerprint", pd.Series(dtype=str)).tolist() if str(v)}
         ),
+        "output_policy": dict(output_policy or {}),
     }
     stats_path = out_dir / f"{mode}_summary.meta.json"
     with stats_path.open("w", encoding="utf-8") as handle:

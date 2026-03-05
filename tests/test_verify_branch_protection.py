@@ -24,6 +24,7 @@ def test_evaluate_branch_protection_detects_missing_checks() -> None:
     summary = verify_mod.evaluate_branch_protection(
         payload,
         required_checks=[
+            "report-preflight / conformance_readiness_gate",
             "report-preflight / report_preflight",
             "report-preflight / legacy_migration_path",
             "report-preflight / legacy_resource_profile_path",
@@ -32,6 +33,7 @@ def test_evaluate_branch_protection_detects_missing_checks() -> None:
     )
     assert summary["pass"] is False
     assert set(summary["missing_checks"]) == {
+        "report-preflight / conformance_readiness_gate",
         "report-preflight / legacy_migration_path",
         "report-preflight / legacy_resource_profile_path",
         "report-preflight / legacy_ground_truth_metadata_path",
@@ -40,6 +42,7 @@ def test_evaluate_branch_protection_detects_missing_checks() -> None:
 
 def test_resolve_required_checks_optionally_includes_drift_check() -> None:
     checks = verify_mod.resolve_required_checks(None, include_drift_check=False)
+    assert "report-preflight / conformance_readiness_gate" in checks
     assert "report-preflight / report_preflight" in checks
     assert "report-preflight / legacy_migration_path" in checks
     assert "report-preflight / legacy_resource_profile_path" in checks
@@ -54,6 +57,7 @@ def test_verify_main_and_cli_return_expected_exit_codes(monkeypatch: pytest.Monk
     passing_payload = {
         "required_status_checks": {
             "contexts": [
+                "report-preflight / conformance_readiness_gate",
                 "report-preflight / report_preflight",
                 "report-preflight / legacy_migration_path",
                 "report-preflight / legacy_resource_profile_path",
@@ -85,6 +89,7 @@ def test_verify_main_and_cli_return_expected_exit_codes(monkeypatch: pytest.Monk
     drift_passing_payload = {
         "required_status_checks": {
             "contexts": [
+                "report-preflight / conformance_readiness_gate",
                 "report-preflight / report_preflight",
                 "report-preflight / legacy_migration_path",
                 "report-preflight / legacy_resource_profile_path",

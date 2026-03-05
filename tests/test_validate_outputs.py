@@ -13,7 +13,7 @@ from maxionbench.tools.migrate_stage_timing import backfill_path
 from maxionbench.tools.validate_outputs import validate_path, validate_run_directory
 
 
-def _make_run(tmp_path: Path, *, name: str, seed: int) -> Path:
+def _make_run(tmp_path: Path, *, name: str, seed: int, overrides: dict[str, object] | None = None) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     config = {
         "engine": "mock",
@@ -42,6 +42,8 @@ def _make_run(tmp_path: Path, *, name: str, seed: int) -> Path:
         "phase_timing_mode": "strict",
         "phase_max_requests_per_phase": 12,
     }
+    if overrides:
+        config.update(overrides)
     cfg_path = tmp_path / f"{name}.yaml"
     with cfg_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(config, handle, sort_keys=True)
@@ -55,6 +57,7 @@ def test_validate_path_supports_parent_directory(tmp_path: Path) -> None:
     summary = validate_path(runs_root)
     assert {Path(item["run_path"]) for item in summary["runs"]} == {run1, run2}
     assert summary["strict_schema"] is True
+    assert summary["enforce_protocol"] is False
     assert summary["warning_count"] == 0
     assert int(summary["run_count"]) == 2
     assert int(summary["total_rows"]) == 2
@@ -216,4 +219,73 @@ def test_validate_cli_legacy_ok_json(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["strict_schema"] is False
+    assert payload["enforce_protocol"] is False
     assert int(payload["warning_count"]) > 0
+
+
+def test_validate_run_directory_enforce_protocol_rejects_smoke_runtime_values(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-protocol-fail", seed=59)
+    with pytest.raises(ValueError, match="pinned protocol"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_path_enforce_protocol_legacy_ok_reports_warnings(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-protocol-legacy", seed=61)
+    summary = validate_path(run_dir, strict_schema=False, enforce_protocol=True)
+    assert summary["strict_schema"] is False
+    assert summary["enforce_protocol"] is True
+    assert int(summary["warning_count"]) > 0
+    run_summary = summary["runs"][0]
+    assert run_summary["runtime_protocol_ok"] is False
+
+
+def test_validate_cli_legacy_ok_with_enforce_protocol_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = _make_run(tmp_path, name="run-cli-protocol-legacy", seed=67)
+    code = cli_main(["validate", "--input", str(run_dir), "--legacy-ok", "--enforce-protocol", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["strict_schema"] is False
+    assert payload["enforce_protocol"] is True
+    assert int(payload["warning_count"]) > 0
+
+
+def test_validate_run_directory_enforce_protocol_rejects_scenario_pin_drift(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-scenario-drift",
+        seed=71,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    with pytest.raises(ValueError, match="clients_grid"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_s1_quality_target_drift(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-quality-drift",
+        seed=73,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    with pytest.raises(ValueError, match="quality_targets"):
+        validate_run_directory(run_dir, enforce_protocol=True)

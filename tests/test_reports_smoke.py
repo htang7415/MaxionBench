@@ -43,6 +43,22 @@ def _make_run(tmp_path: Path) -> Path:
     return run_from_config(cfg_path, cli_overrides=None)
 
 
+def _assert_output_policy(
+    meta: dict[str, object],
+    *,
+    expected_path_class: str,
+    expected_milestone_id: str | None,
+) -> None:
+    policy = meta.get("output_policy")
+    assert isinstance(policy, dict)
+    assert policy.get("output_path_class") == expected_path_class
+    assert policy.get("milestone_id") == expected_milestone_id
+    assert isinstance(policy.get("mode"), str)
+    assert isinstance(policy.get("resolved_out_dir"), str)
+    if expected_path_class.startswith("milestones_"):
+        assert isinstance(policy.get("milestone_root"), str)
+
+
 def test_report_bundle_smoke(tmp_path: Path) -> None:
     run_dir = _make_run(tmp_path)
     out_dir = tmp_path / "figures"
@@ -67,6 +83,7 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert int(meta["font_size"]) == 16
     assert int(meta["panel_pixels"]) == 600
     assert int(meta["dpi"]) == 100
+    _assert_output_policy(meta, expected_path_class="milestones_noncanonical", expected_milestone_id=None)
 
     assert (out_dir / "m8_deferred_note.md").exists()
     assert (out_dir / "m8_deferred_note.meta.json").exists()
@@ -75,6 +92,7 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert deferred_meta["seeds"]
     assert deferred_meta["run_ids"]
     assert deferred_meta["config_fingerprints"]
+    _assert_output_policy(deferred_meta, expected_path_class="milestones_noncanonical", expected_milestone_id=None)
     assert (out_dir / "T1_environment_runtime_pinning.csv").exists()
     assert (out_dir / "T2_matched_quality_throughput_rhu.csv").exists()
     assert (out_dir / "T3_robustness_summary.csv").exists()
@@ -111,6 +129,7 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     summary_meta = json.loads((out_dir / "milestones_summary.meta.json").read_text(encoding="utf-8"))
     assert summary_meta["run_ids"]
     assert summary_meta["config_fingerprints"]
+    _assert_output_policy(summary_meta, expected_path_class="milestones_noncanonical", expected_milestone_id=None)
 
 
 def test_report_cli_smoke(tmp_path: Path) -> None:
@@ -121,6 +140,8 @@ def test_report_cli_smoke(tmp_path: Path) -> None:
     assert any(out_dir.glob("*.png"))
     assert (out_dir / "F5_deferred_note.md").exists()
     assert (out_dir / "F5_deferred_note.meta.json").exists()
+    summary_meta = json.loads((out_dir / "final_summary.meta.json").read_text(encoding="utf-8"))
+    _assert_output_policy(summary_meta, expected_path_class="final", expected_milestone_id=None)
 
 
 def test_report_cli_milestone_id_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,6 +153,24 @@ def test_report_cli_milestone_id_smoke(tmp_path: Path, monkeypatch: pytest.Monke
     assert any(out_dir.glob("*.png"))
     assert (out_dir / "m8_deferred_note.md").exists()
     assert (out_dir / "m8_deferred_note.meta.json").exists()
+    first_png_path = next(out_dir.glob("*.png"))
+    first_meta_path = first_png_path.with_suffix(".meta.json")
+    first_meta = json.loads(first_meta_path.read_text(encoding="utf-8"))
+    _assert_output_policy(first_meta, expected_path_class="milestones_mx", expected_milestone_id="M3")
+
+
+def test_report_meta_sidecars_all_include_output_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_dir = _make_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    code = cli_main(["report", "--input", str(run_dir.parent), "--mode", "milestones", "--milestone-id", "M4"])
+    assert code == 0
+    out_dir = tmp_path / "artifacts" / "figures" / "milestones" / "M4"
+    meta_paths = sorted(out_dir.glob("*.meta.json"))
+    assert meta_paths
+    for meta_path in meta_paths:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
+        _assert_output_policy(payload, expected_path_class="milestones_mx", expected_milestone_id="M4")
 
 
 def test_report_cli_rejects_invalid_milestone_id(tmp_path: Path) -> None:

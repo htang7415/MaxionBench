@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from maxionbench.cli import main as cli_main
+from maxionbench.tools.verify_promotion_gate import verify_promotion_gate
+
+
+def test_verify_promotion_gate_passes_for_strict_ready_summary(tmp_path: Path) -> None:
+    summary_path = tmp_path / "engine_readiness_summary.json"
+    payload = {
+        "pass": True,
+        "required_adapters": ["qdrant", "pgvector"],
+        "error_count": 0,
+        "conformance_rows": 2,
+    }
+    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    summary = verify_promotion_gate(strict_readiness_summary_path=summary_path)
+    assert summary["pass"] is True
+    assert summary["ready_for_promotion"] is True
+    assert summary["reasons"] == []
+
+
+def test_verify_promotion_gate_fails_for_nonpassing_summary(tmp_path: Path) -> None:
+    summary_path = tmp_path / "engine_readiness_summary.json"
+    payload = {
+        "pass": False,
+        "required_adapters": ["qdrant", "pgvector"],
+        "error_count": 1,
+        "conformance_rows": 2,
+    }
+    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    summary = verify_promotion_gate(strict_readiness_summary_path=summary_path)
+    assert summary["pass"] is False
+    assert summary["ready_for_promotion"] is False
+    assert summary["reasons"]
+
+
+def test_verify_promotion_gate_cli_exit_code(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    summary_path = tmp_path / "engine_readiness_summary.json"
+    payload = {
+        "pass": False,
+        "required_adapters": [],
+        "error_count": 2,
+        "conformance_rows": 0,
+    }
+    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    code = cli_main(["verify-promotion-gate", "--strict-readiness-summary", str(summary_path), "--json"])
+    assert code == 2
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["pass"] is False
+    assert parsed["reasons"]
+
+
+def test_verify_promotion_gate_missing_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        verify_promotion_gate(strict_readiness_summary_path=tmp_path / "missing.json")

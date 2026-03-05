@@ -6,6 +6,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export PYTHONUNBUFFERED=1
 export MAXIONBENCH_SCRATCH_SAFETY_FACTOR="${MAXIONBENCH_SCRATCH_SAFETY_FACTOR:-1.8}"
+export MAXIONBENCH_SKIP_PRE_RUN_GATE="${MAXIONBENCH_SKIP_PRE_RUN_GATE:-0}"
+export MAXIONBENCH_ALLOW_GPU_UNAVAILABLE="${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}"
+export MAXIONBENCH_CONFORMANCE_MATRIX="${MAXIONBENCH_CONFORMANCE_MATRIX:-${ROOT_DIR}/artifacts/conformance/conformance_matrix.csv}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -176,6 +179,22 @@ mb_run_benchmark() {
   shift || true
   local resolved_config
   resolved_config="$(mb_resolve_config "${config_path}")"
+  if [[ "${MAXIONBENCH_SKIP_PRE_RUN_GATE}" != "1" ]]; then
+    local gate_args=(
+      pre-run-gate
+      --config "${resolved_config}"
+      --conformance-matrix "${MAXIONBENCH_CONFORMANCE_MATRIX}"
+      --behavior-dir "${ROOT_DIR}/docs/behavior"
+      --json
+    )
+    if [[ "${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE}" == "1" ]]; then
+      gate_args+=(--allow-gpu-unavailable)
+    fi
+    mb_log "running pre-run readiness gate for config=${resolved_config}"
+    python -m maxionbench.cli "${gate_args[@]}"
+  else
+    mb_log "skipping pre-run readiness gate (MAXIONBENCH_SKIP_PRE_RUN_GATE=1)"
+  fi
   mb_log "running scenario config=${resolved_config}"
   python -m maxionbench.orchestration.runner \
     --config "${resolved_config}" \

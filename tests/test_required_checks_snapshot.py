@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from maxionbench.cli import main as cli_main
+from maxionbench.tools import required_checks_snapshot as snapshot_mod
 from maxionbench.tools.required_checks_snapshot import build_required_checks_snapshot
 
 
@@ -55,3 +56,45 @@ def test_snapshot_required_checks_strict_mode_fails_on_mismatch(tmp_path: Path) 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["pass"] is False
     assert payload["checks"]["jobs_vs_branch_protection_doc"] is False
+
+
+def test_snapshot_required_checks_cli_dispatches_arguments(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 29
+
+    monkeypatch.setattr(snapshot_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "snapshot-required-checks",
+            "--output",
+            "artifacts/ci/snapshot.json",
+            "--report-workflow",
+            ".github/workflows/report_preflight.yml",
+            "--drift-workflow",
+            ".github/workflows/branch_protection_drift.yml",
+            "--branch-protection-doc",
+            "docs/ci/branch_protection.md",
+            "--pr-template",
+            ".github/pull_request_template.md",
+            "--strict",
+            "--json",
+        ]
+    )
+    assert code == 29
+    assert captured["argv"] == [
+        "--output",
+        "artifacts/ci/snapshot.json",
+        "--report-workflow",
+        ".github/workflows/report_preflight.yml",
+        "--drift-workflow",
+        ".github/workflows/branch_protection_drift.yml",
+        "--branch-protection-doc",
+        "docs/ci/branch_protection.md",
+        "--pr-template",
+        ".github/pull_request_template.md",
+        "--strict",
+        "--json",
+    ]

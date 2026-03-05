@@ -118,19 +118,46 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     parser.add_argument("--no-retry", action="store_true", default=None)
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--d3-params", default=None, help="Optional path to d3_params.yaml")
+    parser.add_argument("--enforce-readiness", action="store_true")
+    parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    parser.add_argument("--behavior-dir", default="docs/behavior")
+    parser.add_argument("--allow-gpu-unavailable", action="store_true")
     return parser.parse_args(argv)
 
 
 def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = None) -> Path:
     overrides = dict(cli_overrides or {})
     d3_params_path = overrides.pop("d3_params", None)
+    enforce_readiness = bool(overrides.pop("enforce_readiness", False))
+    conformance_matrix = Path(str(overrides.pop("conformance_matrix", "artifacts/conformance/conformance_matrix.csv")))
+    behavior_dir = Path(str(overrides.pop("behavior_dir", "docs/behavior")))
+    allow_gpu_unavailable = bool(overrides.pop("allow_gpu_unavailable", False))
     cfg = load_run_config(config_path, overrides=overrides)
     output_dir = Path(cfg.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "logs").mkdir(parents=True, exist_ok=True)
 
+    if enforce_readiness:
+        from maxionbench.tools.pre_run_gate import evaluate_pre_run_gate
+
+        gate_summary = evaluate_pre_run_gate(
+            config_path=config_path.resolve(),
+            conformance_matrix_path=conformance_matrix.resolve(),
+            behavior_dir=behavior_dir.resolve(),
+            allow_gpu_unavailable=allow_gpu_unavailable,
+            allow_mock=True,
+        )
+        if not bool(gate_summary.get("pass", False)):
+            raise RuntimeError(f"pre-run readiness gate failed: {json.dumps(gate_summary, sort_keys=True)}")
+
     config_payload = cfg.as_dict()
     config_payload["d3_params"] = d3_params_path
+    config_payload["readiness"] = {
+        "enforced": enforce_readiness,
+        "conformance_matrix": str(conformance_matrix),
+        "behavior_dir": str(behavior_dir),
+        "allow_gpu_unavailable": allow_gpu_unavailable,
+    }
     config_fingerprint = stable_config_fingerprint(config_payload)
 
     if cfg.scenario == "calibrate_d3":
@@ -1201,6 +1228,10 @@ def main(argv: list[str] | None = None) -> int:
         "no_retry": args.no_retry if args.no_retry is True else None,
         "output_dir": args.output_dir,
         "d3_params": args.d3_params,
+        "enforce_readiness": args.enforce_readiness,
+        "conformance_matrix": args.conformance_matrix,
+        "behavior_dir": args.behavior_dir,
+        "allow_gpu_unavailable": args.allow_gpu_unavailable,
     }
     run_from_config(Path(args.config), overrides)
     return 0
