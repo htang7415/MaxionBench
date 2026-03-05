@@ -35,6 +35,14 @@ jobs:
         run: |
           pytest -q tests/test_repo_hygiene.py
 
+      - name: Verify command docs consistency
+        run: |
+          pytest -q tests/test_command_docs.py
+
+      - name: Verify migration docs index
+        run: |
+          pytest -q tests/test_migration_docs.py
+
       - name: Write smoke scenario config
         run: |
           cat > ci_s1_smoke.yaml <<'YAML'

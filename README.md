@@ -32,6 +32,8 @@ Pre-merge automation:
 - It also exercises a legacy resource-profile path: strict validation/report failure for missing RHU fields plus `--legacy-ok` warning diagnostics artifact.
 - It also exercises a legacy ground-truth metadata path: strict validation/report failure for missing `ground_truth_*` fields plus `--legacy-ok` warning diagnostics artifact.
 - The workflow also runs repository hygiene checks to guard against tracked Python cache artifacts.
+- The workflow also runs command-doc consistency checks to prevent stale CLI examples.
+- The workflow also checks README migration index consistency against `docs/migrations/`.
 - The workflow enables pip dependency caching via `actions/setup-python` (`cache: pip`) to keep pre-merge runtime stable.
 - Optional policy drift check: `maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json`
 - To also require drift workflow status in verification: add `--include-drift-check`.
