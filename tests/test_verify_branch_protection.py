@@ -27,13 +27,15 @@ def test_evaluate_branch_protection_detects_missing_checks() -> None:
             "report-preflight / report_preflight",
             "report-preflight / legacy_migration_path",
             "report-preflight / legacy_resource_profile_path",
+            "report-preflight / legacy_ground_truth_metadata_path",
         ],
     )
     assert summary["pass"] is False
-    assert summary["missing_checks"] == [
+    assert set(summary["missing_checks"]) == {
         "report-preflight / legacy_migration_path",
         "report-preflight / legacy_resource_profile_path",
-    ]
+        "report-preflight / legacy_ground_truth_metadata_path",
+    }
 
 
 def test_resolve_required_checks_optionally_includes_drift_check() -> None:
@@ -41,6 +43,7 @@ def test_resolve_required_checks_optionally_includes_drift_check() -> None:
     assert "report-preflight / report_preflight" in checks
     assert "report-preflight / legacy_migration_path" in checks
     assert "report-preflight / legacy_resource_profile_path" in checks
+    assert "report-preflight / legacy_ground_truth_metadata_path" in checks
     assert verify_mod.OPTIONAL_DRIFT_CHECK not in checks
 
     checks_with_drift = verify_mod.resolve_required_checks(None, include_drift_check=True)
@@ -54,6 +57,7 @@ def test_verify_main_and_cli_return_expected_exit_codes(monkeypatch: pytest.Monk
                 "report-preflight / report_preflight",
                 "report-preflight / legacy_migration_path",
                 "report-preflight / legacy_resource_profile_path",
+                "report-preflight / legacy_ground_truth_metadata_path",
             ]
         }
     }
@@ -84,6 +88,7 @@ def test_verify_main_and_cli_return_expected_exit_codes(monkeypatch: pytest.Monk
                 "report-preflight / report_preflight",
                 "report-preflight / legacy_migration_path",
                 "report-preflight / legacy_resource_profile_path",
+                "report-preflight / legacy_ground_truth_metadata_path",
                 verify_mod.OPTIONAL_DRIFT_CHECK,
             ]
         }

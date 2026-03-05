@@ -39,6 +39,7 @@ jobs:
             --required-check "report-preflight / report_preflight" \
             --required-check "report-preflight / legacy_migration_path" \
             --required-check "report-preflight / legacy_resource_profile_path" \
+            --required-check "report-preflight / legacy_ground_truth_metadata_path" \
             --json | tee branch_protection_summary.json
 
       - name: Upload branch protection summary
