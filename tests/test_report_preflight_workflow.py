@@ -27,6 +27,10 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     verify_figure_policy_sync_cmd = "pytest -q tests/test_report_figure_policy_sync.py"
     verify_migration_docs_cmd = "pytest -q tests/test_migration_docs.py"
     verify_branch_policy_sync_cmd = "pytest -q tests/test_branch_protection_policy_sync.py"
+    verify_slurm_plan_cmd = "maxionbench verify-slurm-plan --json"
+    verify_slurm_plan_skip_gpu_cmd = "maxionbench verify-slurm-plan --skip-gpu --json"
+    verify_slurm_submit_plan_cmd = "maxionbench submit-slurm-plan --dry-run --json"
+    verify_slurm_submit_plan_skip_gpu_cmd = "maxionbench submit-slurm-plan --skip-gpu --dry-run --json"
     snapshot_required_checks_cmd = "maxionbench snapshot-required-checks"
     snapshot_required_checks_strict = "--strict"
     pre_run_gate_cmd = "maxionbench pre-run-gate --config ci_s1_smoke.yaml --json"
@@ -43,6 +47,10 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert verify_figure_policy_sync_cmd in text
     assert verify_migration_docs_cmd in text
     assert verify_branch_policy_sync_cmd in text
+    assert verify_slurm_plan_cmd in text
+    assert verify_slurm_plan_skip_gpu_cmd in text
+    assert verify_slurm_submit_plan_cmd in text
+    assert verify_slurm_submit_plan_skip_gpu_cmd in text
     assert snapshot_required_checks_cmd in text
     assert snapshot_required_checks_strict in text
     assert pre_run_gate_cmd in text
@@ -71,6 +79,10 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert text.index(verify_figure_policy_sync_cmd) < text.index(validate_cmd)
     assert text.index(verify_migration_docs_cmd) < text.index(validate_cmd)
     assert text.index(verify_branch_policy_sync_cmd) < text.index(validate_cmd)
+    assert text.index(verify_slurm_plan_cmd) < text.index(validate_cmd)
+    assert text.index(verify_slurm_plan_skip_gpu_cmd) < text.index(validate_cmd)
+    assert text.index(verify_slurm_submit_plan_cmd) < text.index(validate_cmd)
+    assert text.index(verify_slurm_submit_plan_skip_gpu_cmd) < text.index(validate_cmd)
     assert text.index(snapshot_required_checks_cmd) < text.index(validate_cmd)
     assert text.index(pre_run_gate_cmd) < text.index(validate_cmd)
     assert text.index(validate_cmd) < text.index(report_cmd)
@@ -78,6 +90,10 @@ def test_report_preflight_workflow_validates_before_report() -> None:
 
     assert "artifacts/ci/required_checks_snapshot.json" in text
     assert "artifacts/ci/report_output_policy_summary.json" in text
+    assert "artifacts/ci/slurm_plan_verify.json" in text
+    assert "artifacts/ci/slurm_plan_verify_skip_gpu.json" in text
+    assert "artifacts/ci/slurm_submit_plan_dry_run.json" in text
+    assert "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json" in text
     assert "artifacts/runs/ci_preflight/**" in text
     assert "artifacts/figures/ci_preflight/**" in text
 
@@ -100,6 +116,10 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     upload_paths = str(upload_with.get("path", ""))
     assert "artifacts/ci/required_checks_snapshot.json" in upload_paths
     assert "artifacts/ci/report_output_policy_summary.json" in upload_paths
+    assert "artifacts/ci/slurm_plan_verify.json" in upload_paths
+    assert "artifacts/ci/slurm_plan_verify_skip_gpu.json" in upload_paths
+    assert "artifacts/ci/slurm_submit_plan_dry_run.json" in upload_paths
+    assert "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json" in upload_paths
 
 
 def test_report_preflight_workflow_has_conformance_readiness_gate_job() -> None:

@@ -61,3 +61,8 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert gate_marker in text
     assert runner_marker in text
     assert text.index(gate_marker) < text.index(runner_marker)
+
+
+def test_cpu_array_includes_d3_matched_s1_baseline_config() -> None:
+    text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
+    assert "configs/scenarios/s1_ann_frontier_d3.yaml" in text

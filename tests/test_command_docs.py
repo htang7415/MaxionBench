@@ -6,6 +6,10 @@ from pathlib import Path
 
 def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-pins --config-dir configs/scenarios --json" in text
+    assert "maxionbench verify-slurm-plan --json" in text
+    assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
+    assert "maxionbench submit-slurm-plan --dry-run --json" in text
+    assert "maxionbench submit-slurm-plan --skip-gpu --dry-run --json" in text
     assert "maxionbench verify-behavior-cards --behavior-dir docs/behavior --json" in text
     assert "--enforce-readiness" in text
     assert "--conformance-matrix artifacts/conformance/conformance_matrix.csv" in text

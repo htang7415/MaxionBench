@@ -4,6 +4,7 @@ source "$(dirname "$0")/common.sh"
 
 SCENARIOS=(
   "configs/scenarios/s1_ann_frontier.yaml"
+  "configs/scenarios/s1_ann_frontier_d3.yaml"
   "configs/scenarios/s2_filtered_ann.yaml"
   "configs/scenarios/s3_churn_smooth.yaml"
   "configs/scenarios/s3b_churn_bursty.yaml"

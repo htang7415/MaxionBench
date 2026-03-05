@@ -72,6 +72,11 @@ Pre-merge automation:
 - The workflow also runs figure-policy sync checks to keep report figure IDs and style pins aligned with `prompt.md`.
 - The workflow also checks README migration index consistency against `docs/migrations/`.
 - The workflow also checks branch-protection policy sync against report-preflight job names.
+- The workflow also verifies Slurm plan consistency with `maxionbench verify-slurm-plan --json`.
+- The workflow also verifies Slurm plan consistency for GPU-omitted mode with `maxionbench verify-slurm-plan --skip-gpu --json`.
+- The workflow also verifies Slurm dependency planning with `maxionbench submit-slurm-plan --dry-run --json`.
+- The workflow also verifies Slurm dependency planning for GPU-omitted mode with `maxionbench submit-slurm-plan --skip-gpu --dry-run --json`.
+- The workflow also captures Slurm plan diagnostics under `artifacts/ci/` (`slurm_plan_verify*.json`, `slurm_submit_plan*_dry_run.json`).
 - The workflow also writes a required-check snapshot artifact via `maxionbench snapshot-required-checks --strict`.
 - The workflow also enforces report output-policy sidecar checks via `maxionbench inspect-report-output-policy --strict`.
 - The workflow writes `artifacts/ci/report_output_policy_summary.json` for output-policy inspection diagnostics.

@@ -16,3 +16,7 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "include-publish-bundle-check" in text
     assert "pre-run-gate" in text
     assert "pre-run-gate --config ci_s1_smoke.yaml --json" in text
+    assert "verify-slurm-plan --json" in text
+    assert "verify-slurm-plan --skip-gpu --json" in text
+    assert "submit-slurm-plan --dry-run --json" in text
+    assert "submit-slurm-plan --skip-gpu --dry-run --json" in text

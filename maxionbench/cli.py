@@ -63,6 +63,14 @@ def main(argv: list[str] | None = None) -> int:
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
     verify_pins_parser.add_argument("--json", action="store_true")
 
+    verify_slurm_plan_parser = subparsers.add_parser(
+        "verify-slurm-plan",
+        help="Verify Slurm submit-plan consistency with array scenario layout",
+    )
+    verify_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
+    verify_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
+    verify_slurm_plan_parser.add_argument("--json", action="store_true")
+
     verify_behavior_cards_parser = subparsers.add_parser(
         "verify-behavior-cards",
         help="Verify behavior-card coverage and required sections",
@@ -89,6 +97,16 @@ def main(argv: list[str] | None = None) -> int:
     pre_run_gate_parser.add_argument("--behavior-dir", default="docs/behavior")
     pre_run_gate_parser.add_argument("--allow-gpu-unavailable", action="store_true")
     pre_run_gate_parser.add_argument("--json", action="store_true")
+
+    submit_slurm_plan_parser = subparsers.add_parser(
+        "submit-slurm-plan",
+        help="Submit Slurm jobs with enforced dependency topology",
+    )
+    submit_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
+    submit_slurm_plan_parser.add_argument("--seed", type=int, default=42)
+    submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
+    submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
+    submit_slurm_plan_parser.add_argument("--json", action="store_true")
 
     verify_promotion_gate_parser = subparsers.add_parser(
         "verify-promotion-gate",
@@ -209,6 +227,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
+    if args.command == "verify-slurm-plan":
+        from maxionbench.tools.verify_slurm_plan import main as verify_slurm_plan_main
+
+        verify_argv: list[str] = ["--slurm-dir", args.slurm_dir]
+        if args.skip_gpu:
+            verify_argv.append("--skip-gpu")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_slurm_plan_main(verify_argv)
     if args.command == "verify-behavior-cards":
         from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
 
@@ -248,6 +275,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             gate_argv.append("--json")
         return pre_run_gate_main(gate_argv)
+    if args.command == "submit-slurm-plan":
+        from maxionbench.orchestration.slurm.submit_plan import main as submit_slurm_plan_main
+
+        submit_argv: list[str] = ["--slurm-dir", args.slurm_dir, "--seed", str(args.seed)]
+        if args.skip_gpu:
+            submit_argv.append("--skip-gpu")
+        if args.dry_run:
+            submit_argv.append("--dry-run")
+        if args.json:
+            submit_argv.append("--json")
+        return submit_slurm_plan_main(submit_argv)
     if args.command == "verify-promotion-gate":
         from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
 
