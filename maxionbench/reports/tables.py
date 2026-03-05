@@ -98,6 +98,19 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
         "sla_threshold_ms",
         "rtt_baseline_ms_p50_mean",
         "rtt_baseline_ms_p99_mean",
+        "resource_cpu_vcpu_median",
+        "resource_gpu_count_median",
+        "resource_ram_gib_median",
+        "resource_disk_tb_median",
+        "rhu_rate_median",
+        "w_c",
+        "w_g",
+        "w_r",
+        "w_d",
+        "c_ref_vcpu",
+        "g_ref_gpu",
+        "r_ref_gib",
+        "d_ref_tb",
         "config_fingerprint",
     ]
     if frame.empty:
@@ -110,6 +123,25 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
         working["config_fingerprint"] = working["__meta_config_fingerprint"]
     else:
         working["config_fingerprint"] = ""
+    for src, dst in [
+        ("resource_cpu_vcpu", "resource_cpu_vcpu"),
+        ("resource_gpu_count", "resource_gpu_count"),
+        ("resource_ram_gib", "resource_ram_gib"),
+        ("resource_disk_tb", "resource_disk_tb"),
+        ("rhu_rate", "rhu_rate"),
+        ("__meta_w_c", "__meta_w_c"),
+        ("__meta_w_g", "__meta_w_g"),
+        ("__meta_w_r", "__meta_w_r"),
+        ("__meta_w_d", "__meta_w_d"),
+        ("__meta_c_ref_vcpu", "__meta_c_ref_vcpu"),
+        ("__meta_g_ref_gpu", "__meta_g_ref_gpu"),
+        ("__meta_r_ref_gib", "__meta_r_ref_gib"),
+        ("__meta_d_ref_tb", "__meta_d_ref_tb"),
+    ]:
+        if src not in working.columns:
+            working[src] = float("nan")
+        if dst != src:
+            working[dst] = working[src]
     grouped = (
         working.groupby(
             [
@@ -128,6 +160,19 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
         .agg(
             rtt_baseline_ms_p50_mean=("rtt_baseline_ms_p50", "mean"),
             rtt_baseline_ms_p99_mean=("rtt_baseline_ms_p99", "mean"),
+            resource_cpu_vcpu_median=("resource_cpu_vcpu", "median"),
+            resource_gpu_count_median=("resource_gpu_count", "median"),
+            resource_ram_gib_median=("resource_ram_gib", "median"),
+            resource_disk_tb_median=("resource_disk_tb", "median"),
+            rhu_rate_median=("rhu_rate", "median"),
+            w_c=("__meta_w_c", "first"),
+            w_g=("__meta_w_g", "first"),
+            w_r=("__meta_w_r", "first"),
+            w_d=("__meta_w_d", "first"),
+            c_ref_vcpu=("__meta_c_ref_vcpu", "first"),
+            g_ref_gpu=("__meta_g_ref_gpu", "first"),
+            r_ref_gib=("__meta_r_ref_gib", "first"),
+            d_ref_tb=("__meta_d_ref_tb", "first"),
         )
         .reset_index()
     )

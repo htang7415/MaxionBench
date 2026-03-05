@@ -22,6 +22,16 @@ def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict
                 "Legacy run artifacts detected: stage timing columns are missing. "
                 f"Run `maxionbench migrate-stage-timing --input {resolved_input}` and retry."
             ) from exc
+        if (
+            "missing resource columns" in message
+            or "missing required RHU metadata mapping" in message
+            or "resource_profile missing keys" in message
+            or "rhu_references missing keys" in message
+        ):
+            raise RuntimeError(
+                "Legacy run artifacts detected: RHU resource profile fields are missing. "
+                "Re-run benchmarks to regenerate artifacts with resource columns and RHU metadata, then retry report generation."
+            ) from exc
         raise
     frame = load_results(input_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -65,6 +65,26 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert (out_dir / "T2_matched_quality_throughput_rhu.csv").exists()
     assert (out_dir / "T3_robustness_summary.csv").exists()
     assert (out_dir / "T4_decision_table.csv").exists()
+    t1 = pd.read_csv(out_dir / "T1_environment_runtime_pinning.csv")
+    assert set(
+        [
+            "resource_cpu_vcpu_median",
+            "resource_gpu_count_median",
+            "resource_ram_gib_median",
+            "resource_disk_tb_median",
+            "rhu_rate_median",
+            "w_c",
+            "w_g",
+            "w_r",
+            "w_d",
+            "c_ref_vcpu",
+            "g_ref_gpu",
+            "r_ref_gib",
+            "d_ref_tb",
+        ]
+    ).issubset(t1.columns)
+    assert float(t1.loc[0, "resource_cpu_vcpu_median"]) >= 1.0
+    assert float(t1.loc[0, "rhu_rate_median"]) > 0.0
 
     summary_meta = json.loads((out_dir / "milestones_summary.meta.json").read_text(encoding="utf-8"))
     assert summary_meta["run_ids"]
@@ -93,3 +113,27 @@ def test_report_preflight_legacy_stage_timing_has_migration_hint(tmp_path: Path)
 
     with pytest.raises(RuntimeError, match="migrate-stage-timing"):
         cli_main(["report", "--input", str(run_dir.parent), "--mode", "milestones", "--out", str(tmp_path / "cli_legacy")])
+
+
+def test_report_preflight_legacy_resource_profile_has_hint(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    results_path = run_dir / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    legacy = frame.drop(columns=["resource_cpu_vcpu", "resource_gpu_count", "resource_ram_gib", "resource_disk_tb", "rhu_rate"])
+    legacy.to_parquet(results_path, index=False)
+
+    with pytest.raises(RuntimeError, match="RHU resource profile"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=tmp_path / "figures_legacy_resource", mode="milestones")
+
+    with pytest.raises(RuntimeError, match="RHU resource profile"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                str(tmp_path / "cli_legacy_resource"),
+            ]
+        )

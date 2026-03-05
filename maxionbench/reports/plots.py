@@ -126,6 +126,28 @@ def load_results(input_dir: Path) -> pd.DataFrame:
         metadata = _load_run_metadata(run_dir)
         frame["__meta_run_id"] = str(metadata.get("run_id") or "")
         frame["__meta_config_fingerprint"] = str(metadata.get("config_fingerprint") or "")
+        rhu_weights = metadata.get("rhu_weights")
+        if not isinstance(rhu_weights, dict):
+            rhu_weights = {}
+        rhu_refs = metadata.get("rhu_references")
+        if not isinstance(rhu_refs, dict):
+            rhu_refs = {}
+        resource_profile = metadata.get("resource_profile")
+        if not isinstance(resource_profile, dict):
+            resource_profile = {}
+        frame["__meta_w_c"] = _safe_float(rhu_weights.get("w_c"))
+        frame["__meta_w_g"] = _safe_float(rhu_weights.get("w_g"))
+        frame["__meta_w_r"] = _safe_float(rhu_weights.get("w_r"))
+        frame["__meta_w_d"] = _safe_float(rhu_weights.get("w_d"))
+        frame["__meta_c_ref_vcpu"] = _safe_float(rhu_refs.get("c_ref_vcpu"))
+        frame["__meta_g_ref_gpu"] = _safe_float(rhu_refs.get("g_ref_gpu"))
+        frame["__meta_r_ref_gib"] = _safe_float(rhu_refs.get("r_ref_gib"))
+        frame["__meta_d_ref_tb"] = _safe_float(rhu_refs.get("d_ref_tb"))
+        frame["__meta_profile_cpu_vcpu"] = _safe_float(resource_profile.get("cpu_vcpu"))
+        frame["__meta_profile_gpu_count"] = _safe_float(resource_profile.get("gpu_count"))
+        frame["__meta_profile_ram_gib"] = _safe_float(resource_profile.get("ram_gib"))
+        frame["__meta_profile_disk_tb"] = _safe_float(resource_profile.get("disk_tb"))
+        frame["__meta_profile_rhu_rate"] = _safe_float(resource_profile.get("rhu_rate"))
         frames.append(frame)
     merged = pd.concat(frames, ignore_index=True)
     sort_cols = [col for col in ["scenario", "engine", "repeat_idx", "clients_read", "quality_target"] if col in merged.columns]
@@ -352,6 +374,15 @@ def _load_run_metadata(run_dir: Path) -> dict[str, Any]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        if value is None:
+            return float("nan")
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _unique_str_values(frame: pd.DataFrame, column: str) -> list[str]:

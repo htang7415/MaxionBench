@@ -18,7 +18,8 @@ from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_h
 from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
-from maxionbench.metrics.cost_rhu import rhu_hours, rhu_rate
+from maxionbench.metrics.cost_rhu import rhu_hours
+from maxionbench.metrics.resources import ResourceProfile, profile_from_adapter_stats, rhu_rate_for_profile
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 from maxionbench.runtime.rpc_baseline import measure_rpc_baseline
 from maxionbench.runtime.system_info import collect_system_info
@@ -65,6 +66,11 @@ class _SweepRun:
     measure_target_s: float
     measure_elapsed_s: float
     measure_requests: int
+    resource_cpu_vcpu: float
+    resource_gpu_count: float
+    resource_ram_gib: float
+    resource_disk_tb: float
+    rhu_rate: float
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,11 @@ class _RagCandidate:
     measure_target_s: float
     measure_elapsed_s: float
     measure_requests: int
+    resource_cpu_vcpu: float
+    resource_gpu_count: float
+    resource_ram_gib: float
+    resource_disk_tb: float
+    rhu_rate: float
 
 
 _RAG_NDCG_BANDS: list[tuple[str, float, float]] = [
@@ -167,18 +178,20 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         no_retry=cfg.no_retry,
         clients_read_grid=list(cfg.clients_grid),
         quality_targets=list(cfg.quality_targets),
+        rhu_references=_rhu_references_payload(cfg),
+        resource_profile=_summarize_resource_profile(rows),
         hardware_runtime=collect_system_info(),
     )
     export_start = time.perf_counter()
     write_results_parquet(output_path, rows)
-    _write_runner_log(log_path, rows)
+    _write_runner_log(log_path, rows, config_fingerprint=config_fingerprint)
     write_run_metadata(output_dir / "run_metadata.json", metadata)
     write_resolved_config(output_dir / "config_resolved.yaml", config_payload)
     export_elapsed_s = time.perf_counter() - export_start
 
     rows_with_export = [replace(row, export_elapsed_s=export_elapsed_s) for row in rows]
     write_results_parquet(output_path, rows_with_export)
-    _write_runner_log(log_path, rows_with_export)
+    _write_runner_log(log_path, rows_with_export, config_fingerprint=config_fingerprint)
     return output_dir
 
 
@@ -293,7 +306,8 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         for cond in scenario:
             duration = max(cond.measured_elapsed_s, 1e-9)
             rows.append(
@@ -332,6 +346,11 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
                     p99_ms=cond.p99_ms,
                     qps=cond.qps,
                     rhu_h=rhu_hours(duration_s=duration, rate=rate),
+                    resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                    resource_gpu_count=resource_payload["gpu_count"],
+                    resource_ram_gib=resource_payload["ram_gib"],
+                    resource_disk_tb=resource_payload["disk_tb"],
+                    rhu_rate=resource_payload["rhu_rate"],
                     sla_threshold_ms=cfg.sla_threshold_ms,
                     sla_violation_rate=cond.sla_violation_rate,
                     errors=cond.errors,
@@ -400,7 +419,8 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         candidates: list[_RagCandidate] = []
         for cond in scenario:
             duration = max(cond.measured_elapsed_s, 1e-9)
@@ -427,6 +447,11 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     measure_target_s=cfg.steady_state_s,
                     measure_elapsed_s=cond.measured_elapsed_s,
                     measure_requests=cond.measured_requests,
+                    resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                    resource_gpu_count=resource_payload["gpu_count"],
+                    resource_ram_gib=resource_payload["ram_gib"],
+                    resource_disk_tb=resource_payload["disk_tb"],
+                    rhu_rate=resource_payload["rhu_rate"],
                 )
             )
         rows.extend(
@@ -478,7 +503,8 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         candidates: list[_RagCandidate] = []
         for cond in scenario:
             duration = max(cond.measured_elapsed_s, 1e-9)
@@ -507,6 +533,11 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     measure_target_s=cfg.steady_state_s,
                     measure_elapsed_s=cond.measured_elapsed_s,
                     measure_requests=cond.measured_requests,
+                    resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                    resource_gpu_count=resource_payload["gpu_count"],
+                    resource_ram_gib=resource_payload["ram_gib"],
+                    resource_disk_tb=resource_payload["disk_tb"],
+                    rhu_rate=resource_payload["rhu_rate"],
                 )
             )
         rows.extend(
@@ -555,7 +586,8 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read)
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         candidates: list[_RagCandidate] = []
         for cond in scenario:
             duration = max(cond.measured_elapsed_s, 1e-9)
@@ -582,6 +614,11 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                     measure_target_s=cfg.steady_state_s,
                     measure_elapsed_s=cond.measured_elapsed_s,
                     measure_requests=cond.measured_requests,
+                    resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                    resource_gpu_count=resource_payload["gpu_count"],
+                    resource_ram_gib=resource_payload["ram_gib"],
+                    resource_disk_tb=resource_payload["disk_tb"],
+                    rhu_rate=resource_payload["rhu_rate"],
                 )
             )
         rows.extend(
@@ -652,6 +689,11 @@ def _select_rag_band_rows(
                 p99_ms=selected.p99_ms,
                 qps=selected.qps,
                 rhu_h=selected.rhu_h,
+                resource_cpu_vcpu=selected.resource_cpu_vcpu,
+                resource_gpu_count=selected.resource_gpu_count,
+                resource_ram_gib=selected.resource_ram_gib,
+                resource_disk_tb=selected.resource_disk_tb,
+                rhu_rate=selected.rhu_rate,
                 sla_threshold_ms=cfg.sla_threshold_ms,
                 sla_violation_rate=selected.sla_violation_rate,
                 errors=selected.errors,
@@ -727,7 +769,12 @@ def _run_s3_like_rows(
 
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=cfg.clients_read + cfg.clients_write)
+        profile, rate = _resource_profile_and_rate_for_cfg(
+            cfg=cfg,
+            stats=stats,
+            client_count=cfg.clients_read + cfg.clients_write,
+        )
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         duration = max(result.measured_elapsed_s, 1e-9)
         rows.append(
             ResultRow(
@@ -752,6 +799,11 @@ def _run_s3_like_rows(
                 p99_ms=result.p99_ms,
                 qps=result.qps,
                 rhu_h=rhu_hours(duration_s=duration, rate=rate),
+                resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                resource_gpu_count=resource_payload["gpu_count"],
+                resource_ram_gib=resource_payload["ram_gib"],
+                resource_disk_tb=resource_payload["disk_tb"],
+                rhu_rate=resource_payload["rhu_rate"],
                 sla_threshold_ms=cfg.sla_threshold_ms,
                 sla_violation_rate=result.sla_violation_rate,
                 errors=result.errors,
@@ -809,7 +861,12 @@ def _run_s1_sweep_for_client(
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
 
-        rate = _rhu_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count + cfg.clients_write)
+        profile, rate = _resource_profile_and_rate_for_cfg(
+            cfg=cfg,
+            stats=stats,
+            client_count=client_count + cfg.clients_write,
+        )
+        resource_payload = _resource_payload(profile=profile, rate=rate)
         duration = max(result.measured_elapsed_s, 1e-9)
         runs.append(
             _SweepRun(
@@ -834,6 +891,11 @@ def _run_s1_sweep_for_client(
                 measure_target_s=cfg.steady_state_s,
                 measure_elapsed_s=result.measured_elapsed_s,
                 measure_requests=result.measured_requests,
+                resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                resource_gpu_count=resource_payload["gpu_count"],
+                resource_ram_gib=resource_payload["ram_gib"],
+                resource_disk_tb=resource_payload["disk_tb"],
+                rhu_rate=resource_payload["rhu_rate"],
             )
         )
     return runs
@@ -880,6 +942,11 @@ def _select_matched_quality_rows(
                 p99_ms=run.p99_ms,
                 qps=run.qps,
                 rhu_h=run.rhu_h,
+                resource_cpu_vcpu=run.resource_cpu_vcpu,
+                resource_gpu_count=run.resource_gpu_count,
+                resource_ram_gib=run.resource_ram_gib,
+                resource_disk_tb=run.resource_disk_tb,
+                rhu_rate=run.rhu_rate,
                 sla_threshold_ms=cfg.sla_threshold_ms,
                 sla_violation_rate=run.sla_violation_rate,
                 errors=run.errors,
@@ -916,15 +983,65 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
     )
 
 
-def _rhu_rate_for_cfg(*, cfg: RunConfig, stats: Any, client_count: int) -> float:
-    return rhu_rate(
-        cpu_vcpu=max(1.0, float(client_count)),
-        gpu_count=0.0,
-        ram_gib=stats.ram_usage_bytes / (1024.0**3),
-        disk_tb=stats.disk_usage_bytes / (1024.0**4),
-        refs=cfg.references,
-        weights=cfg.weights,
+def _resource_profile_and_rate_for_cfg(*, cfg: RunConfig, stats: Any, client_count: int) -> tuple[ResourceProfile, float]:
+    profile = profile_from_adapter_stats(
+        stats=stats,
+        client_count=client_count,
+        gpu_count=_gpu_count_for_cfg(cfg),
     )
+    rate = rhu_rate_for_profile(profile=profile, refs=cfg.references, weights=cfg.weights)
+    return profile, rate
+
+
+def _resource_payload(*, profile: ResourceProfile, rate: float) -> dict[str, float]:
+    return {
+        "cpu_vcpu": float(profile.cpu_vcpu),
+        "gpu_count": float(profile.gpu_count),
+        "ram_gib": float(profile.ram_gib),
+        "disk_tb": float(profile.disk_tb),
+        "rhu_rate": float(rate),
+    }
+
+
+def _rhu_references_payload(cfg: RunConfig) -> dict[str, float]:
+    refs = cfg.references
+    return {
+        "c_ref_vcpu": float(refs.c_ref_vcpu),
+        "g_ref_gpu": float(refs.g_ref_gpu),
+        "r_ref_gib": float(refs.r_ref_gib),
+        "d_ref_tb": float(refs.d_ref_tb),
+    }
+
+
+def _summarize_resource_profile(rows: list[ResultRow]) -> dict[str, float]:
+    if not rows:
+        return {
+            "cpu_vcpu": 0.0,
+            "gpu_count": 0.0,
+            "ram_gib": 0.0,
+            "disk_tb": 0.0,
+            "rhu_rate": 0.0,
+        }
+    return {
+        "cpu_vcpu": float(np.median([row.resource_cpu_vcpu for row in rows])),
+        "gpu_count": float(np.median([row.resource_gpu_count for row in rows])),
+        "ram_gib": float(np.median([row.resource_ram_gib for row in rows])),
+        "disk_tb": float(np.median([row.resource_disk_tb for row in rows])),
+        "rhu_rate": float(np.median([row.rhu_rate for row in rows])),
+    }
+
+
+def _gpu_count_for_cfg(cfg: RunConfig) -> float:
+    explicit = cfg.adapter_options.get("gpu_count")
+    if explicit is not None:
+        try:
+            return max(0.0, float(explicit))
+        except (TypeError, ValueError):
+            pass
+    normalized = cfg.engine.lower().replace("_", "-")
+    if normalized == "faiss-gpu":
+        return 1.0
+    return 0.0
 
 
 def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:
@@ -995,19 +1112,25 @@ def _slug(value: float) -> str:
     return str(value).replace(".", "p")
 
 
-def _write_runner_log(path: Path, rows: list[ResultRow]) -> None:
+def _write_runner_log(path: Path, rows: list[ResultRow], *, config_fingerprint: str) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             payload = {
+                "timestamp_utc": row.timestamp_utc,
                 "run_id": row.run_id,
+                "config_fingerprint": config_fingerprint,
                 "repeat_idx": row.repeat_idx,
+                "engine": row.engine,
                 "scenario": row.scenario,
+                "dataset_bundle": row.dataset_bundle,
                 "p99_ms": row.p99_ms,
                 "qps": row.qps,
                 "recall_at_10": row.recall_at_10,
+                "sla_violation_rate": row.sla_violation_rate,
                 "errors": row.errors,
             }
-            handle.write(f"{payload}\n")
+            handle.write(json.dumps(payload, sort_keys=True))
+            handle.write("\n")
 
 
 def main(argv: list[str] | None = None) -> int:

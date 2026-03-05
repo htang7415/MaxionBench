@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -82,3 +83,60 @@ def test_migrate_stage_timing_cli_smoke(tmp_path: Path) -> None:
     run_dir = _make_run(tmp_path, name="run-cli", seed=29)
     code = cli_main(["migrate-stage-timing", "--input", str(run_dir), "--dry-run"])
     assert code == 0
+
+
+def test_validate_run_directory_requires_runner_log(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-missing-log", seed=31)
+    (run_dir / "logs" / "runner.log").unlink()
+
+    with pytest.raises(FileNotFoundError, match="runner.log"):
+        validate_run_directory(run_dir)
+
+
+def test_validate_run_directory_rejects_malformed_runner_log(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-bad-log", seed=37)
+    log_path = run_dir / "logs" / "runner.log"
+    log_path.write_text("{not-json}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        validate_run_directory(run_dir)
+
+    metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    bad_event = {
+        "timestamp_utc": "2026-03-04T00:00:00+00:00",
+        "run_id": "bad-run-id",
+        "config_fingerprint": metadata["config_fingerprint"],
+        "repeat_idx": 0,
+        "engine": "mock",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "p99_ms": 1.0,
+        "qps": 1.0,
+        "recall_at_10": 1.0,
+        "sla_violation_rate": 0.0,
+        "errors": 0,
+    }
+    log_path.write_text(json.dumps(bad_event) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="missing run_id entries"):
+        validate_run_directory(run_dir)
+
+
+def test_validate_run_directory_rejects_missing_resource_columns(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-missing-resource-cols", seed=41)
+    results_path = run_dir / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    legacy = frame.drop(columns=["resource_cpu_vcpu", "resource_gpu_count", "resource_ram_gib", "resource_disk_tb", "rhu_rate"])
+    legacy.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="missing resource columns"):
+        validate_run_directory(run_dir)
+
+
+def test_validate_run_directory_rejects_missing_resource_metadata(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-missing-resource-meta", seed=43)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("resource_profile", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required RHU metadata mapping: resource_profile"):
+        validate_run_directory(run_dir)
