@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from maxionbench.schemas.result_schema import REQUIRED_METADATA_FIELDS, read_metadata
+from maxionbench.schemas.result_schema import REQUIRED_HARDWARE_RUNTIME_FIELDS, REQUIRED_METADATA_FIELDS, read_metadata
 
 REQUIRED_STAGE_TIMING_COLUMNS = (
     "setup_elapsed_s",
@@ -42,6 +42,16 @@ REQUIRED_GROUND_TRUTH_KEYS = (
     "ground_truth_metric",
     "ground_truth_k",
     "ground_truth_engine",
+)
+HARDWARE_RUNTIME_NUMERIC_NON_NEGATIVE_KEYS = (
+    "cpu_count_logical",
+    "total_memory_bytes",
+    "gpu_count",
+)
+HARDWARE_RUNTIME_REQUIRED_STRING_KEYS = (
+    "hostname",
+    "platform",
+    "python_version",
 )
 REQUIRED_RUNNER_LOG_FIELDS = (
     "timestamp_utc",
@@ -132,6 +142,11 @@ def validate_run_directory(path: Path, *, strict_schema: bool = True) -> dict[st
         strict_schema=strict_schema,
         warnings=warnings,
     )
+    hardware_runtime_ok = _validate_required_hardware_runtime(
+        metadata,
+        strict_schema=strict_schema,
+        warnings=warnings,
+    )
     resource_metadata_ok = _validate_required_rhu_metadata(
         metadata,
         strict_schema=strict_schema,
@@ -160,6 +175,7 @@ def validate_run_directory(path: Path, *, strict_schema: bool = True) -> dict[st
         "stage_timing_ok": stage_timing_ok,
         "resource_fields_ok": resource_fields_ok,
         "ground_truth_metadata_ok": ground_truth_metadata_ok,
+        "hardware_runtime_ok": hardware_runtime_ok,
         "resource_metadata_ok": resource_metadata_ok,
         "logs_ok": logs_ok,
         "warnings": warnings,
@@ -330,6 +346,63 @@ def _validate_required_ground_truth_metadata(
             warnings=warnings,
         )
         ok = False
+    return ok
+
+
+def _validate_required_hardware_runtime(
+    metadata: Mapping[str, Any],
+    *,
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    payload = metadata.get("hardware_runtime")
+    if not isinstance(payload, Mapping):
+        _raise_or_warn(
+            "run_metadata.json missing required hardware/runtime summary mapping: hardware_runtime",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    ok = True
+    missing = [name for name in REQUIRED_HARDWARE_RUNTIME_FIELDS if name not in payload]
+    if missing:
+        _raise_or_warn(
+            f"run_metadata.json hardware_runtime missing keys: {missing}",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        ok = False
+
+    for key in HARDWARE_RUNTIME_REQUIRED_STRING_KEYS:
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            _raise_or_warn(
+                f"run_metadata.json hardware_runtime `{key}` must be a non-empty string",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+    for key in HARDWARE_RUNTIME_NUMERIC_NON_NEGATIVE_KEYS:
+        value = payload.get(key)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"run_metadata.json hardware_runtime `{key}` must be numeric",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if numeric < 0.0:
+            _raise_or_warn(
+                f"run_metadata.json hardware_runtime `{key}` must be >= 0",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
     return ok
 
 

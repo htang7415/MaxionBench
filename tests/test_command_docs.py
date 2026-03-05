@@ -9,7 +9,9 @@ def _assert_common_commands(text: str) -> None:
     assert "maxionbench validate --input artifacts/runs --strict-schema --json" in text
     assert "maxionbench validate --input artifacts/runs --legacy-ok --json" in text
     assert "maxionbench migrate-stage-timing --input artifacts/runs --dry-run" in text
-    assert "maxionbench report --input artifacts/runs --mode milestones --out artifacts/figures/milestones" in text
+    assert "maxionbench report --input artifacts/runs --mode milestones --out artifacts/figures/milestones/Mx" in text
+    assert "maxionbench report --input artifacts/runs --mode milestones --milestone-id M3" in text
+    assert "maxionbench snapshot-required-checks --output artifacts/ci/required_checks_snapshot.json --strict --json" in text
 
 
 def _assert_no_stale_validate_invocation(text: str) -> None:

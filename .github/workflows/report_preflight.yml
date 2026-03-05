@@ -39,9 +39,24 @@ jobs:
         run: |
           pytest -q tests/test_command_docs.py
 
+      - name: Verify report figure policy sync
+        run: |
+          pytest -q tests/test_report_figure_policy_sync.py
+
       - name: Verify migration docs index
         run: |
           pytest -q tests/test_migration_docs.py
+
+      - name: Verify branch protection policy sync
+        run: |
+          pytest -q tests/test_branch_protection_policy_sync.py
+
+      - name: Write required checks snapshot
+        run: |
+          maxionbench snapshot-required-checks \
+            --output artifacts/ci/required_checks_snapshot.json \
+            --strict \
+            --json
 
       - name: Write smoke scenario config
         run: |
@@ -108,6 +123,7 @@ jobs:
           retention-days: 7
           path: |
             ci_s1_smoke.yaml
+            artifacts/ci/required_checks_snapshot.json
             artifacts/runs/ci_preflight/**
             artifacts/figures/ci_preflight/**
 

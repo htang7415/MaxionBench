@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from pathlib import Path
+import re
 
 from maxionbench.conformance.run import main as conformance_main
+
+_MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,10 +56,23 @@ def main(argv: list[str] | None = None) -> int:
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
     verify_pins_parser.add_argument("--json", action="store_true")
 
+    snapshot_checks_parser = subparsers.add_parser(
+        "snapshot-required-checks",
+        help="Write required-checks snapshot JSON artifact",
+    )
+    snapshot_checks_parser.add_argument("--output", default="artifacts/ci/required_checks_snapshot.json")
+    snapshot_checks_parser.add_argument("--report-workflow", default=".github/workflows/report_preflight.yml")
+    snapshot_checks_parser.add_argument("--drift-workflow", default=".github/workflows/branch_protection_drift.yml")
+    snapshot_checks_parser.add_argument("--branch-protection-doc", default="docs/ci/branch_protection.md")
+    snapshot_checks_parser.add_argument("--pr-template", default=".github/pull_request_template.md")
+    snapshot_checks_parser.add_argument("--strict", action="store_true")
+    snapshot_checks_parser.add_argument("--json", action="store_true")
+
     report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
     report_parser.add_argument("--input", required=True)
     report_parser.add_argument("--mode", required=True, choices=["milestones", "final"])
-    report_parser.add_argument("--out", required=True)
+    report_parser.add_argument("--out", required=False)
+    report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
 
     conformance_parser = subparsers.add_parser("conformance", help="Run adapter conformance tests")
     conformance_parser.add_argument("--adapter", default="mock")
@@ -127,12 +143,50 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
+    if args.command == "snapshot-required-checks":
+        from maxionbench.tools.required_checks_snapshot import main as snapshot_required_checks_main
+
+        snapshot_argv: list[str] = [
+            "--output",
+            args.output,
+            "--report-workflow",
+            args.report_workflow,
+            "--drift-workflow",
+            args.drift_workflow,
+            "--branch-protection-doc",
+            args.branch_protection_doc,
+            "--pr-template",
+            args.pr_template,
+        ]
+        if args.strict:
+            snapshot_argv.append("--strict")
+        if args.json:
+            snapshot_argv.append("--json")
+        return snapshot_required_checks_main(snapshot_argv)
     if args.command == "report":
         from maxionbench.reports.paper_exports import generate_report_bundle
 
+        if args.mode == "final":
+            if args.milestone_id:
+                raise ValueError("--milestone-id is only valid when --mode milestones")
+            if not args.out:
+                raise ValueError("--out is required when --mode final")
+            resolved_out = Path(args.out).resolve()
+        else:
+            if args.out and args.milestone_id:
+                raise ValueError("Provide either --out or --milestone-id for milestone reports, not both")
+            if args.milestone_id:
+                if not _MILESTONE_ID_RE.fullmatch(str(args.milestone_id)):
+                    raise ValueError("--milestone-id must match `M<integer>` (for example M2)")
+                resolved_out = (Path("artifacts/figures/milestones") / str(args.milestone_id)).resolve()
+            elif args.out:
+                resolved_out = Path(args.out).resolve()
+            else:
+                raise ValueError("Milestone reports require either --out or --milestone-id")
+
         generate_report_bundle(
             input_dir=Path(args.input).resolve(),
-            out_dir=Path(args.out).resolve(),
+            out_dir=resolved_out,
             mode=args.mode,
         )
         return 0

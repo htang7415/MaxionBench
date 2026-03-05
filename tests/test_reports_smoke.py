@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import matplotlib.image as mpimg
 import pandas as pd
 import pytest
 import yaml
@@ -55,12 +56,25 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     first_png = next(path for path in bundle["figures"] if path.suffix == ".png")
     first_meta = first_png.with_suffix(".meta.json")
     assert first_meta.exists()
+    image = mpimg.imread(first_png)
+    assert int(image.shape[0]) == 600
+    assert int(image.shape[1]) == 600
     meta = json.loads(first_meta.read_text(encoding="utf-8"))
     assert meta["run_ids"]
     assert meta["config_fingerprints"]
+    assert meta["dataset_bundles"]
+    assert meta["seeds"]
+    assert int(meta["font_size"]) == 16
+    assert int(meta["panel_pixels"]) == 600
+    assert int(meta["dpi"]) == 100
 
     assert (out_dir / "m8_deferred_note.md").exists()
     assert (out_dir / "m8_deferred_note.meta.json").exists()
+    deferred_meta = json.loads((out_dir / "m8_deferred_note.meta.json").read_text(encoding="utf-8"))
+    assert deferred_meta["dataset_bundles"]
+    assert deferred_meta["seeds"]
+    assert deferred_meta["run_ids"]
+    assert deferred_meta["config_fingerprints"]
     assert (out_dir / "T1_environment_runtime_pinning.csv").exists()
     assert (out_dir / "T2_matched_quality_throughput_rhu.csv").exists()
     assert (out_dir / "T3_robustness_summary.csv").exists()
@@ -107,6 +121,73 @@ def test_report_cli_smoke(tmp_path: Path) -> None:
     assert any(out_dir.glob("*.png"))
     assert (out_dir / "F5_deferred_note.md").exists()
     assert (out_dir / "F5_deferred_note.meta.json").exists()
+
+
+def test_report_cli_milestone_id_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_dir = _make_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    code = cli_main(["report", "--input", str(run_dir.parent), "--mode", "milestones", "--milestone-id", "M3"])
+    assert code == 0
+    out_dir = tmp_path / "artifacts" / "figures" / "milestones" / "M3"
+    assert any(out_dir.glob("*.png"))
+    assert (out_dir / "m8_deferred_note.md").exists()
+    assert (out_dir / "m8_deferred_note.meta.json").exists()
+
+
+def test_report_cli_rejects_invalid_milestone_id(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    with pytest.raises(ValueError, match="must match `M<integer>`"):
+        cli_main(["report", "--input", str(run_dir.parent), "--mode", "milestones", "--milestone-id", "3"])
+
+
+def test_report_cli_rejects_out_and_milestone_id_combination(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    with pytest.raises(ValueError, match="either --out or --milestone-id"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                str(tmp_path / "figures_cli_combo"),
+                "--milestone-id",
+                "M2",
+            ]
+        )
+
+
+def test_report_cli_rejects_missing_out_for_final_mode(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    with pytest.raises(ValueError, match="--out is required when --mode final"):
+        cli_main(["report", "--input", str(run_dir.parent), "--mode", "final"])
+
+
+def test_report_bundle_rejects_non_mx_milestone_output_path(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    with pytest.raises(ValueError, match="milestones/Mx"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=Path("artifacts/figures/milestones"), mode="milestones")
+
+    with pytest.raises(ValueError, match="must start with an `Mx` directory"):
+        generate_report_bundle(
+            input_dir=run_dir.parent,
+            out_dir=Path("artifacts/figures/milestones/not_a_milestone"),
+            mode="milestones",
+        )
+
+    with pytest.raises(ValueError, match="milestones/Mx"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                "artifacts/figures/milestones",
+            ]
+        )
 
 
 def test_report_preflight_legacy_stage_timing_has_migration_hint(tmp_path: Path) -> None:
@@ -170,5 +251,29 @@ def test_report_preflight_legacy_ground_truth_metadata_has_hint(tmp_path: Path) 
                 "milestones",
                 "--out",
                 str(tmp_path / "cli_legacy_ground_truth"),
+            ]
+        )
+
+
+def test_report_preflight_legacy_hardware_runtime_metadata_has_hint(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("hardware_runtime", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="hardware/runtime summary"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=tmp_path / "figures_legacy_hardware_runtime", mode="milestones")
+
+    with pytest.raises(RuntimeError, match="hardware/runtime summary"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                str(tmp_path / "cli_legacy_hardware_runtime"),
             ]
         )

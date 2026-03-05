@@ -30,6 +30,18 @@ REQUIRED_METADATA_FIELDS = (
     "rhu_weights",
 )
 
+REQUIRED_HARDWARE_RUNTIME_FIELDS = (
+    "hostname",
+    "platform",
+    "python_version",
+    "cpu_count_logical",
+    "slurm_job_id",
+    "slurm_array_task_id",
+    "container_runtime_hint",
+    "total_memory_bytes",
+    "gpu_count",
+)
+
 
 @dataclass(frozen=True)
 class ResultRow:
@@ -134,6 +146,11 @@ class RunMetadata:
         if self.resource_profile is not None:
             if sorted(self.resource_profile.keys()) != ["cpu_vcpu", "disk_tb", "gpu_count", "ram_gib", "rhu_rate"]:
                 raise ValueError("resource_profile must include cpu_vcpu,gpu_count,ram_gib,disk_tb,rhu_rate")
+        if not isinstance(self.hardware_runtime, Mapping):
+            raise ValueError("hardware_runtime must be provided as a mapping")
+        missing_hardware_runtime = [name for name in REQUIRED_HARDWARE_RUNTIME_FIELDS if name not in self.hardware_runtime]
+        if missing_hardware_runtime:
+            raise ValueError(f"hardware_runtime missing keys: {missing_hardware_runtime}")
 
 
 def utc_now_iso() -> str:

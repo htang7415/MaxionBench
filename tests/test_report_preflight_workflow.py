@@ -19,23 +19,35 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     verify_pins_cmd = "maxionbench verify-pins --config-dir configs/scenarios --json"
     verify_hygiene_cmd = "pytest -q tests/test_repo_hygiene.py"
     verify_command_docs_cmd = "pytest -q tests/test_command_docs.py"
+    verify_figure_policy_sync_cmd = "pytest -q tests/test_report_figure_policy_sync.py"
     verify_migration_docs_cmd = "pytest -q tests/test_migration_docs.py"
+    verify_branch_policy_sync_cmd = "pytest -q tests/test_branch_protection_policy_sync.py"
+    snapshot_required_checks_cmd = "maxionbench snapshot-required-checks"
+    snapshot_required_checks_strict = "--strict"
     report_cmd = "maxionbench report"
     assert verify_pins_cmd in text
     assert verify_hygiene_cmd in text
     assert verify_command_docs_cmd in text
+    assert verify_figure_policy_sync_cmd in text
     assert verify_migration_docs_cmd in text
+    assert verify_branch_policy_sync_cmd in text
+    assert snapshot_required_checks_cmd in text
+    assert snapshot_required_checks_strict in text
     assert validate_cmd in text
     assert report_cmd in text
     assert text.index(verify_pins_cmd) < text.index(validate_cmd)
     assert text.index(verify_hygiene_cmd) < text.index(validate_cmd)
     assert text.index(verify_command_docs_cmd) < text.index(validate_cmd)
+    assert text.index(verify_figure_policy_sync_cmd) < text.index(validate_cmd)
     assert text.index(verify_migration_docs_cmd) < text.index(validate_cmd)
+    assert text.index(verify_branch_policy_sync_cmd) < text.index(validate_cmd)
+    assert text.index(snapshot_required_checks_cmd) < text.index(validate_cmd)
     assert text.index(validate_cmd) < text.index(report_cmd)
 
     upload_marker = "uses: actions/upload-artifact@v4"
     assert upload_marker in text
     assert "if: always()" in text
+    assert "artifacts/ci/required_checks_snapshot.json" in text
     assert "artifacts/runs/ci_preflight/**" in text
     assert "artifacts/figures/ci_preflight/**" in text
 
