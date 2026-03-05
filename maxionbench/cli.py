@@ -22,12 +22,17 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--no-retry", action="store_true")
     run_parser.add_argument("--output-dir", default=None)
     run_parser.add_argument("--d3-params", default=None)
+    run_parser.add_argument("--enforce-readiness", action="store_true")
+    run_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    run_parser.add_argument("--behavior-dir", default="docs/behavior")
+    run_parser.add_argument("--allow-gpu-unavailable", action="store_true")
 
     validate_parser = subparsers.add_parser("validate", help="Validate output artifacts")
     validate_parser.add_argument("--input", required=True)
     validate_mode_group = validate_parser.add_mutually_exclusive_group()
     validate_mode_group.add_argument("--strict-schema", action="store_true")
     validate_mode_group.add_argument("--legacy-ok", action="store_true")
+    validate_parser.add_argument("--enforce-protocol", action="store_true")
     validate_parser.add_argument("--json", action="store_true")
 
     migrate_parser = subparsers.add_parser(
@@ -56,6 +61,43 @@ def main(argv: list[str] | None = None) -> int:
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
     verify_pins_parser.add_argument("--json", action="store_true")
 
+    verify_behavior_cards_parser = subparsers.add_parser(
+        "verify-behavior-cards",
+        help="Verify behavior-card coverage and required sections",
+    )
+    verify_behavior_cards_parser.add_argument("--behavior-dir", default="docs/behavior")
+    verify_behavior_cards_parser.add_argument("--json", action="store_true")
+
+    verify_engine_readiness_parser = subparsers.add_parser(
+        "verify-engine-readiness",
+        help="Verify conformance + behavior-card readiness",
+    )
+    verify_engine_readiness_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    verify_engine_readiness_parser.add_argument("--behavior-dir", default="docs/behavior")
+    verify_engine_readiness_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    verify_engine_readiness_parser.add_argument("--allow-nonpass-status", action="store_true")
+    verify_engine_readiness_parser.add_argument("--json", action="store_true")
+
+    pre_run_gate_parser = subparsers.add_parser(
+        "pre-run-gate",
+        help="Run pre-run readiness gate for benchmark execution",
+    )
+    pre_run_gate_parser.add_argument("--config", required=True)
+    pre_run_gate_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    pre_run_gate_parser.add_argument("--behavior-dir", default="docs/behavior")
+    pre_run_gate_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    pre_run_gate_parser.add_argument("--json", action="store_true")
+
+    verify_promotion_gate_parser = subparsers.add_parser(
+        "verify-promotion-gate",
+        help="Verify strict-readiness artifact before promotion",
+    )
+    verify_promotion_gate_parser.add_argument(
+        "--strict-readiness-summary",
+        default="artifacts/conformance_strict/engine_readiness_summary.json",
+    )
+    verify_promotion_gate_parser.add_argument("--json", action="store_true")
+
     snapshot_checks_parser = subparsers.add_parser(
         "snapshot-required-checks",
         help="Write required-checks snapshot JSON artifact",
@@ -67,6 +109,15 @@ def main(argv: list[str] | None = None) -> int:
     snapshot_checks_parser.add_argument("--pr-template", default=".github/pull_request_template.md")
     snapshot_checks_parser.add_argument("--strict", action="store_true")
     snapshot_checks_parser.add_argument("--json", action="store_true")
+
+    inspect_report_policy_parser = subparsers.add_parser(
+        "inspect-report-output-policy",
+        help="Inspect report metadata output-policy sidecars",
+    )
+    inspect_report_policy_parser.add_argument("--input", required=True)
+    inspect_report_policy_parser.add_argument("--output", default=None)
+    inspect_report_policy_parser.add_argument("--strict", action="store_true")
+    inspect_report_policy_parser.add_argument("--json", action="store_true")
 
     report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
     report_parser.add_argument("--input", required=True)
@@ -104,6 +155,14 @@ def main(argv: list[str] | None = None) -> int:
             run_argv.extend(["--output-dir", args.output_dir])
         if args.d3_params:
             run_argv.extend(["--d3-params", args.d3_params])
+        if args.enforce_readiness:
+            run_argv.append("--enforce-readiness")
+        if args.conformance_matrix:
+            run_argv.extend(["--conformance-matrix", args.conformance_matrix])
+        if args.behavior_dir:
+            run_argv.extend(["--behavior-dir", args.behavior_dir])
+        if args.allow_gpu_unavailable:
+            run_argv.append("--allow-gpu-unavailable")
         return run_main(run_argv)
     if args.command == "validate":
         from maxionbench.tools.validate_outputs import validate_path
@@ -112,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = validate_path(
             Path(args.input).resolve(),
             strict_schema=not bool(args.legacy_ok),
+            enforce_protocol=bool(args.enforce_protocol),
         )
         if args.json:
             print(json.dumps(summary, indent=2, sort_keys=True))
@@ -143,6 +203,52 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
+    if args.command == "verify-behavior-cards":
+        from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
+
+        verify_argv: list[str] = ["--behavior-dir", args.behavior_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_behavior_cards_main(verify_argv)
+    if args.command == "verify-engine-readiness":
+        from maxionbench.tools.verify_engine_readiness import main as verify_engine_readiness_main
+
+        verify_argv: list[str] = [
+            "--conformance-matrix",
+            args.conformance_matrix,
+            "--behavior-dir",
+            args.behavior_dir,
+        ]
+        if args.allow_gpu_unavailable:
+            verify_argv.append("--allow-gpu-unavailable")
+        if args.allow_nonpass_status:
+            verify_argv.append("--allow-nonpass-status")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_engine_readiness_main(verify_argv)
+    if args.command == "pre-run-gate":
+        from maxionbench.tools.pre_run_gate import main as pre_run_gate_main
+
+        gate_argv: list[str] = [
+            "--config",
+            args.config,
+            "--conformance-matrix",
+            args.conformance_matrix,
+            "--behavior-dir",
+            args.behavior_dir,
+        ]
+        if args.allow_gpu_unavailable:
+            gate_argv.append("--allow-gpu-unavailable")
+        if args.json:
+            gate_argv.append("--json")
+        return pre_run_gate_main(gate_argv)
+    if args.command == "verify-promotion-gate":
+        from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
+
+        verify_argv: list[str] = ["--strict-readiness-summary", args.strict_readiness_summary]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_promotion_gate_main(verify_argv)
     if args.command == "snapshot-required-checks":
         from maxionbench.tools.required_checks_snapshot import main as snapshot_required_checks_main
 
@@ -163,6 +269,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             snapshot_argv.append("--json")
         return snapshot_required_checks_main(snapshot_argv)
+    if args.command == "inspect-report-output-policy":
+        from maxionbench.tools.report_output_policy import main as inspect_report_output_policy_main
+
+        inspect_argv: list[str] = ["--input", args.input]
+        if args.output:
+            inspect_argv.extend(["--output", args.output])
+        if args.strict:
+            inspect_argv.append("--strict")
+        if args.json:
+            inspect_argv.append("--json")
+        return inspect_report_output_policy_main(inspect_argv)
     if args.command == "report":
         from maxionbench.reports.paper_exports import generate_report_bundle
 

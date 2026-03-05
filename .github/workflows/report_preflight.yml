@@ -7,6 +7,52 @@ on:
       - main
 
 jobs:
+  conformance_readiness_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run conformance matrix
+        run: |
+          maxionbench conformance-matrix \
+            --config-dir configs/conformance \
+            --out-dir artifacts/conformance \
+            --timeout-s 30
+
+      - name: Verify engine readiness policy
+        run: |
+          maxionbench verify-engine-readiness \
+            --conformance-matrix artifacts/conformance/conformance_matrix.csv \
+            --behavior-dir docs/behavior \
+            --allow-gpu-unavailable \
+            --allow-nonpass-status \
+            --json
+
+      - name: Upload conformance readiness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-readiness-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            artifacts/conformance/**
+
   report_preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -30,6 +76,10 @@ jobs:
       - name: Verify pinned scenario configs
         run: |
           maxionbench verify-pins --config-dir configs/scenarios --json
+
+      - name: Verify behavior cards
+        run: |
+          maxionbench verify-behavior-cards --behavior-dir docs/behavior --json
 
       - name: Verify repository hygiene
         run: |
@@ -89,6 +139,10 @@ jobs:
           phase_max_requests_per_phase: 12
           YAML
 
+      - name: Run pre-run readiness gate
+        run: |
+          maxionbench pre-run-gate --config ci_s1_smoke.yaml --json
+
       - name: Generate smoke run artifacts
         run: |
           maxionbench run \
@@ -109,6 +163,14 @@ jobs:
             --mode milestones \
             --out artifacts/figures/ci_preflight
 
+      - name: Inspect report output-policy sidecars
+        run: |
+          maxionbench inspect-report-output-policy \
+            --input artifacts/figures/ci_preflight \
+            --output artifacts/ci/report_output_policy_summary.json \
+            --strict \
+            --json
+
       - name: Assert report outputs
         run: |
           test -f artifacts/figures/ci_preflight/m2_runner_stage_timing.png
@@ -124,6 +186,7 @@ jobs:
           path: |
             ci_s1_smoke.yaml
             artifacts/ci/required_checks_snapshot.json
+            artifacts/ci/report_output_policy_summary.json
             artifacts/runs/ci_preflight/**
             artifacts/figures/ci_preflight/**
 

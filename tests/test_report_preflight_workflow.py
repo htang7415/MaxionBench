@@ -14,9 +14,14 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert isinstance(payload, dict)
     assert "jobs" in payload
     assert "report_preflight" in payload["jobs"]
+    report_job = payload["jobs"]["report_preflight"]
+    assert isinstance(report_job, dict)
+    steps = report_job.get("steps", [])
+    assert isinstance(steps, list)
 
     validate_cmd = "maxionbench validate --input artifacts/runs/ci_preflight --strict-schema --json"
     verify_pins_cmd = "maxionbench verify-pins --config-dir configs/scenarios --json"
+    verify_behavior_cards_cmd = "maxionbench verify-behavior-cards --behavior-dir docs/behavior --json"
     verify_hygiene_cmd = "pytest -q tests/test_repo_hygiene.py"
     verify_command_docs_cmd = "pytest -q tests/test_command_docs.py"
     verify_figure_policy_sync_cmd = "pytest -q tests/test_report_figure_policy_sync.py"
@@ -24,8 +29,15 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     verify_branch_policy_sync_cmd = "pytest -q tests/test_branch_protection_policy_sync.py"
     snapshot_required_checks_cmd = "maxionbench snapshot-required-checks"
     snapshot_required_checks_strict = "--strict"
+    pre_run_gate_cmd = "maxionbench pre-run-gate --config ci_s1_smoke.yaml --json"
     report_cmd = "maxionbench report"
+    inspect_report_output_policy_cmd = "maxionbench inspect-report-output-policy"
+    inspect_report_output_policy_input = "--input artifacts/figures/ci_preflight"
+    inspect_report_output_policy_output = "--output artifacts/ci/report_output_policy_summary.json"
+    inspect_report_output_policy_strict = "--strict"
+    inspect_report_output_policy_json = "--json"
     assert verify_pins_cmd in text
+    assert verify_behavior_cards_cmd in text
     assert verify_hygiene_cmd in text
     assert verify_command_docs_cmd in text
     assert verify_figure_policy_sync_cmd in text
@@ -33,23 +45,90 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert verify_branch_policy_sync_cmd in text
     assert snapshot_required_checks_cmd in text
     assert snapshot_required_checks_strict in text
+    assert pre_run_gate_cmd in text
     assert validate_cmd in text
     assert report_cmd in text
+    assert inspect_report_output_policy_cmd in text
+    assert inspect_report_output_policy_input in text
+    assert inspect_report_output_policy_output in text
+    assert inspect_report_output_policy_strict in text
+    assert inspect_report_output_policy_json in text
+    inspect_steps = [
+        step
+        for step in steps
+        if isinstance(step, dict) and inspect_report_output_policy_cmd in str(step.get("run", ""))
+    ]
+    assert len(inspect_steps) == 1
+    inspect_run = str(inspect_steps[0].get("run", ""))
+    assert inspect_report_output_policy_input in inspect_run
+    assert inspect_report_output_policy_output in inspect_run
+    assert inspect_report_output_policy_strict in inspect_run
+    assert inspect_report_output_policy_json in inspect_run
     assert text.index(verify_pins_cmd) < text.index(validate_cmd)
+    assert text.index(verify_behavior_cards_cmd) < text.index(validate_cmd)
     assert text.index(verify_hygiene_cmd) < text.index(validate_cmd)
     assert text.index(verify_command_docs_cmd) < text.index(validate_cmd)
     assert text.index(verify_figure_policy_sync_cmd) < text.index(validate_cmd)
     assert text.index(verify_migration_docs_cmd) < text.index(validate_cmd)
     assert text.index(verify_branch_policy_sync_cmd) < text.index(validate_cmd)
     assert text.index(snapshot_required_checks_cmd) < text.index(validate_cmd)
+    assert text.index(pre_run_gate_cmd) < text.index(validate_cmd)
     assert text.index(validate_cmd) < text.index(report_cmd)
+    assert text.index(report_cmd) < text.index(inspect_report_output_policy_cmd)
 
-    upload_marker = "uses: actions/upload-artifact@v4"
-    assert upload_marker in text
-    assert "if: always()" in text
     assert "artifacts/ci/required_checks_snapshot.json" in text
+    assert "artifacts/ci/report_output_policy_summary.json" in text
     assert "artifacts/runs/ci_preflight/**" in text
     assert "artifacts/figures/ci_preflight/**" in text
+
+    inspect_idx = next(
+        idx
+        for idx, step in enumerate(steps)
+        if isinstance(step, dict) and inspect_report_output_policy_cmd in str(step.get("run", ""))
+    )
+    upload_steps = [
+        (idx, step)
+        for idx, step in enumerate(steps)
+        if isinstance(step, dict) and step.get("uses") == "actions/upload-artifact@v4"
+    ]
+    assert len(upload_steps) == 1
+    upload_idx, upload_step = upload_steps[0]
+    assert inspect_idx < upload_idx
+    assert upload_step.get("if") == "always()"
+    upload_with = upload_step.get("with", {})
+    assert isinstance(upload_with, dict)
+    upload_paths = str(upload_with.get("path", ""))
+    assert "artifacts/ci/required_checks_snapshot.json" in upload_paths
+    assert "artifacts/ci/report_output_policy_summary.json" in upload_paths
+
+
+def test_report_preflight_workflow_has_conformance_readiness_gate_job() -> None:
+    workflow = Path(".github/workflows/report_preflight.yml")
+    payload = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+
+    jobs = payload.get("jobs", {})
+    assert isinstance(jobs, dict)
+    assert "conformance_readiness_gate" in jobs
+
+    job = jobs["conformance_readiness_gate"]
+    assert isinstance(job, dict)
+    steps = job.get("steps", [])
+    assert isinstance(steps, list)
+    runs_blob = "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
+
+    assert "maxionbench conformance-matrix" in runs_blob
+    assert "--config-dir configs/conformance" in runs_blob
+    assert "--out-dir artifacts/conformance" in runs_blob
+    assert "maxionbench verify-engine-readiness" in runs_blob
+    assert "--conformance-matrix artifacts/conformance/conformance_matrix.csv" in runs_blob
+    assert "--behavior-dir docs/behavior" in runs_blob
+    assert "--allow-gpu-unavailable" in runs_blob
+    assert "--allow-nonpass-status" in runs_blob
+    assert "--json" in runs_blob
+    text = workflow.read_text(encoding="utf-8")
+    assert "conformance-readiness-artifacts" in text
+    assert "artifacts/conformance/**" in text
 
 
 def test_report_preflight_workflow_has_legacy_migration_path() -> None:
@@ -162,6 +241,7 @@ def test_report_preflight_workflow_enables_pip_cache() -> None:
     assert isinstance(jobs, dict)
 
     for job_name in (
+        "conformance_readiness_gate",
         "report_preflight",
         "legacy_migration_path",
         "legacy_resource_profile_path",
@@ -190,16 +270,19 @@ def test_branch_protection_docs_and_pr_template_reference_required_checks() -> N
     template_text = template.read_text(encoding="utf-8")
 
     check_primary = "report-preflight / report_preflight"
+    check_conformance = "report-preflight / conformance_readiness_gate"
     check_legacy = "report-preflight / legacy_migration_path"
     check_legacy_resource = "report-preflight / legacy_resource_profile_path"
     check_legacy_ground_truth = "report-preflight / legacy_ground_truth_metadata_path"
     check_drift = "branch-protection-drift / verify_branch_protection"
 
+    assert check_conformance in policy_text
     assert check_primary in policy_text
     assert check_legacy in policy_text
     assert check_legacy_resource in policy_text
     assert check_legacy_ground_truth in policy_text
     assert check_drift in policy_text
+    assert check_conformance in template_text
     assert check_primary in template_text
     assert check_legacy in template_text
     assert check_legacy_resource in template_text

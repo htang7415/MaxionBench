@@ -11,6 +11,7 @@ For branch `main`, configure branch protection with:
 
 Required checks:
 
+- `report-preflight / conformance_readiness_gate`
 - `report-preflight / report_preflight`
 - `report-preflight / legacy_migration_path`
 - `report-preflight / legacy_resource_profile_path`
@@ -21,6 +22,10 @@ Optional (recommended once token permissions are stable):
 
 ## Why these checks are required
 
+- `conformance_readiness_gate` verifies pre-run readiness policy wiring:
+  - generates `artifacts/conformance/conformance_matrix.csv`
+  - validates behavior-card coverage and conformance-matrix adapter coverage via `maxionbench verify-engine-readiness`
+  - preserves a CI artifact trail for readiness gating inputs
 - `report_preflight` verifies the normal path:
   - smoke benchmark run
   - artifact validation (`maxionbench validate`)

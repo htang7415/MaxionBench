@@ -68,7 +68,13 @@ FINAL_SPECS = [
 ]
 
 
-def generate_figures(*, input_dir: Path, out_dir: Path, mode: str) -> list[Path]:
+def generate_figures(
+    *,
+    input_dir: Path,
+    out_dir: Path,
+    mode: str,
+    output_policy: Mapping[str, Any] | None = None,
+) -> list[Path]:
     frame = load_results(input_dir)
     conformance = _load_conformance_matrix(input_dir)
     behavior = _load_behavior_matrix()
@@ -111,11 +117,12 @@ def generate_figures(*, input_dir: Path, out_dir: Path, mode: str) -> list[Path]
             "font_size": FONT_SIZE,
             "panel_pixels": PANEL_PX,
             "dpi": DPI,
+            "output_policy": dict(output_policy or {}),
         }
         _write_meta(out_png, meta)
         generated.append(out_png)
     if not has_s6_data:
-        generated.extend(_write_s6_deferred_note(mode=mode, out_dir=out_dir, frame=frame))
+        generated.extend(_write_s6_deferred_note(mode=mode, out_dir=out_dir, frame=frame, output_policy=output_policy))
     return generated
 
 
@@ -417,7 +424,13 @@ def _unique_int_values(frame: pd.DataFrame, column: str) -> list[int]:
     return sorted(values)
 
 
-def _write_s6_deferred_note(*, mode: str, out_dir: Path, frame: pd.DataFrame) -> list[Path]:
+def _write_s6_deferred_note(
+    *,
+    mode: str,
+    out_dir: Path,
+    frame: pd.DataFrame,
+    output_policy: Mapping[str, Any] | None = None,
+) -> list[Path]:
     name = "m8_deferred_note" if mode == "milestones" else "F5_deferred_note"
     note_path = out_dir / f"{name}.md"
     meta_path = out_dir / f"{name}.meta.json"
@@ -441,6 +454,7 @@ def _write_s6_deferred_note(*, mode: str, out_dir: Path, frame: pd.DataFrame) ->
         "run_ids": run_ids,
         "config_fingerprints": config_fingerprints,
         "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
+        "output_policy": dict(output_policy or {}),
     }
     with meta_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)

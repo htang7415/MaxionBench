@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 import requests
 
 DEFAULT_REQUIRED_CHECKS = (
+    "report-preflight / conformance_readiness_gate",
     "report-preflight / report_preflight",
     "report-preflight / legacy_migration_path",
     "report-preflight / legacy_resource_profile_path",

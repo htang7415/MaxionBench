@@ -20,6 +20,7 @@ def test_branch_protection_drift_workflow_has_expected_schedule_and_command() ->
     assert "maxionbench verify-branch-protection" in text
     assert '--repo "${GITHUB_REPOSITORY}"' in text
     assert "--branch main" in text
+    assert '--required-check "report-preflight / conformance_readiness_gate"' in text
     assert '--required-check "report-preflight / report_preflight"' in text
     assert '--required-check "report-preflight / legacy_migration_path"' in text
     assert '--required-check "report-preflight / legacy_resource_profile_path"' in text

@@ -49,3 +49,15 @@ def test_preflight_estimate_without_manifest(tmp_path: Path) -> None:
     assert summary["dataset_bytes"] > 0
     assert summary["engine_bytes"] > 0
     assert summary["temp_bytes"] > 0
+
+
+def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
+    text = Path("maxionbench/orchestration/slurm/common.sh").read_text(encoding="utf-8")
+    assert "MAXIONBENCH_SKIP_PRE_RUN_GATE" in text
+    assert "MAXIONBENCH_ALLOW_GPU_UNAVAILABLE" in text
+    assert "MAXIONBENCH_CONFORMANCE_MATRIX" in text
+    gate_marker = "pre-run-gate"
+    runner_marker = "python -m maxionbench.orchestration.runner"
+    assert gate_marker in text
+    assert runner_marker in text
+    assert text.index(gate_marker) < text.index(runner_marker)

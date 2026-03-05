@@ -47,6 +47,14 @@ def _verify_common_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     _expect_equal(errors, path, "steady_state_s", cfg.steady_state_s, 300)
     _expect_equal(errors, path, "rpc_baseline_requests", cfg.rpc_baseline_requests, 1000)
     _expect_equal(errors, path, "top_k", cfg.top_k, 10)
+    _expect_equal(errors, path, "c_ref_vcpu", cfg.c_ref_vcpu, 96.0)
+    _expect_equal(errors, path, "g_ref_gpu", cfg.g_ref_gpu, 1.0)
+    _expect_equal(errors, path, "r_ref_gib", cfg.r_ref_gib, 512.0)
+    _expect_equal(errors, path, "d_ref_tb", cfg.d_ref_tb, 7.68)
+    _expect_equal(errors, path, "w_c", cfg.w_c, 0.25)
+    _expect_equal(errors, path, "w_g", cfg.w_g, 0.25)
+    _expect_equal(errors, path, "w_r", cfg.w_r, 0.25)
+    _expect_equal(errors, path, "w_d", cfg.w_d, 0.25)
     return errors
 
 
@@ -167,10 +175,11 @@ def _verify_d4_real_data_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]
         return []
     errors: list[dict[str, Any]] = []
     _expect_equal(errors, path, "d4_beir_subsets", cfg.d4_beir_subsets, PINNED_BEIR_SUBSETS)
+    _expect_equal(errors, path, "d4_beir_split", cfg.d4_beir_split, "test")
     _expect_equal(errors, path, "d4_max_docs", cfg.d4_max_docs, 200000)
     _expect_equal(errors, path, "d4_max_queries", cfg.d4_max_queries, 5000)
     _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, True)
-    if cfg.d4_crag_path is not None:
+    if cfg.d4_include_crag:
         _expect_equal(errors, path, "d4_crag_path", cfg.d4_crag_path, PINNED_RAG_CRAG_PATH)
     return errors
 

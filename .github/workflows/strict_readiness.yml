@@ -1,0 +1,68 @@
+name: strict-readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      conformance_config_dir:
+        description: "Conformance config directory"
+        required: false
+        default: "configs/conformance"
+      timeout_s:
+        description: "Per-adapter conformance timeout in seconds"
+        required: false
+        default: "300"
+      allow_gpu_unavailable:
+        description: "Allow missing/non-pass faiss-gpu readiness"
+        required: false
+        default: "true"
+
+jobs:
+  strict_readiness_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run strict conformance matrix
+        run: |
+          maxionbench conformance-matrix \
+            --config-dir "${{ inputs.conformance_config_dir }}" \
+            --out-dir artifacts/conformance_strict \
+            --timeout-s "${{ inputs.timeout_s }}"
+
+      - name: Verify strict engine readiness policy
+        run: |
+          mkdir -p artifacts/conformance_strict
+          ARGS=( \
+            --conformance-matrix artifacts/conformance_strict/conformance_matrix.csv \
+            --behavior-dir docs/behavior \
+            --json \
+          )
+          if [[ "${{ inputs.allow_gpu_unavailable }}" == "true" ]]; then
+            ARGS+=(--allow-gpu-unavailable)
+          fi
+          maxionbench verify-engine-readiness "${ARGS[@]}" | tee artifacts/conformance_strict/engine_readiness_summary.json
+
+      - name: Upload strict readiness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-readiness-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            artifacts/conformance_strict/**
