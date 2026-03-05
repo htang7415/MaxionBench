@@ -2,3 +2,6 @@ dataset_bundle: D4
 approx_bytes_dataset: 6442450944
 approx_bytes_engine: 12884901888
 approx_bytes_temp: 3221225472
+crag_source: facebookresearch/CRAG
+crag_file: data/crag_task_1_and_2_dev_v4.jsonl.bz2
+crag_url: https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2

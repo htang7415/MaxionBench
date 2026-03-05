@@ -69,3 +69,21 @@ def test_run_metadata_validate_requires_hardware_runtime_keys() -> None:
     metadata = _base_metadata(hardware_runtime=payload)
     with pytest.raises(ValueError, match="hardware_runtime missing keys"):
         metadata.validate()
+
+
+def test_run_metadata_validate_rejects_blank_gpu_omission_reason_when_omitted() -> None:
+    payload = {
+        "hostname": "test-host",
+        "platform": "linux",
+        "python_version": "3.11.0",
+        "cpu_count_logical": 8,
+        "slurm_job_id": None,
+        "slurm_array_task_id": None,
+        "container_runtime_hint": "docker",
+        "total_memory_bytes": 1024,
+        "gpu_count": 0,
+    }
+    metadata = _base_metadata(hardware_runtime=payload)
+    metadata = RunMetadata(**{**metadata.__dict__, "gpu_tracks_omitted": True, "gpu_tracks_omission_reason": "  "})
+    with pytest.raises(ValueError, match="gpu_tracks_omission_reason"):
+        metadata.validate()

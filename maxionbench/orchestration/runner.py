@@ -21,7 +21,7 @@ from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.metrics.cost_rhu import rhu_hours
 from maxionbench.metrics.resources import ResourceProfile, profile_from_adapter_stats, rhu_rate_for_profile
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
-from maxionbench.runtime.rpc_baseline import measure_rpc_baseline
+from maxionbench.runtime.rpc_baseline import measure_rpc_baseline, minimal_rpc_request_fn
 from maxionbench.runtime.system_info import collect_system_info
 from maxionbench.scenarios.calibrate_d3 import CalibrateD3Config, run as run_calibrate_d3
 from maxionbench.scenarios.matched_quality import MatchedQualityCandidate, select_candidate
@@ -185,6 +185,15 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     log_path = output_dir / "logs" / "runner.log"
     first = rows[0]
     ground_truth = _ground_truth_descriptor(cfg)
+    hardware_runtime = collect_system_info()
+    configured_gpu_omission = bool(config_payload.get("readiness", {}).get("allow_gpu_unavailable", False))
+    observed_gpu_count = float(hardware_runtime.get("gpu_count", 0.0) or 0.0)
+    gpu_tracks_omitted = configured_gpu_omission and observed_gpu_count <= 0.0
+    gpu_tracks_omission_reason = (
+        "GPU Track B/C omitted because allow_gpu_unavailable=true and observed gpu_count=0"
+        if gpu_tracks_omitted
+        else None
+    )
     metadata = RunMetadata(
         run_id=first.run_id,
         timestamp_utc=utc_now_iso(),
@@ -212,7 +221,9 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         quality_targets=list(cfg.quality_targets),
         rhu_references=_rhu_references_payload(cfg),
         resource_profile=_summarize_resource_profile(rows),
-        hardware_runtime=collect_system_info(),
+        hardware_runtime=hardware_runtime,
+        gpu_tracks_omitted=gpu_tracks_omitted,
+        gpu_tracks_omission_reason=gpu_tracks_omission_reason,
     )
     export_start = time.perf_counter()
     write_results_parquet(output_path, rows)
@@ -314,7 +325,10 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
         setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s2(
@@ -425,7 +439,10 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s4(
@@ -505,7 +522,10 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s5(
@@ -591,7 +611,10 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
         setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
 
         scenario = run_s6(
@@ -756,7 +779,10 @@ def _run_s3_like_rows(
         setup_start = time.perf_counter()
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
 
         base_cfg = S3Config(
@@ -874,7 +900,10 @@ def _run_s1_sweep_for_client(
         adapter = create_adapter(cfg.engine, **cfg.adapter_options)
         adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
 
-        baseline = measure_rpc_baseline(request_fn=lambda: adapter.healthcheck(), request_count=cfg.rpc_baseline_requests)
+        baseline = measure_rpc_baseline(
+            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+            request_count=cfg.rpc_baseline_requests,
+        )
         setup_elapsed_s = time.perf_counter() - setup_start
         scenario_cfg = S1Config(
             vector_dim=cfg.vector_dim,
