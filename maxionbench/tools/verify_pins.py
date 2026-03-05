@@ -115,6 +115,7 @@ def _verify_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     if scenario == "s4_hybrid":
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 16)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [16])
         _expect_equal(errors, path, "rrf_k", cfg.rrf_k, 60)
         _expect_equal(errors, path, "s4_dense_candidates", cfg.s4_dense_candidates, 200)
         _expect_equal(errors, path, "s4_bm25_candidates", cfg.s4_bm25_candidates, 200)
@@ -124,6 +125,7 @@ def _verify_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     if scenario == "s5_rerank":
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 16)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [16])
         _expect_equal(errors, path, "s5_candidate_budgets", cfg.s5_candidate_budgets, [50, 200, 1000])
         _expect_equal(errors, path, "s5_reranker_model_id", cfg.s5_reranker_model_id, "BAAI/bge-reranker-base")
         _expect_equal(errors, path, "s5_reranker_revision_tag", cfg.s5_reranker_revision_tag, "2026-03-04")
@@ -137,6 +139,7 @@ def _verify_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     if scenario == "s6_fusion":
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 16)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [16])
         _expect_equal(errors, path, "rrf_k", cfg.rrf_k, 60)
         _expect_equal(errors, path, "s6_dense_a_candidates", cfg.s6_dense_a_candidates, 200)
         _expect_equal(errors, path, "s6_dense_b_candidates", cfg.s6_dense_b_candidates, 200)

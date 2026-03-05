@@ -10,6 +10,7 @@ output_dir: artifacts/runs/s4_hybrid_d4_real_mock
 quality_target: 0.35
 clients_read: 16
 clients_write: 0
+clients_grid: [16]
 warmup_s: 120
 steady_state_s: 300
 rpc_baseline_requests: 1000
