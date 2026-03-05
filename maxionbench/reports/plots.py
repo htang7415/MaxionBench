@@ -87,11 +87,13 @@ def generate_figures(*, input_dir: Path, out_dir: Path, mode: str) -> list[Path]
         fig, ax = plt.subplots(figsize=(PANEL_PX / DPI, PANEL_PX / DPI), dpi=DPI)
         _render_plot(ax=ax, frame=subset, title=spec.name, conformance=conformance, behavior=behavior)
         out_png = out_dir / f"{spec.name}.png"
-        fig.savefig(out_png, dpi=DPI, format="png", bbox_inches="tight")
+        fig.savefig(out_png, dpi=DPI, format="png")
         plt.close(fig)
 
         run_ids = _unique_str_values(subset, "run_id")
         config_fingerprints = _unique_str_values(subset, "__meta_config_fingerprint")
+        dataset_bundles = _unique_str_values(subset, "dataset_bundle")
+        seeds = _unique_int_values(subset, "seed")
         meta = {
             "figure_name": spec.name,
             "mode": mode,
@@ -102,10 +104,13 @@ def generate_figures(*, input_dir: Path, out_dir: Path, mode: str) -> list[Path]
             "conformance_rows": int(len(conformance)),
             "engines": sorted({str(v) for v in subset.get("engine", pd.Series(dtype=str)).tolist()}),
             "scenarios": sorted({str(v) for v in subset.get("scenario", pd.Series(dtype=str)).tolist()}),
+            "dataset_bundles": dataset_bundles,
+            "seeds": seeds,
             "run_ids": run_ids,
             "config_fingerprints": config_fingerprints,
             "font_size": FONT_SIZE,
             "panel_pixels": PANEL_PX,
+            "dpi": DPI,
         }
         _write_meta(out_png, meta)
         generated.append(out_png)
@@ -396,12 +401,30 @@ def _unique_str_values(frame: pd.DataFrame, column: str) -> list[str]:
     return sorted(values)
 
 
+def _unique_int_values(frame: pd.DataFrame, column: str) -> list[int]:
+    if column not in frame.columns:
+        return []
+    values: set[int] = set()
+    for value in frame[column].tolist():
+        if value is None:
+            continue
+        if isinstance(value, float) and np.isnan(value):
+            continue
+        try:
+            values.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return sorted(values)
+
+
 def _write_s6_deferred_note(*, mode: str, out_dir: Path, frame: pd.DataFrame) -> list[Path]:
     name = "m8_deferred_note" if mode == "milestones" else "F5_deferred_note"
     note_path = out_dir / f"{name}.md"
     meta_path = out_dir / f"{name}.meta.json"
     run_ids = _unique_str_values(frame, "run_id")
     config_fingerprints = _unique_str_values(frame, "__meta_config_fingerprint")
+    dataset_bundles = _unique_str_values(frame, "dataset_bundle")
+    seeds = _unique_int_values(frame, "seed")
     note_path.write_text(
         "S6 was deferred in this report bundle because no `s6_fusion` scenario rows were found.\n",
         encoding="utf-8",
@@ -411,6 +434,10 @@ def _write_s6_deferred_note(*, mode: str, out_dir: Path, frame: pd.DataFrame) ->
         "mode": mode,
         "deferred": True,
         "reason": "no_s6_rows",
+        "engines": _unique_str_values(frame, "engine"),
+        "scenarios": _unique_str_values(frame, "scenario"),
+        "dataset_bundles": dataset_bundles,
+        "seeds": seeds,
         "run_ids": run_ids,
         "config_fingerprints": config_fingerprints,
         "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),

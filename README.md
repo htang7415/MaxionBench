@@ -18,7 +18,7 @@ Artifact preflight before report generation:
    - dry run: `maxionbench migrate-stage-timing --input artifacts/runs --dry-run`
    - apply: `maxionbench migrate-stage-timing --input artifacts/runs`
 3. Re-validate: `maxionbench validate --input artifacts/runs --strict-schema --json`
-4. Generate report: `maxionbench report --input artifacts/runs --mode milestones --out artifacts/figures/milestones`
+4. Generate report: `maxionbench report --input artifacts/runs --mode milestones --out artifacts/figures/milestones/Mx`
 
 Legacy compatibility mode:
 - Use `maxionbench validate --input artifacts/runs --legacy-ok --json` for local inspection of older artifacts.
@@ -33,14 +33,19 @@ Pre-merge automation:
 - It also exercises a legacy ground-truth metadata path: strict validation/report failure for missing `ground_truth_*` fields plus `--legacy-ok` warning diagnostics artifact.
 - The workflow also runs repository hygiene checks to guard against tracked Python cache artifacts.
 - The workflow also runs command-doc consistency checks to prevent stale CLI examples.
+- The workflow also runs figure-policy sync checks to keep report figure IDs and style pins aligned with `prompt.md`.
 - The workflow also checks README migration index consistency against `docs/migrations/`.
+- The workflow also checks branch-protection policy sync against report-preflight job names.
+- The workflow also writes a required-check snapshot artifact via `maxionbench snapshot-required-checks --strict`.
 - The workflow enables pip dependency caching via `actions/setup-python` (`cache: pip`) to keep pre-merge runtime stable.
 - Optional policy drift check: `maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json`
 - To also require drift workflow status in verification: add `--include-drift-check`.
 - Automated drift checker workflow: `.github/workflows/branch_protection_drift.yml`
+- Branch protection doc includes a policy-sync guard section describing the tests that enforce workflow/check-name alignment.
 
 Migration details:
 - `docs/migrations/result_schema_stage_timing_v0_1.md`
 - `docs/migrations/result_schema_resource_profile_v0_1.md`
 - `docs/migrations/result_schema_ground_truth_metadata_v0_1.md`
+- `docs/migrations/result_schema_hardware_runtime_v0_1.md`
 - `docs/ci/branch_protection.md`

@@ -166,6 +166,17 @@ def test_validate_run_directory_rejects_non_integer_ground_truth_k(tmp_path: Pat
         validate_run_directory(run_dir)
 
 
+def test_validate_run_directory_rejects_missing_hardware_runtime_metadata(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-missing-hardware-runtime-meta", seed=48)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("hardware_runtime", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="hardware/runtime summary"):
+        validate_run_directory(run_dir)
+
+
 def test_validate_path_legacy_ok_allows_schema_drift_with_warnings(tmp_path: Path) -> None:
     run_dir = _make_run(tmp_path, name="run-legacy-ok", seed=47)
     results_path = run_dir / "results.parquet"
@@ -179,6 +190,7 @@ def test_validate_path_legacy_ok_allows_schema_drift_with_warnings(tmp_path: Pat
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata.pop("resource_profile", None)
     metadata.pop("ground_truth_engine", None)
+    metadata.pop("hardware_runtime", None)
     metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     summary = validate_path(run_dir, strict_schema=False)
@@ -188,6 +200,7 @@ def test_validate_path_legacy_ok_allows_schema_drift_with_warnings(tmp_path: Pat
     assert run_summary["stage_timing_ok"] is False
     assert run_summary["resource_fields_ok"] is False
     assert run_summary["ground_truth_metadata_ok"] is False
+    assert run_summary["hardware_runtime_ok"] is False
     assert run_summary["resource_metadata_ok"] is False
     assert run_summary["logs_ok"] is False
 

@@ -42,6 +42,25 @@ Optional (recommended once token permissions are stable):
 
 If workflow/job names change, update this policy doc and `.github/pull_request_template.md` in the same PR.
 
+## Automatic policy-sync guards
+
+These consistency checks are enforced in CI and should pass in the same PR as any workflow/check rename:
+
+- `tests/test_branch_protection_policy_sync.py`
+  - `report_preflight.yml` jobs <-> required check contexts in this doc
+  - `report_preflight.yml` jobs <-> required check checklist entries in `.github/pull_request_template.md`
+  - `report_preflight.yml` jobs <-> `maxionbench.tools.verify_branch_protection.DEFAULT_REQUIRED_CHECKS`
+  - `branch_protection_drift.yml --required-check ...` <-> `DEFAULT_REQUIRED_CHECKS`
+- `tests/test_branch_protection_drift_workflow.py`
+  - drift workflow command shape and required-check arguments
+- `tests/test_report_preflight_workflow.py`
+  - preflight workflow structure and required legacy safety-path checks
+- `tests/test_report_figure_policy_sync.py`
+  - report figure IDs/style pins and prompt alignment for milestone/final exports
+- CI artifact snapshot command:
+  - `maxionbench snapshot-required-checks --output artifacts/ci/required_checks_snapshot.json --strict --json`
+  - writes `artifacts/ci/required_checks_snapshot.json` for auditable required-check context parity
+
 ## Optional drift check command
 
 You can verify current GitHub branch protection status via API:
