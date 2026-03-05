@@ -68,6 +68,10 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     t1 = pd.read_csv(out_dir / "T1_environment_runtime_pinning.csv")
     assert set(
         [
+            "ground_truth_source",
+            "ground_truth_metric",
+            "ground_truth_k",
+            "ground_truth_engine",
             "resource_cpu_vcpu_median",
             "resource_gpu_count_median",
             "resource_ram_gib_median",
@@ -83,6 +87,10 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
             "d_ref_tb",
         ]
     ).issubset(t1.columns)
+    assert str(t1.loc[0, "ground_truth_source"]) == "exact_topk"
+    assert str(t1.loc[0, "ground_truth_metric"]) == "recall_at_10"
+    assert int(t1.loc[0, "ground_truth_k"]) == 10
+    assert str(t1.loc[0, "ground_truth_engine"]) == "numpy_exact"
     assert float(t1.loc[0, "resource_cpu_vcpu_median"]) >= 1.0
     assert float(t1.loc[0, "rhu_rate_median"]) > 0.0
 
@@ -135,5 +143,32 @@ def test_report_preflight_legacy_resource_profile_has_hint(tmp_path: Path) -> No
                 "milestones",
                 "--out",
                 str(tmp_path / "cli_legacy_resource"),
+            ]
+        )
+
+
+def test_report_preflight_legacy_ground_truth_metadata_has_hint(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("ground_truth_source", None)
+    metadata.pop("ground_truth_metric", None)
+    metadata.pop("ground_truth_k", None)
+    metadata.pop("ground_truth_engine", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="ground truth metadata"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=tmp_path / "figures_legacy_ground_truth", mode="milestones")
+
+    with pytest.raises(RuntimeError, match="ground truth metadata"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                str(tmp_path / "cli_legacy_ground_truth"),
             ]
         )

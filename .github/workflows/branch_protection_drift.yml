@@ -36,6 +36,9 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --branch main \
             --token "${TOKEN}" \
+            --required-check "report-preflight / report_preflight" \
+            --required-check "report-preflight / legacy_migration_path" \
+            --required-check "report-preflight / legacy_resource_profile_path" \
             --json | tee branch_protection_summary.json
 
       - name: Upload branch protection summary

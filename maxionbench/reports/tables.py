@@ -93,6 +93,10 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
         "engine_version",
         "scenario",
         "dataset_bundle",
+        "ground_truth_source",
+        "ground_truth_metric",
+        "ground_truth_k",
+        "ground_truth_engine",
         "clients_read",
         "clients_write",
         "sla_threshold_ms",
@@ -137,9 +141,16 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
         ("__meta_g_ref_gpu", "__meta_g_ref_gpu"),
         ("__meta_r_ref_gib", "__meta_r_ref_gib"),
         ("__meta_d_ref_tb", "__meta_d_ref_tb"),
+        ("__meta_ground_truth_source", "__meta_ground_truth_source"),
+        ("__meta_ground_truth_metric", "__meta_ground_truth_metric"),
+        ("__meta_ground_truth_engine", "__meta_ground_truth_engine"),
+        ("__meta_ground_truth_k", "__meta_ground_truth_k"),
     ]:
         if src not in working.columns:
-            working[src] = float("nan")
+            if src.startswith("__meta_ground_truth_") and not src.endswith("_k"):
+                working[src] = ""
+            else:
+                working[src] = float("nan")
         if dst != src:
             working[dst] = working[src]
     grouped = (
@@ -149,6 +160,10 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
                 "engine_version",
                 "scenario",
                 "dataset_bundle",
+                "__meta_ground_truth_source",
+                "__meta_ground_truth_metric",
+                "__meta_ground_truth_engine",
+                "__meta_ground_truth_k",
                 "clients_read",
                 "clients_write",
                 "sla_threshold_ms",
@@ -175,6 +190,14 @@ def _table_t1_env_runtime(frame: pd.DataFrame) -> pd.DataFrame:
             d_ref_tb=("__meta_d_ref_tb", "first"),
         )
         .reset_index()
+    )
+    grouped = grouped.rename(
+        columns={
+            "__meta_ground_truth_source": "ground_truth_source",
+            "__meta_ground_truth_metric": "ground_truth_metric",
+            "__meta_ground_truth_engine": "ground_truth_engine",
+            "__meta_ground_truth_k": "ground_truth_k",
+        }
     )
     return grouped[columns]
 

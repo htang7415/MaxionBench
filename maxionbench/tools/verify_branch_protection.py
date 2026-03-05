@@ -12,6 +12,8 @@ import requests
 DEFAULT_REQUIRED_CHECKS = (
     "report-preflight / report_preflight",
     "report-preflight / legacy_migration_path",
+    "report-preflight / legacy_resource_profile_path",
+    "report-preflight / legacy_ground_truth_metadata_path",
 )
 OPTIONAL_DRIFT_CHECK = "branch-protection-drift / verify_branch_protection"
 

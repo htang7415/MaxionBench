@@ -70,6 +70,10 @@ def test_runner_end_to_end(tmp_path: Path) -> None:
     metadata = json.loads((out_dir / "run_metadata.json").read_text(encoding="utf-8"))
     assert set(metadata["resource_profile"].keys()) == {"cpu_vcpu", "gpu_count", "ram_gib", "disk_tb", "rhu_rate"}
     assert set(metadata["rhu_references"].keys()) == {"c_ref_vcpu", "g_ref_gpu", "r_ref_gib", "d_ref_tb"}
+    assert metadata["ground_truth_source"] == "exact_topk"
+    assert metadata["ground_truth_metric"] == "recall_at_10"
+    assert int(metadata["ground_truth_k"]) == 10
+    assert metadata["ground_truth_engine"] == "numpy_exact"
     log_lines = [line for line in (out_dir / "logs" / "runner.log").read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(log_lines) == len(frame)
     event = json.loads(log_lines[0])

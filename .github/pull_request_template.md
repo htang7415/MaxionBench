@@ -6,6 +6,8 @@ Describe the change and why it is needed.
 
 - [ ] `report-preflight / report_preflight` passed
 - [ ] `report-preflight / legacy_migration_path` passed
+- [ ] `report-preflight / legacy_resource_profile_path` passed
+- [ ] `report-preflight / legacy_ground_truth_metadata_path` passed
 - [ ] `branch-protection-drift / verify_branch_protection` passed (if enforced)
 
 ## Artifact/Report Notes

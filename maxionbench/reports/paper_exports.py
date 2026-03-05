@@ -14,7 +14,7 @@ def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict
         raise ValueError("mode must be one of: milestones, final")
     resolved_input = input_dir.resolve()
     try:
-        validate_path(resolved_input)
+        validate_path(resolved_input, strict_schema=True)
     except ValueError as exc:
         message = str(exc)
         if "missing stage timing columns" in message:
@@ -31,6 +31,11 @@ def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict
             raise RuntimeError(
                 "Legacy run artifacts detected: RHU resource profile fields are missing. "
                 "Re-run benchmarks to regenerate artifacts with resource columns and RHU metadata, then retry report generation."
+            ) from exc
+        if "missing ground truth metadata keys" in message or "ground_truth_" in message:
+            raise RuntimeError(
+                "Legacy run artifacts detected: ground truth metadata fields are missing or invalid. "
+                "Re-run benchmarks to regenerate artifacts with complete ground-truth provenance in run_metadata.json."
             ) from exc
         raise
     frame = load_results(input_dir)

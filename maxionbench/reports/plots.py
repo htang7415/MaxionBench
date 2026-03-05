@@ -126,6 +126,10 @@ def load_results(input_dir: Path) -> pd.DataFrame:
         metadata = _load_run_metadata(run_dir)
         frame["__meta_run_id"] = str(metadata.get("run_id") or "")
         frame["__meta_config_fingerprint"] = str(metadata.get("config_fingerprint") or "")
+        frame["__meta_ground_truth_source"] = str(metadata.get("ground_truth_source") or "")
+        frame["__meta_ground_truth_metric"] = str(metadata.get("ground_truth_metric") or "")
+        frame["__meta_ground_truth_engine"] = str(metadata.get("ground_truth_engine") or "")
+        frame["__meta_ground_truth_k"] = _safe_float(metadata.get("ground_truth_k"))
         rhu_weights = metadata.get("rhu_weights")
         if not isinstance(rhu_weights, dict):
             rhu_weights = {}

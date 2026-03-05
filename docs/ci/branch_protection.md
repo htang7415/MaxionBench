@@ -13,6 +13,8 @@ Required checks:
 
 - `report-preflight / report_preflight`
 - `report-preflight / legacy_migration_path`
+- `report-preflight / legacy_resource_profile_path`
+- `report-preflight / legacy_ground_truth_metadata_path`
 
 Optional (recommended once token permissions are stable):
 - `branch-protection-drift / verify_branch_protection`
@@ -27,6 +29,14 @@ Optional (recommended once token permissions are stable):
   - report fails on legacy artifacts missing stage timing columns
   - migration (`maxionbench migrate-stage-timing`) backfills columns
   - report succeeds after migration
+- `legacy_resource_profile_path` verifies RHU schema enforcement:
+  - strict validation fails when RHU resource columns/metadata are missing
+  - `--legacy-ok` surfaces explicit warnings for local inspection
+  - report generation fails with RHU remediation hint for legacy artifacts
+- `legacy_ground_truth_metadata_path` verifies ground-truth provenance enforcement:
+  - strict validation fails when `ground_truth_*` metadata fields are missing/invalid
+  - `--legacy-ok` surfaces warning diagnostics for local inspection
+  - report generation fails with ground-truth remediation hint for legacy artifacts
 
 ## Maintenance note
 
