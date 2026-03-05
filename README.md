@@ -30,6 +30,7 @@ Pre-merge automation:
 - The workflow uploads smoke run/report artifacts (`actions/upload-artifact`) for debugging on both success and failure.
 - The same workflow also exercises the legacy migration path: report failure on missing stage timing columns, migration backfill, re-validation, then successful report generation.
 - It also exercises a legacy resource-profile path: strict validation/report failure for missing RHU fields plus `--legacy-ok` warning diagnostics artifact.
+- It also exercises a legacy ground-truth metadata path: strict validation/report failure for missing `ground_truth_*` fields plus `--legacy-ok` warning diagnostics artifact.
 - The workflow enables pip dependency caching via `actions/setup-python` (`cache: pip`) to keep pre-merge runtime stable.
 - Optional policy drift check: `maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json`
 - To also require drift workflow status in verification: add `--include-drift-check`.

@@ -23,6 +23,7 @@ def test_branch_protection_drift_workflow_has_expected_schedule_and_command() ->
     assert '--required-check "report-preflight / report_preflight"' in text
     assert '--required-check "report-preflight / legacy_migration_path"' in text
     assert '--required-check "report-preflight / legacy_resource_profile_path"' in text
+    assert '--required-check "report-preflight / legacy_ground_truth_metadata_path"' in text
     assert "BRANCH_PROTECTION_TOKEN" in text
     assert "actions/upload-artifact@v4" in text
     assert "branch_protection_summary.json" in text
