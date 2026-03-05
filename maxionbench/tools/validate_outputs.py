@@ -621,7 +621,76 @@ def _validate_runtime_protocol(
         strict_schema=strict_schema,
         warnings=warnings,
     ) and ok
+    ok = _validate_gpu_track_omission_metadata(
+        metadata=metadata,
+        config_payload=config_payload,
+        strict_schema=strict_schema,
+        warnings=warnings,
+    ) and ok
     return ok
+
+
+def _validate_gpu_track_omission_metadata(
+    *,
+    metadata: Mapping[str, Any],
+    config_payload: Mapping[str, Any],
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    if "gpu_tracks_omitted" not in metadata:
+        _raise_or_warn(
+            "run_metadata.json missing `gpu_tracks_omitted` boolean for pinned protocol runs",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    omitted_value = metadata.get("gpu_tracks_omitted")
+    if not isinstance(omitted_value, bool):
+        _raise_or_warn(
+            "run_metadata.json `gpu_tracks_omitted` must be a boolean",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    reason_value = metadata.get("gpu_tracks_omission_reason")
+    if omitted_value:
+        if not isinstance(reason_value, str) or not reason_value.strip():
+            _raise_or_warn(
+                "run_metadata.json must provide non-empty `gpu_tracks_omission_reason` when gpu_tracks_omitted=true",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            return False
+    elif reason_value not in {None, ""} and not (isinstance(reason_value, str) and not reason_value.strip()):
+        _raise_or_warn(
+            "run_metadata.json `gpu_tracks_omission_reason` must be empty/null when gpu_tracks_omitted=false",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    readiness = config_payload.get("readiness")
+    allow_gpu_unavailable = False
+    if isinstance(readiness, Mapping):
+        allow_gpu_unavailable = bool(readiness.get("allow_gpu_unavailable", False))
+    hardware = metadata.get("hardware_runtime")
+    observed_gpu_count = 0.0
+    if isinstance(hardware, Mapping):
+        try:
+            observed_gpu_count = float(hardware.get("gpu_count", 0.0))
+        except (TypeError, ValueError):
+            observed_gpu_count = 0.0
+    expected_omitted = allow_gpu_unavailable and observed_gpu_count <= 0.0
+    if omitted_value != expected_omitted:
+        _raise_or_warn(
+            "run_metadata.json `gpu_tracks_omitted` does not match readiness.allow_gpu_unavailable "
+            f"({allow_gpu_unavailable}) and observed hardware_runtime.gpu_count ({observed_gpu_count})",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    return True
 
 
 def _validate_frame_constant(
@@ -919,16 +988,80 @@ def validate_path(
         total_rows += int(summary["rows"])
         warnings.extend([str(item) for item in summary.get("warnings", [])])
         runs.append(summary)
+    cross_run_protocol_ok = True
+    if enforce_protocol:
+        cross_run_protocol_ok = _validate_cross_run_protocol(
+            run_dirs=run_dirs,
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
     return {
         "input": str(path.resolve()),
         "strict_schema": strict_schema,
         "enforce_protocol": enforce_protocol,
+        "cross_run_protocol_ok": cross_run_protocol_ok,
         "warning_count": len(warnings),
         "warnings": warnings,
         "run_count": len(runs),
         "total_rows": total_rows,
         "runs": runs,
     }
+
+
+def _validate_cross_run_protocol(
+    *,
+    run_dirs: list[Path],
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    records: list[tuple[Path, Mapping[str, Any]]] = []
+    for run_dir in run_dirs:
+        metadata_path = run_dir / "run_metadata.json"
+        try:
+            metadata = read_metadata(metadata_path)
+        except Exception as exc:
+            _raise_or_warn(
+                f"failed to read {metadata_path}: {exc}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            return False
+        records.append((run_dir, metadata))
+
+    s1_baselines: set[tuple[str, str, int]] = set()
+    s3_like_runs: list[tuple[Path, str, tuple[str, str, int]]] = []
+    for run_dir, metadata in records:
+        scenario = str(metadata.get("scenario") or "")
+        engine = str(metadata.get("engine") or "")
+        dataset_bundle = str(metadata.get("dataset_bundle") or "")
+        try:
+            clients_read = int(metadata.get("clients_read"))
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"run_metadata.json for `{run_dir}` must include integer clients_read",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            return False
+        key = (engine, dataset_bundle, clients_read)
+        if scenario == "s1_ann_frontier":
+            s1_baselines.add(key)
+        elif scenario in {"s3_churn_smooth", "s3b_churn_bursty"}:
+            s3_like_runs.append((run_dir, scenario, key))
+
+    ok = True
+    for run_dir, scenario, key in s3_like_runs:
+        if key in s1_baselines:
+            continue
+        engine, dataset_bundle, clients_read = key
+        _raise_or_warn(
+            f"{scenario} run `{run_dir}` is missing matched S1 baseline "
+            f"(engine={engine}, dataset_bundle={dataset_bundle}, clients_read={clients_read})",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        ok = False
+    return ok
 
 
 def main(argv: list[str] | None = None) -> int:

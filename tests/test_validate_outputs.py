@@ -289,3 +289,86 @@ def test_validate_run_directory_enforce_protocol_rejects_s1_quality_target_drift
     )
     with pytest.raises(ValueError, match="quality_targets"):
         validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_requires_gpu_tracks_omitted_flag(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-gpu-omission-field",
+        seed=75,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("gpu_tracks_omitted", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="gpu_tracks_omitted"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_path_enforce_protocol_flags_missing_s3_s1_baseline(tmp_path: Path) -> None:
+    s3_run = _make_run(
+        tmp_path,
+        name="run-s3-only",
+        seed=79,
+        overrides={
+            "scenario": "s3_churn_smooth",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 8,
+            "clients_grid": [32],
+            "sla_threshold_ms": 120.0,
+            "s3_max_events": 60,
+        },
+    )
+    summary = validate_path(s3_run, strict_schema=False, enforce_protocol=True)
+    assert summary["cross_run_protocol_ok"] is False
+    assert any("missing matched S1 baseline" in warning for warning in summary["warnings"])
+
+
+def test_validate_path_enforce_protocol_accepts_s3_with_matching_s1_baseline(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    _make_run(
+        runs_root,
+        name="run-s1-d3-baseline",
+        seed=83,
+        overrides={
+            "scenario": "s1_ann_frontier",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 0,
+            "clients_grid": [32],
+            "quality_targets": [0.8],
+            "sla_threshold_ms": 50.0,
+        },
+    )
+    _make_run(
+        runs_root,
+        name="run-s3-with-baseline",
+        seed=89,
+        overrides={
+            "scenario": "s3_churn_smooth",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 8,
+            "clients_grid": [32],
+            "sla_threshold_ms": 120.0,
+            "s3_max_events": 60,
+        },
+    )
+    summary = validate_path(runs_root, strict_schema=False, enforce_protocol=True)
+    assert summary["cross_run_protocol_ok"] is True
+    assert not any("missing matched S1 baseline" in warning for warning in summary["warnings"])

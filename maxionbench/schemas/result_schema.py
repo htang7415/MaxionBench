@@ -119,6 +119,8 @@ class RunMetadata:
     rhu_references: Mapping[str, float] | None = None
     resource_profile: Mapping[str, float] | None = None
     hardware_runtime: Mapping[str, Any] | None = None
+    gpu_tracks_omitted: bool = False
+    gpu_tracks_omission_reason: str | None = None
 
     def validate(self) -> None:
         if not self.no_retry:
@@ -151,6 +153,8 @@ class RunMetadata:
         missing_hardware_runtime = [name for name in REQUIRED_HARDWARE_RUNTIME_FIELDS if name not in self.hardware_runtime]
         if missing_hardware_runtime:
             raise ValueError(f"hardware_runtime missing keys: {missing_hardware_runtime}")
+        if self.gpu_tracks_omission_reason is not None and not str(self.gpu_tracks_omission_reason).strip():
+            raise ValueError("gpu_tracks_omission_reason must be non-empty when provided")
 
 
 def utc_now_iso() -> str:
