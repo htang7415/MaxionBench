@@ -75,12 +75,14 @@ Legacy compatibility mode:
 Pre-merge automation:
 - `.github/workflows/report_preflight.yml` runs a fast smoke benchmark, validates artifacts with `maxionbench validate --strict-schema`, then runs `maxionbench report`.
 - The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce structural readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status --require-mock-pass` (strict pass/fail readiness is handled in `strict_readiness.yml`).
-- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`, so non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active, and installs `.[dev,engines]`).
-- Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
+- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`, so non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active, installs `.[dev,engines]`, and accepts `scenario_config_dir` + optional `strict_d3_scenario_scale=true` for paper-scale D3 pin enforcement; optional `require_paper_d3_calibration=true` checks `d3_params_path` with strict calibration rules).
+- Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml` (same `scenario_config_dir` / `strict_d3_scenario_scale` inputs for pin policy and optional strict D3 calibration gate via `require_paper_d3_calibration` + `d3_params_path`).
+- Dedicated paper-scale D3 scenario configs live under `configs/scenarios_paper/` (S1-D3/S2/S3/S3b + calibrate_d3 at 10M).
 - Publish workflow promotion gate cross-checks both strict summary and downloaded conformance matrix (`--strict-readiness-summary` + `--conformance-matrix`).
 - In that cross-check mode, `require_mock_pass=true` also requires a `mock` row with `status=pass` in the matrix artifact.
 - In `allow_gpu_unavailable` mode, promotion-gate non-pass rows are allowed only for `faiss-gpu`, and only when matrix cross-check is provided.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.
+- The workflow also runs `maxionbench verify-pins --config-dir configs/scenarios_paper --strict-d3-scenario-scale --json` to keep paper-lane D3 scale pins from drifting.
 - The workflow runs `maxionbench verify-behavior-cards --behavior-dir docs/behavior --json` to enforce behavior-card coverage/sections.
 - The workflow runs `maxionbench verify-conformance-configs --config-dir configs/conformance --json` to enforce conformance config catalog shape and adapter coverage.
 - The smoke path runs `maxionbench pre-run-gate --config ci_s1_smoke.yaml --json` before `maxionbench run`.
@@ -98,6 +100,9 @@ Pre-merge automation:
 - The workflow also verifies Slurm plan consistency for GPU-omitted mode with `maxionbench verify-slurm-plan --skip-gpu --json`.
 - The workflow also verifies Slurm dependency planning with `maxionbench submit-slurm-plan --dry-run --json`.
 - The workflow also verifies Slurm dependency planning for GPU-omitted mode with `maxionbench submit-slurm-plan --skip-gpu --dry-run --json`.
+- The workflow also verifies Slurm dependency planning for paper override mode with `maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json`.
+- `maxionbench submit-slurm-plan --scenario-config-dir <dir>` is supported for runtime scenario overrides; each array task uses the override file when present and otherwise falls back to its default scenario config.
+- The same override also applies to `calibrate_d3` when `<dir>/calibrate_d3.yaml` exists (unless `MAXIONBENCH_CALIBRATE_CONFIG` is explicitly set).
 - The workflow also captures Slurm plan diagnostics under `artifacts/ci/` (`slurm_plan_verify*.json`, `slurm_submit_plan*_dry_run.json`).
 - The workflow validates these Slurm diagnostic snapshots with `maxionbench validate-slurm-snapshots --json` before proceeding.
 - The workflow writes `artifacts/ci/slurm_snapshot_validation.json` as the consolidated Slurm snapshot validation result.

@@ -12,6 +12,7 @@ __pycache__/
 .pytest_cache/
 
 *.sh
+!run_workstation.sh
 
 # Local generated benchmark outputs
 artifacts/ci/

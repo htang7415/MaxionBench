@@ -82,6 +82,10 @@ jobs:
         run: |
           maxionbench verify-pins --config-dir configs/scenarios --json
 
+      - name: Verify pinned paper scenario configs
+        run: |
+          maxionbench verify-pins --config-dir configs/scenarios_paper --strict-d3-scenario-scale --json
+
       - name: Verify dataset manifests
         run: |
           maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json
@@ -134,6 +138,15 @@ jobs:
           mkdir -p artifacts/ci
           maxionbench submit-slurm-plan --skip-gpu --dry-run --json | tee artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
 
+      - name: Verify Slurm submit plan dependency topology (dry-run, paper override, GPU omitted)
+        run: |
+          mkdir -p artifacts/ci
+          maxionbench submit-slurm-plan \
+            --scenario-config-dir configs/scenarios_paper \
+            --skip-gpu \
+            --dry-run \
+            --json | tee artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json
+
       - name: Validate Slurm plan snapshot payloads
         run: |
           maxionbench validate-slurm-snapshots \
@@ -141,6 +154,7 @@ jobs:
             --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
             --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
             --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
+            --submit-path artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json \
             --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
             --json | tee artifacts/ci/slurm_snapshot_validation.json
 
@@ -224,6 +238,7 @@ jobs:
             --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
             --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
             --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
+            --submit-path artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json \
             --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
             --report-input artifacts/figures/ci_preflight \
             --require-report-policy \
@@ -251,6 +266,7 @@ jobs:
             artifacts/ci/slurm_plan_verify_skip_gpu.json
             artifacts/ci/slurm_submit_plan_dry_run.json
             artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
+            artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json
             artifacts/ci/slurm_snapshot_validation.json
             artifacts/ci/ci_protocol_audit.json
             artifacts/runs/ci_preflight/**

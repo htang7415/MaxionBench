@@ -21,6 +21,9 @@ def test_report_preflight_workflow_validates_before_report() -> None:
 
     validate_cmd = "maxionbench validate --input artifacts/runs/ci_preflight --strict-schema --json"
     verify_pins_cmd = "maxionbench verify-pins --config-dir configs/scenarios --json"
+    verify_pins_paper_cmd = (
+        "maxionbench verify-pins --config-dir configs/scenarios_paper --strict-d3-scenario-scale --json"
+    )
     verify_dataset_manifests_cmd = (
         "maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json"
     )
@@ -35,6 +38,13 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     verify_slurm_plan_skip_gpu_cmd = "maxionbench verify-slurm-plan --skip-gpu --json"
     verify_slurm_submit_plan_cmd = "maxionbench submit-slurm-plan --dry-run --json"
     verify_slurm_submit_plan_skip_gpu_cmd = "maxionbench submit-slurm-plan --skip-gpu --dry-run --json"
+    verify_slurm_submit_plan_paper_skip_gpu_cmd = (
+        "maxionbench submit-slurm-plan \\\n"
+        "            --scenario-config-dir configs/scenarios_paper \\\n"
+        "            --skip-gpu \\\n"
+        "            --dry-run \\\n"
+        "            --json | tee artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json"
+    )
     validate_slurm_snapshot_step_name = "Validate Slurm plan snapshot payloads"
     validate_slurm_snapshot_cmd = "maxionbench validate-slurm-snapshots"
     snapshot_required_checks_cmd = "maxionbench snapshot-required-checks"
@@ -51,6 +61,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     ci_protocol_audit_output = "--output artifacts/ci/ci_protocol_audit.json"
     ci_protocol_audit_require_report_policy = "--require-report-policy"
     assert verify_pins_cmd in text
+    assert verify_pins_paper_cmd in text
     assert verify_dataset_manifests_cmd in text
     assert verify_behavior_cards_cmd in text
     assert verify_conformance_configs_cmd in text
@@ -63,6 +74,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert verify_slurm_plan_skip_gpu_cmd in text
     assert verify_slurm_submit_plan_cmd in text
     assert verify_slurm_submit_plan_skip_gpu_cmd in text
+    assert verify_slurm_submit_plan_paper_skip_gpu_cmd in text
     assert validate_slurm_snapshot_step_name in text
     assert validate_slurm_snapshot_cmd in text
     assert snapshot_required_checks_cmd in text
@@ -91,6 +103,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert inspect_report_output_policy_strict in inspect_run
     assert inspect_report_output_policy_json in inspect_run
     assert text.index(verify_pins_cmd) < text.index(validate_cmd)
+    assert text.index(verify_pins_paper_cmd) < text.index(validate_cmd)
     assert text.index(verify_dataset_manifests_cmd) < text.index(validate_cmd)
     assert text.index(verify_behavior_cards_cmd) < text.index(validate_cmd)
     assert text.index(verify_conformance_configs_cmd) < text.index(validate_cmd)
@@ -103,6 +116,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert text.index(verify_slurm_plan_skip_gpu_cmd) < text.index(validate_cmd)
     assert text.index(verify_slurm_submit_plan_cmd) < text.index(validate_cmd)
     assert text.index(verify_slurm_submit_plan_skip_gpu_cmd) < text.index(validate_cmd)
+    assert text.index("--scenario-config-dir configs/scenarios_paper") < text.index(validate_cmd)
     assert text.index(validate_slurm_snapshot_step_name) < text.index(validate_cmd)
     assert text.index(snapshot_required_checks_cmd) < text.index(validate_cmd)
     assert text.index(pre_run_gate_cmd) < text.index(validate_cmd)
@@ -116,6 +130,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert "artifacts/ci/slurm_plan_verify_skip_gpu.json" in text
     assert "artifacts/ci/slurm_submit_plan_dry_run.json" in text
     assert "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json" in text
+    assert "artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json" in text
     assert "artifacts/ci/slurm_snapshot_validation.json" in text
     assert "artifacts/ci/ci_protocol_audit.json" in text
     assert "artifacts/runs/ci_preflight/**" in text
@@ -144,6 +159,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert "artifacts/ci/slurm_plan_verify_skip_gpu.json" in upload_paths
     assert "artifacts/ci/slurm_submit_plan_dry_run.json" in upload_paths
     assert "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json" in upload_paths
+    assert "artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json" in upload_paths
     assert "artifacts/ci/slurm_snapshot_validation.json" in upload_paths
     assert "artifacts/ci/ci_protocol_audit.json" in upload_paths
 

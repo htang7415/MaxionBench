@@ -13,6 +13,7 @@ def _patch_core_checks(
     *,
     pins_pass: bool = True,
     pins_error_count: int = 0,
+    expected_strict_d3_scenario_scale: bool = False,
     manifests_pass: bool = True,
     manifests_error_count: int = 0,
     slurm_default_pass: bool = True,
@@ -22,8 +23,20 @@ def _patch_core_checks(
     snapshot_pass: bool = True,
     snapshot_error_count: int = 0,
 ) -> None:
-    def _fake_verify_scenario_config_dir(_: Path) -> dict[str, object]:
-        return {"pass": pins_pass, "error_count": pins_error_count}
+    def _fake_verify_scenario_config_dir(
+        _: Path,
+        *,
+        allow_dev_calibrate_d3_scale: bool = False,
+        strict_d3_scenario_scale: bool = False,
+    ) -> dict[str, object]:
+        assert allow_dev_calibrate_d3_scale is False
+        assert strict_d3_scenario_scale is expected_strict_d3_scenario_scale
+        return {
+            "pass": pins_pass,
+            "error_count": pins_error_count,
+            "allow_dev_calibrate_d3_scale": allow_dev_calibrate_d3_scale,
+            "strict_d3_scenario_scale": strict_d3_scenario_scale,
+        }
 
     def _fake_verify_dataset_manifest_dir(_: Path) -> dict[str, object]:
         return {"pass": manifests_pass, "error_count": manifests_error_count}
@@ -70,6 +83,7 @@ def test_run_ci_protocol_audit_passes_when_required_checks_pass(monkeypatch: pyt
     assert summary["checks"]["verify_dataset_manifests"]["pass"] is True
     assert summary["checks"]["report_output_policy"]["skipped"] is True
     assert summary["checks"]["report_output_policy"]["pass"] is None
+    assert summary["details"]["verify_pins"]["strict_d3_scenario_scale"] is False
 
 
 def test_run_ci_protocol_audit_ignores_report_policy_when_not_required(
@@ -97,6 +111,27 @@ def test_run_ci_protocol_audit_ignores_report_policy_when_not_required(
     assert summary["checks"]["verify_dataset_manifests"]["pass"] is True
     assert summary["checks"]["report_output_policy"]["pass"] is False
     assert int(summary["checks"]["report_output_policy"]["error_count"]) == 4
+
+
+def test_run_ci_protocol_audit_propagates_strict_d3_scenario_scale(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_core_checks(monkeypatch, expected_strict_d3_scenario_scale=True)
+    summary = audit_mod.run_ci_protocol_audit(
+        config_dir=tmp_path / "configs",
+        slurm_dir=tmp_path / "slurm",
+        manifest_dir=tmp_path / "manifests",
+        verify_paths=[tmp_path / "verify_a.json", tmp_path / "verify_b.json"],
+        submit_paths=[tmp_path / "submit_a.json", tmp_path / "submit_b.json"],
+        required_baseline_scenario="configs/scenarios/s1_ann_frontier_d3.yaml",
+        report_input=None,
+        require_report_policy=False,
+        strict_d3_scenario_scale=True,
+    )
+    assert summary["pass"] is True
+    assert summary["inputs"]["strict_d3_scenario_scale"] is True
+    assert summary["details"]["verify_pins"]["strict_d3_scenario_scale"] is True
 
 
 def test_ci_protocol_audit_main_strict_fails_when_required_report_policy_fails(

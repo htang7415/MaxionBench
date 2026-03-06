@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
     verify_pins_parser.add_argument("--allow-dev-calibrate-d3-scale", action="store_true")
+    verify_pins_parser.add_argument("--strict-d3-scenario-scale", action="store_true")
     verify_pins_parser.add_argument("--json", action="store_true")
 
     verify_dataset_manifests_parser = subparsers.add_parser(
@@ -123,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ci_protocol_audit_parser.add_argument("--report-input", default=None)
     ci_protocol_audit_parser.add_argument("--require-report-policy", action="store_true")
+    ci_protocol_audit_parser.add_argument("--strict-d3-scenario-scale", action="store_true")
     ci_protocol_audit_parser.add_argument("--output", default="artifacts/ci/ci_protocol_audit.json")
     ci_protocol_audit_parser.add_argument("--strict", action="store_true")
     ci_protocol_audit_parser.add_argument("--json", action="store_true")
@@ -161,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     submit_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
     submit_slurm_plan_parser.add_argument("--seed", type=int, default=42)
+    submit_slurm_plan_parser.add_argument("--slurm-profile", default=None, choices=["your_cluster", "your_cluster"])
+    submit_slurm_plan_parser.add_argument("--scenario-config-dir", default=None)
+    submit_slurm_plan_parser.add_argument("--output-root", default=None)
     submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
     submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
     submit_slurm_plan_parser.add_argument("--json", action="store_true")
@@ -284,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
         verify_argv: list[str] = ["--config-dir", args.config_dir]
         if args.allow_dev_calibrate_d3_scale:
             verify_argv.append("--allow-dev-calibrate-d3-scale")
+        if args.strict_d3_scenario_scale:
+            verify_argv.append("--strict-d3-scenario-scale")
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
@@ -355,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
             audit_argv.extend(["--report-input", args.report_input])
         if args.require_report_policy:
             audit_argv.append("--require-report-policy")
+        if args.strict_d3_scenario_scale:
+            audit_argv.append("--strict-d3-scenario-scale")
         if args.strict:
             audit_argv.append("--strict")
         if args.json:
@@ -405,6 +414,12 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.orchestration.slurm.submit_plan import main as submit_slurm_plan_main
 
         submit_argv: list[str] = ["--slurm-dir", args.slurm_dir, "--seed", str(args.seed)]
+        if args.slurm_profile:
+            submit_argv.extend(["--slurm-profile", args.slurm_profile])
+        if args.scenario_config_dir:
+            submit_argv.extend(["--scenario-config-dir", args.scenario_config_dir])
+        if args.output_root:
+            submit_argv.extend(["--output-root", args.output_root])
         if args.skip_gpu:
             submit_argv.append("--skip-gpu")
         if args.dry_run:

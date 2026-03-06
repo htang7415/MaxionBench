@@ -9,6 +9,7 @@ export MAXIONBENCH_SCRATCH_SAFETY_FACTOR="${MAXIONBENCH_SCRATCH_SAFETY_FACTOR:-1
 export MAXIONBENCH_SKIP_PRE_RUN_GATE="${MAXIONBENCH_SKIP_PRE_RUN_GATE:-0}"
 export MAXIONBENCH_ALLOW_GPU_UNAVAILABLE="${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}"
 export MAXIONBENCH_CONFORMANCE_MATRIX="${MAXIONBENCH_CONFORMANCE_MATRIX:-${ROOT_DIR}/artifacts/conformance/conformance_matrix.csv}"
+export MAXIONBENCH_OUTPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/slurm}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -159,9 +160,16 @@ mb_prepare_output_paths() {
   local task_id="${SLURM_ARRAY_TASK_ID:-0}"
   local job_id="${SLURM_JOB_ID:-local}"
   local run_id="${job_id}_${task_id}_${scenario}_$(date -u +%Y%m%dT%H%M%SZ)"
+  local output_root="${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/slurm}"
+  local resolved_output_root
+  if [[ "${output_root}" = /* ]]; then
+    resolved_output_root="${output_root}"
+  else
+    resolved_output_root="${ROOT_DIR}/${output_root}"
+  fi
   export MB_RUN_ID="${run_id}"
   export MB_OUTPUT_TMP="${SLURM_TMPDIR}/maxionbench/${run_id}"
-  export MB_OUTPUT_FINAL="${ROOT_DIR}/artifacts/runs/slurm/${run_id}"
+  export MB_OUTPUT_FINAL="${resolved_output_root}/${run_id}"
   mkdir -p "${MB_OUTPUT_TMP}" "$(dirname "${MB_OUTPUT_FINAL}")"
 }
 

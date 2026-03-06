@@ -16,6 +16,17 @@ def test_verify_pins_passes_for_repo_scenario_configs() -> None:
     assert int(summary["error_count"]) == 0
 
 
+def test_verify_pins_passes_for_paper_scenario_configs_with_strict_d3_scale() -> None:
+    summary = verify_scenario_config_dir(
+        Path("configs/scenarios_paper"),
+        strict_d3_scenario_scale=True,
+    )
+    assert summary["pass"] is True
+    assert int(summary["files_checked"]) >= 1
+    assert int(summary["error_count"]) == 0
+    assert summary["strict_d3_scenario_scale"] is True
+
+
 def test_verify_pins_detects_drift_in_temp_config_dir(tmp_path: Path) -> None:
     src = Path("configs/scenarios/s5_rerank.yaml")
     payload = yaml.safe_load(src.read_text(encoding="utf-8"))
@@ -191,6 +202,30 @@ def test_verify_pins_allows_dev_calibrate_d3_scale_relaxation(tmp_path: Path) ->
     assert summary["allow_dev_calibrate_d3_scale"] is True
 
 
+def test_verify_pins_strict_d3_scenario_scale_flags_repo_d3_defaults() -> None:
+    summary = verify_scenario_config_dir(Path("configs/scenarios"), strict_d3_scenario_scale=True)
+    assert summary["pass"] is False
+    assert summary["strict_d3_scenario_scale"] is True
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("D3 scenarios must run at D3-10M+ scale in strict mode" in msg for msg in messages)
+
+
+def test_verify_pins_strict_d3_scenario_scale_passes_for_10m_d3_config(tmp_path: Path) -> None:
+    src = Path("configs/scenarios/s2_filtered_ann.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["num_vectors"] = 10_000_000
+    payload["d3_k_clusters"] = 4096
+
+    out = tmp_path / "s2_filtered_ann.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path, strict_d3_scenario_scale=True)
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+    assert summary["strict_d3_scenario_scale"] is True
+
+
 def test_verify_pins_cli_allows_dev_calibrate_d3_scale_relaxation(
     tmp_path: Path,
     capsys,  # type: ignore[no-untyped-def]
@@ -216,3 +251,32 @@ def test_verify_pins_cli_allows_dev_calibrate_d3_scale_relaxation(
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["pass"] is True
     assert parsed["allow_dev_calibrate_d3_scale"] is True
+
+
+def test_verify_pins_cli_strict_d3_scenario_scale_reports_failure(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    src = Path("configs/scenarios/s2_filtered_ann.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["num_vectors"] = 5000
+
+    out = tmp_path / "s2_filtered_ann.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    code = cli_main(
+        [
+            "verify-pins",
+            "--config-dir",
+            str(tmp_path),
+            "--strict-d3-scenario-scale",
+            "--json",
+        ]
+    )
+    assert code == 2
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["pass"] is False
+    assert parsed["strict_d3_scenario_scale"] is True
+    messages = [str(item.get("message", "")) for item in parsed["errors"]]
+    assert any("D3 scenarios must run at D3-10M+ scale in strict mode" in msg for msg in messages)

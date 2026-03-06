@@ -23,6 +23,9 @@ DEFAULT_REQUIRED_DEPENDS = {
     "cpu_non_d3": ["calibrate"],
     "gpu_all": ["calibrate"],
 }
+DEFAULT_REQUIRED_EXPORT_TOKEN = "ALL"
+DEFAULT_REQUIRED_EXPORT_SEED_KEY = "MAXIONBENCH_SEED"
+DEFAULT_PAPER_SCENARIO_CONFIG_DIR = "configs/scenarios_paper"
 
 
 def validate_slurm_snapshots(
@@ -63,6 +66,7 @@ def validate_slurm_snapshots(
             _err(errors, path, "required_step_keys", list(DEFAULT_REQUIRED_STEP_KEYS), sorted(keys))
 
         is_skip_gpu = "skip_gpu" in path.name
+        is_paper_snapshot = "paper" in path.name
         if is_skip_gpu and "gpu_all" in keys:
             _err(errors, path, "gpu_all", "absent in skip-gpu mode", "present")
         if not is_skip_gpu and "gpu_all" not in keys:
@@ -114,6 +118,38 @@ def validate_slurm_snapshots(
             elif dependency_flag_value is not None:
                 _err(errors, path, f"{step_key}.command.--dependency", None, dependency_flag_value)
 
+            export_flag_value = _command_flag_value(command, "--export")
+            if not export_flag_value:
+                _err(errors, path, f"{step_key}.command.--export", "non-empty export payload", export_flag_value)
+                continue
+            export_tokens, export_kv = _parse_export_payload(export_flag_value)
+            if DEFAULT_REQUIRED_EXPORT_TOKEN not in export_tokens:
+                _err(
+                    errors,
+                    path,
+                    f"{step_key}.command.--export.{DEFAULT_REQUIRED_EXPORT_TOKEN}",
+                    "present",
+                    "absent",
+                )
+            if DEFAULT_REQUIRED_EXPORT_SEED_KEY not in export_kv:
+                _err(
+                    errors,
+                    path,
+                    f"{step_key}.command.--export.{DEFAULT_REQUIRED_EXPORT_SEED_KEY}",
+                    "present",
+                    "absent",
+                )
+            if is_paper_snapshot:
+                actual_scenario_dir = export_kv.get("MAXIONBENCH_SCENARIO_CONFIG_DIR")
+                if actual_scenario_dir != DEFAULT_PAPER_SCENARIO_CONFIG_DIR:
+                    _err(
+                        errors,
+                        path,
+                        f"{step_key}.command.--export.MAXIONBENCH_SCENARIO_CONFIG_DIR",
+                        DEFAULT_PAPER_SCENARIO_CONFIG_DIR,
+                        actual_scenario_dir,
+                    )
+
     return {
         "pass": len(errors) == 0,
         "error_count": len(errors),
@@ -164,6 +200,21 @@ def _command_flag_value(command: Any, flag: str) -> str | None:
             return ""
         return values[nxt]
     return None
+
+
+def _parse_export_payload(value: str) -> tuple[set[str], dict[str, str]]:
+    tokens: set[str] = set()
+    kv: dict[str, str] = {}
+    for raw in str(value).split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        tokens.add(token)
+        if "=" not in token:
+            continue
+        key, val = token.split("=", maxsplit=1)
+        kv[key.strip()] = val.strip()
+    return tokens, kv
 
 
 def main(argv: list[str] | None = None) -> int:

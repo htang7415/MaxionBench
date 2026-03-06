@@ -10,6 +10,11 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "allow-nonpass-status" in text
     assert "conformance_readiness_gate" in text
     assert "strict_readiness.yml" in text
+    assert "scenario_config_dir" in text
+    assert "strict_d3_scenario_scale" in text
+    assert "require_paper_d3_calibration" in text
+    assert "d3_params_path" in text
+    assert "configs/scenarios_paper/" in text
     assert ".[dev,engines]" in text
     assert "non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active" in text
     assert "verify-promotion-gate" in text
@@ -31,6 +36,11 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "verify-d3-calibration" in text
     assert "submit-slurm-plan --dry-run --json" in text
     assert "submit-slurm-plan --skip-gpu --dry-run --json" in text
+    assert "submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
+    assert "submit-slurm-plan --scenario-config-dir <dir>" in text
+    assert "uses the override file when present and otherwise falls back to its default scenario config" in text
+    assert "same override also applies to `calibrate_d3`" in text
+    assert "`MAXIONBENCH_CALIBRATE_CONFIG` is explicitly set" in text
     assert "validate-slurm-snapshots --json" in text
     assert "slurm_snapshot_validation.json" in text
     assert "ci-protocol-audit --strict" in text
