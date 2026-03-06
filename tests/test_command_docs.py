@@ -7,6 +7,8 @@ from pathlib import Path
 def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-pins --config-dir configs/scenarios --json" in text
     assert "maxionbench verify-pins --config-dir configs/scenarios --allow-dev-calibrate-d3-scale --json" in text
+    assert "maxionbench verify-pins --config-dir configs/scenarios --strict-d3-scenario-scale --json" in text
+    assert "maxionbench verify-pins --config-dir configs/scenarios_paper --strict-d3-scenario-scale --json" in text
     assert "maxionbench verify-conformance-configs --config-dir configs/conformance --json" in text
     assert "maxionbench verify-conformance-configs --config-dir configs/conformance --allow-gpu-unavailable --json" in text
     assert (
@@ -19,6 +21,10 @@ def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
     assert "maxionbench submit-slurm-plan --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --skip-gpu --dry-run --json" in text
+    assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --dry-run --json" in text
+    assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
+    assert "calibrate_d3 also uses the override when configs/scenarios_paper/calibrate_d3.yaml exists" in text
+    assert "unless MAXIONBENCH_CALIBRATE_CONFIG is explicitly set" in text
     assert "CPU_D3_BASELINE_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=1" in text
     assert "CPU_D3_WORKLOADS_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID}:${CPU_D3_BASELINE_JOB_ID} --array=2-4" in text
     assert "CPU_NON_D3_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=0,5-6" in text
@@ -113,6 +119,7 @@ def _assert_common_commands(text: str) -> None:
         "--output artifacts/ci/report_output_policy_summary.json --strict --json"
     ) in text
     assert "maxionbench ci-protocol-audit" in text
+    assert "--strict-d3-scenario-scale" in text
     assert "--manifest-dir maxionbench/datasets/manifests" in text
     assert "--output artifacts/ci/ci_protocol_audit.json" in text
     assert "--require-report-policy" in text
@@ -128,7 +135,15 @@ def _assert_common_commands(text: str) -> None:
     assert "`artifacts/ci/required_checks_snapshot.json`" in text
     assert "`artifacts/ci/report_output_policy_summary.json`" in text
     assert "`artifacts/ci/ci_protocol_audit.json`" in text
+    assert "gh workflow run strict_readiness.yml" in text
     assert "gh workflow run publish_benchmark_bundle.yml" in text
+    assert "-f scenario_config_dir=configs/scenarios" in text
+    assert "-f scenario_config_dir=configs/scenarios_paper" in text
+    assert "-f strict_d3_scenario_scale=false" in text
+    assert "-f strict_d3_scenario_scale=true" in text
+    assert "-f require_paper_d3_calibration=false" in text
+    assert "-f require_paper_d3_calibration=true" in text
+    assert "-f d3_params_path=artifacts/calibration/d3_params.yaml" in text
     assert "-f bundle_name=benchmark-result-bundle" in text
 
 

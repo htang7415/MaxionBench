@@ -22,8 +22,12 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     inputs = dispatch.get("inputs", {})
     assert isinstance(inputs, dict)
     assert "conformance_config_dir" in inputs
+    assert "scenario_config_dir" in inputs
     assert "timeout_s" in inputs
     assert "allow_gpu_unavailable" in inputs
+    assert "strict_d3_scenario_scale" in inputs
+    assert "require_paper_d3_calibration" in inputs
+    assert "d3_params_path" in inputs
 
     jobs = payload.get("jobs", {})
     assert isinstance(jobs, dict)
@@ -35,6 +39,14 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     runs_blob = "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
 
     assert "python -m pip install -e \".[dev,engines]\"" in runs_blob
+    assert "maxionbench verify-pins" in runs_blob
+    assert "--config-dir \"${{ inputs.scenario_config_dir }}\"" in runs_blob
+    assert "--strict-d3-scenario-scale" in runs_blob
+    assert "inputs.strict_d3_scenario_scale" in runs_blob
+    assert "maxionbench verify-d3-calibration" in runs_blob
+    assert "--d3-params \"${{ inputs.d3_params_path }}\"" in runs_blob
+    assert "--strict" in runs_blob
+    assert "inputs.require_paper_d3_calibration" in text
     assert "maxionbench verify-conformance-configs" in runs_blob
     assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in runs_blob
     assert "--allow-gpu-unavailable" in runs_blob
@@ -43,6 +55,7 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in runs_blob
     assert "--out-dir artifacts/conformance_strict" in runs_blob
     assert "--timeout-s \"${{ inputs.timeout_s }}\"" in runs_blob
+    assert runs_blob.index("maxionbench verify-pins") < runs_blob.index("maxionbench verify-conformance-configs")
     assert runs_blob.index("maxionbench verify-conformance-configs") < runs_blob.index("maxionbench conformance-matrix")
     assert "maxionbench verify-engine-readiness" in runs_blob
     assert "--conformance-matrix artifacts/conformance_strict/conformance_matrix.csv" in runs_blob

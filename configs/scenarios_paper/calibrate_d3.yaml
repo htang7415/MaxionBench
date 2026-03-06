@@ -1,0 +1,31 @@
+engine: mock
+engine_version: "0.1.0"
+scenario: calibrate_d3
+dataset_bundle: D3
+dataset_hash: laion-subset-d3-10m-calibration
+seed: 42
+repeats: 1
+no_retry: true
+output_dir: artifacts/runs/paper/calibrate_d3
+output_d3_params_path: artifacts/calibration/d3_params.yaml
+quality_target: 0.8
+clients_read: 1
+clients_write: 0
+clients_grid: [1]
+search_sweep:
+  - {}
+rpc_baseline_requests: 1000
+sla_threshold_ms: 80.0
+vector_dim: 64
+num_vectors: 10000000
+num_queries: 200
+top_k: 10
+
+d3_k_clusters: 4096
+d3_num_tenants: 100
+d3_num_acl_buckets: 16
+d3_num_time_buckets: 52
+d3_beta_tenant: 0.75
+d3_beta_acl: 0.70
+d3_beta_time: 0.65
+d3_seed: 42

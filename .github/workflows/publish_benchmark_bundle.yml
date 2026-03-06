@@ -7,6 +7,10 @@ on:
         description: "Conformance config directory"
         required: false
         default: "configs/conformance"
+      scenario_config_dir:
+        description: "Scenario config directory for pin verification"
+        required: false
+        default: "configs/scenarios"
       timeout_s:
         description: "Per-adapter conformance timeout in seconds"
         required: false
@@ -15,6 +19,18 @@ on:
         description: "Allow missing/non-pass faiss-gpu readiness"
         required: false
         default: "true"
+      strict_d3_scenario_scale:
+        description: "Require D3 scenarios to use num_vectors >= 10M during pin verification"
+        required: false
+        default: "false"
+      require_paper_d3_calibration:
+        description: "Require d3_params.yaml to pass strict paper calibration checks"
+        required: false
+        default: "false"
+      d3_params_path:
+        description: "Path to D3 calibration params file used for optional strict calibration gate"
+        required: false
+        default: "artifacts/calibration/d3_params.yaml"
       results_dir:
         description: "Benchmark results directory to package"
         required: false
@@ -48,6 +64,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,engines]"
+
+      - name: Verify pinned scenario configs
+        run: |
+          ARGS=( \
+            --config-dir "${{ inputs.scenario_config_dir }}" \
+            --json \
+          )
+          if [[ "${{ inputs.strict_d3_scenario_scale }}" == "true" ]]; then
+            ARGS+=(--strict-d3-scenario-scale)
+          fi
+          maxionbench verify-pins "${ARGS[@]}"
+
+      - name: Verify D3 calibration params (optional strict gate)
+        if: ${{ inputs.require_paper_d3_calibration == 'true' }}
+        run: |
+          maxionbench verify-d3-calibration \
+            --d3-params "${{ inputs.d3_params_path }}" \
+            --strict \
+            --json
 
       - name: Verify conformance config catalog
         run: |

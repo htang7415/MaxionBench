@@ -22,8 +22,12 @@ def test_publish_benchmark_bundle_workflow_enforces_strict_readiness_gate() -> N
     inputs = dispatch.get("inputs", {})
     assert isinstance(inputs, dict)
     assert "conformance_config_dir" in inputs
+    assert "scenario_config_dir" in inputs
     assert "timeout_s" in inputs
     assert "allow_gpu_unavailable" in inputs
+    assert "strict_d3_scenario_scale" in inputs
+    assert "require_paper_d3_calibration" in inputs
+    assert "d3_params_path" in inputs
     assert "results_dir" in inputs
     assert "figures_dir" in inputs
     assert "bundle_name" in inputs
@@ -39,11 +43,20 @@ def test_publish_benchmark_bundle_workflow_enforces_strict_readiness_gate() -> N
     assert isinstance(strict_steps, list)
     strict_blob = "\n".join(str(step.get("run", "")) for step in strict_steps if isinstance(step, dict))
     assert "python -m pip install -e \".[dev,engines]\"" in strict_blob
+    assert "maxionbench verify-pins" in strict_blob
+    assert "--config-dir \"${{ inputs.scenario_config_dir }}\"" in strict_blob
+    assert "--strict-d3-scenario-scale" in strict_blob
+    assert "inputs.strict_d3_scenario_scale" in strict_blob
+    assert "maxionbench verify-d3-calibration" in strict_blob
+    assert "--d3-params \"${{ inputs.d3_params_path }}\"" in strict_blob
+    assert "--strict" in strict_blob
+    assert "inputs.require_paper_d3_calibration" in text
     assert "maxionbench verify-conformance-configs" in strict_blob
     assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in strict_blob
     assert "--allow-gpu-unavailable" in strict_blob
     assert "--json" in strict_blob
     assert "maxionbench conformance-matrix" in strict_blob
+    assert strict_blob.index("maxionbench verify-pins") < strict_blob.index("maxionbench verify-conformance-configs")
     assert strict_blob.index("maxionbench verify-conformance-configs") < strict_blob.index("maxionbench conformance-matrix")
     assert "--out-dir artifacts/conformance_publish" in strict_blob
     assert "maxionbench verify-engine-readiness" in strict_blob

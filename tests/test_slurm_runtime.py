@@ -153,6 +153,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_SKIP_PRE_RUN_GATE" in text
     assert "MAXIONBENCH_ALLOW_GPU_UNAVAILABLE" in text
     assert "MAXIONBENCH_CONFORMANCE_MATRIX" in text
+    assert "MAXIONBENCH_OUTPUT_ROOT" in text
     gate_marker = "pre-run-gate"
     runner_marker = "python -m maxionbench.orchestration.runner"
     assert gate_marker in text
@@ -163,3 +164,28 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
 def test_cpu_array_includes_d3_matched_s1_baseline_config() -> None:
     text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
     assert "configs/scenarios/s1_ann_frontier_d3.yaml" in text
+
+
+def test_cpu_array_supports_partial_scenario_dir_override_fallback() -> None:
+    text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
+    assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
+    assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
+    assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
+    assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+
+
+def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
+    text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
+    assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
+    assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
+    assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
+    assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+
+
+def test_calibrate_d3_supports_scenario_dir_override_with_explicit_override_precedence() -> None:
+    text = Path("maxionbench/orchestration/slurm/calibrate_d3.sh").read_text(encoding="utf-8")
+    assert 'CONFIG_PATH="${MAXIONBENCH_CALIBRATE_CONFIG:-configs/scenarios/calibrate_d3.yaml}"' in text
+    assert 'if [[ -z "${MAXIONBENCH_CALIBRATE_CONFIG:-}" ]]; then' in text
+    assert 'SCENARIO_CONFIG_DIR="${MAXIONBENCH_SCENARIO_CONFIG_DIR:-}"' in text
+    assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"' in text
+    assert 'if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then' in text

@@ -172,6 +172,108 @@ def test_cli_submit_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: i
     ]
 
 
+def test_cli_submit_slurm_plan_dispatches_scenario_config_dir(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 141
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--scenario-config-dir",
+            "configs/scenarios_paper",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 141
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--scenario-config-dir",
+        "configs/scenarios_paper",
+        "--dry-run",
+        "--json",
+    ]
+
+
+def test_cli_submit_slurm_plan_dispatches_slurm_profile(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 241
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--slurm-profile",
+            "your_cluster",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 241
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--slurm-profile",
+        "your_cluster",
+        "--dry-run",
+        "--json",
+    ]
+
+
+def test_cli_submit_slurm_plan_dispatches_output_root(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 242
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--output-root",
+            "artifacts/workstation_runs/example/results/slurm",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 242
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--output-root",
+        "artifacts/workstation_runs/example/results/slurm",
+        "--dry-run",
+        "--json",
+    ]
+
+
 def test_cli_verify_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
@@ -270,6 +372,32 @@ def test_cli_verify_pins_dispatches_dev_scale_flag(monkeypatch) -> None:  # type
         "--config-dir",
         "configs/scenarios",
         "--allow-dev-calibrate-d3-scale",
+        "--json",
+    ]
+
+
+def test_cli_verify_pins_dispatches_strict_d3_scale_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 148
+
+    monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-pins",
+            "--config-dir",
+            "configs/scenarios",
+            "--strict-d3-scenario-scale",
+            "--json",
+        ]
+    )
+    assert code == 148
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/scenarios",
+        "--strict-d3-scenario-scale",
         "--json",
     ]
 
@@ -466,5 +594,43 @@ def test_cli_ci_protocol_audit_dispatches_flags(monkeypatch) -> None:  # type: i
         "artifacts/figures/ci_preflight",
         "--require-report-policy",
         "--strict",
+        "--json",
+    ]
+
+
+def test_cli_ci_protocol_audit_dispatches_strict_d3_scenario_scale(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 153
+
+    monkeypatch.setattr(ci_protocol_audit_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "ci-protocol-audit",
+            "--config-dir",
+            "configs/scenarios",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--manifest-dir",
+            "maxionbench/datasets/manifests",
+            "--strict-d3-scenario-scale",
+            "--json",
+        ]
+    )
+    assert code == 153
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/scenarios",
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--manifest-dir",
+        "maxionbench/datasets/manifests",
+        "--required-baseline-scenario",
+        "configs/scenarios/s1_ann_frontier_d3.yaml",
+        "--output",
+        "artifacts/ci/ci_protocol_audit.json",
+        "--strict-d3-scenario-scale",
         "--json",
     ]

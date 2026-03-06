@@ -3,6 +3,18 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 CONFIG_PATH="${MAXIONBENCH_CALIBRATE_CONFIG:-configs/scenarios/calibrate_d3.yaml}"
+if [[ -z "${MAXIONBENCH_CALIBRATE_CONFIG:-}" ]]; then
+  SCENARIO_CONFIG_DIR="${MAXIONBENCH_SCENARIO_CONFIG_DIR:-}"
+  if [[ -n "${SCENARIO_CONFIG_DIR}" ]]; then
+    CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
+    if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then
+      CONFIG_PATH="${CANDIDATE_CONFIG_PATH}"
+    fi
+  fi
+fi
+if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then
+  mb_die "calibration config does not exist: ${CONFIG_PATH}"
+fi
 
 mb_require_tmpdir
 mb_allocate_ports

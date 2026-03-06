@@ -28,8 +28,12 @@ def run_ci_protocol_audit(
     required_baseline_scenario: str,
     report_input: Path | None = None,
     require_report_policy: bool = False,
+    strict_d3_scenario_scale: bool = False,
 ) -> dict[str, Any]:
-    pins = verify_scenario_config_dir(config_dir)
+    pins = verify_scenario_config_dir(
+        config_dir,
+        strict_d3_scenario_scale=bool(strict_d3_scenario_scale),
+    )
     manifests = verify_dataset_manifest_dir(manifest_dir)
     slurm_default = verify_slurm_plan(slurm_dir=slurm_dir, include_gpu=True)
     slurm_skip_gpu = verify_slurm_plan(slurm_dir=slurm_dir, include_gpu=False)
@@ -109,6 +113,7 @@ def run_ci_protocol_audit(
             "config_dir": str(config_dir.resolve()),
             "slurm_dir": str(slurm_dir.resolve()),
             "manifest_dir": str(manifest_dir.resolve()),
+            "strict_d3_scenario_scale": bool(strict_d3_scenario_scale),
             "verify_paths": [str(path.resolve()) for path in verify_paths],
             "submit_paths": [str(path.resolve()) for path in submit_paths],
             "required_baseline_scenario": required_baseline_scenario,
@@ -139,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--report-input", default=None)
     parser.add_argument("--require-report-policy", action="store_true")
+    parser.add_argument("--strict-d3-scenario-scale", action="store_true")
     parser.add_argument("--output", default="artifacts/ci/ci_protocol_audit.json")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -156,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         required_baseline_scenario=str(args.required_baseline_scenario),
         report_input=report_input,
         require_report_policy=bool(args.require_report_policy),
+        strict_d3_scenario_scale=bool(args.strict_d3_scenario_scale),
     )
 
     output_path = Path(args.output).resolve()
