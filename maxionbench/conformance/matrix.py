@@ -26,13 +26,33 @@ class ConformanceMatrixRow:
 
 
 def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float = 300.0) -> list[ConformanceMatrixRow]:
-    configs = sorted(config_dir.glob("*.json"))
+    resolved_config_dir = config_dir.resolve()
+    if not resolved_config_dir.exists():
+        raise FileNotFoundError(f"Conformance config directory does not exist: {resolved_config_dir}")
+    if not resolved_config_dir.is_dir():
+        raise FileNotFoundError(f"Conformance config path is not a directory: {resolved_config_dir}")
+
+    configs = sorted(resolved_config_dir.glob("*.json"))
     if not configs:
-        raise FileNotFoundError(f"No conformance configs found in {config_dir}")
+        raise FileNotFoundError(f"No conformance config files (*.json) found in: {resolved_config_dir}")
 
     rows: list[ConformanceMatrixRow] = []
     for cfg_path in configs:
-        payload = _read_json_mapping(cfg_path)
+        try:
+            payload = _read_json_mapping(cfg_path)
+        except (ValueError, json.JSONDecodeError) as exc:
+            rows.append(
+                ConformanceMatrixRow(
+                    adapter="",
+                    config_file=str(cfg_path),
+                    status="invalid_config",
+                    exit_code=2,
+                    duration_s=0.0,
+                    command="",
+                    note=_truncate(str(exc)),
+                )
+            )
+            continue
         adapter = str(payload.get("adapter", "")).strip()
         if not adapter:
             rows.append(
@@ -104,7 +124,7 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                 )
             )
 
-    _write_outputs(rows=rows, out_dir=out_dir, config_dir=config_dir)
+    _write_outputs(rows=rows, out_dir=out_dir, config_dir=resolved_config_dir)
     return rows
 
 
@@ -162,11 +182,15 @@ def parse_args(argv: list[str] | None = None) -> ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = parse_args(argv)
     args = parser.parse_args(argv)
-    run_conformance_matrix(
-        config_dir=Path(args.config_dir).resolve(),
-        out_dir=Path(args.out_dir).resolve(),
-        timeout_s=float(args.timeout_s),
-    )
+    try:
+        run_conformance_matrix(
+            config_dir=Path(args.config_dir),
+            out_dir=Path(args.out_dir),
+            timeout_s=float(args.timeout_s),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"conformance-matrix failed: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

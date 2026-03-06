@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 import numpy as np
@@ -42,6 +43,13 @@ def run(
         d3_params=d3_params,
         burst_multiplier_fn=burst_multiplier,
     )
+    info_payload = _parse_info_payload(result.info_json)
+    info_payload["mode"] = "s3_bursty"
+    info_payload["burst_on_s"] = float(cfg.on_s)
+    info_payload["burst_off_s"] = float(cfg.off_s)
+    info_payload["burst_cycle_s"] = float(cycle)
+    info_payload["burst_on_write_mult"] = float(cfg.on_write_mult)
+    info_payload["burst_off_write_mult"] = float(cfg.off_write_mult)
     return S3Result(
         p50_ms=result.p50_ms,
         p95_ms=result.p95_ms,
@@ -52,9 +60,19 @@ def run(
         mrr_at_10=result.mrr_at_10,
         sla_violation_rate=result.sla_violation_rate,
         errors=result.errors,
-        info_json=result.info_json,
+        info_json=json.dumps(info_payload, sort_keys=True),
         measured_requests=result.measured_requests,
         measured_elapsed_s=result.measured_elapsed_s,
         warmup_requests=result.warmup_requests,
         warmup_elapsed_s=result.warmup_elapsed_s,
     )
+
+
+def _parse_info_payload(payload_json: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(payload_json)
+    except Exception:
+        return {"raw_info_json": payload_json}
+    if not isinstance(payload, dict):
+        return {"raw_info_json": payload}
+    return dict(payload)

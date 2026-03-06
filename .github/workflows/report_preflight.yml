@@ -27,6 +27,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
+      - name: Verify conformance config catalog
+        run: |
+          maxionbench verify-conformance-configs --config-dir configs/conformance --json
+
       - name: Run conformance matrix (structural readiness)
         run: |
           maxionbench conformance-matrix \
@@ -85,6 +89,10 @@ jobs:
       - name: Verify behavior cards
         run: |
           maxionbench verify-behavior-cards --behavior-dir docs/behavior --json
+
+      - name: Verify conformance config catalog
+        run: |
+          maxionbench verify-conformance-configs --config-dir configs/conformance --json
 
       - name: Verify repository hygiene
         run: |

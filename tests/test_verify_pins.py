@@ -189,3 +189,30 @@ def test_verify_pins_allows_dev_calibrate_d3_scale_relaxation(tmp_path: Path) ->
     assert summary["pass"] is True
     assert int(summary["error_count"]) == 0
     assert summary["allow_dev_calibrate_d3_scale"] is True
+
+
+def test_verify_pins_cli_allows_dev_calibrate_d3_scale_relaxation(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    src = Path("configs/scenarios/calibrate_d3.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["num_vectors"] = 10000
+
+    out = tmp_path / "calibrate_d3.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    code = cli_main(
+        [
+            "verify-pins",
+            "--config-dir",
+            str(tmp_path),
+            "--allow-dev-calibrate-d3-scale",
+            "--json",
+        ]
+    )
+    assert code == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["pass"] is True
+    assert parsed["allow_dev_calibrate_d3_scale"] is True
