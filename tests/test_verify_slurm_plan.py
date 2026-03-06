@@ -9,6 +9,10 @@ def test_verify_slurm_plan_passes_for_repo_slurm_layout() -> None:
     summary = verify_slurm_plan(slurm_dir=Path("maxionbench/orchestration/slurm"), include_gpu=True)
     assert summary["pass"] is True
     assert int(summary["error_count"]) == 0
+    assert int(summary["gpu_scenario_count"]) >= 3
+    gpu_scenarios = [str(item) for item in summary["gpu_scenarios"]]
+    assert any("track_b" in item for item in gpu_scenarios)
+    assert any("track_c" in item for item in gpu_scenarios)
 
 
 def test_verify_slurm_plan_detects_missing_d3_s1_baseline(tmp_path: Path) -> None:

@@ -174,12 +174,25 @@ def test_cpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
 
 
+def test_cpu_array_supports_skip_s6_env_flag() -> None:
+    text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
+    assert "MAXIONBENCH_SKIP_S6" in text
+    assert "s6_fusion.yaml" in text
+    assert "skipping S6 task index" in text
+
+
 def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
     assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
     assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
     assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+
+
+def test_gpu_array_explicitly_lists_track_b_and_track_c_entries() -> None:
+    text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
+    assert "s1_ann_frontier_track_b_gpu.yaml" in text
+    assert "s5_rerank_track_c_gpu.yaml" in text
 
 
 def test_calibrate_d3_supports_scenario_dir_override_with_explicit_override_precedence() -> None:

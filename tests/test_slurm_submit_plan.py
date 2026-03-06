@@ -15,6 +15,13 @@ def test_build_submit_steps_enforces_d3_dependency_chain() -> None:
     assert by_key["gpu_all"].depends_on == ("calibrate",)
 
 
+def test_build_submit_steps_supports_skip_s6_deferral() -> None:
+    steps = build_submit_steps(include_gpu=True, skip_s6=True)
+    by_key = {step.key: step for step in steps}
+    assert by_key["cpu_non_d3"].array == "0,5"
+    assert by_key["gpu_all"].array == "0-2"
+
+
 def test_submit_steps_dry_run_resolves_afterok_dependencies(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)

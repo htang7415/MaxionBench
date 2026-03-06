@@ -3,8 +3,9 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 SCENARIOS=(
-  "configs/scenarios/s1_ann_frontier.yaml"
   "configs/scenarios/s5_rerank.yaml"
+  "configs/scenarios/s1_ann_frontier_track_b_gpu.yaml"
+  "configs/scenarios/s5_rerank_track_c_gpu.yaml"
 )
 SCENARIO_CONFIG_DIR="${MAXIONBENCH_SCENARIO_CONFIG_DIR:-}"
 

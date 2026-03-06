@@ -83,6 +83,7 @@ def test_s5_rerank_smoke(tmp_path: Path) -> None:
         "s5_reranker_precision": "fp16",
         "s5_reranker_batch_size": 32,
         "s5_reranker_truncation": "right",
+        "s5_require_hf_backend": False,
     }
     out_dir = _run_cfg(tmp_path, cfg)
     frame = pd.read_parquet(out_dir / "results.parquet")

@@ -37,7 +37,7 @@ SLURM_PROFILE_BASE_SPECS: dict[str, tuple[tuple[str, str], ...]] = {
         ("--output", "logs/%x_%j.out"),
         ("--error", "logs/%x_%j.err"),
         ("--mem", "256G"),
-        ("--nodes", "2"),
+        ("--nodes", "1"),
         ("--ntasks-per-node", "1"),
         ("--cpus-per-task", "64"),
     ),
@@ -55,7 +55,8 @@ SLURM_PROFILE_STEP_OVERRIDES: dict[str, dict[str, tuple[tuple[str, str], ...]]] 
 }
 
 
-def build_submit_steps(*, include_gpu: bool = True) -> list[SubmitStep]:
+def build_submit_steps(*, include_gpu: bool = True, skip_s6: bool = False) -> list[SubmitStep]:
+    cpu_non_d3_array = "0,5" if skip_s6 else "0,5-6"
     steps: list[SubmitStep] = [
         SubmitStep(
             key="calibrate",
@@ -76,7 +77,7 @@ def build_submit_steps(*, include_gpu: bool = True) -> list[SubmitStep]:
         SubmitStep(
             key="cpu_non_d3",
             script_name="cpu_array.sh",
-            array="0,5-6",
+            array=cpu_non_d3_array,
             depends_on=("calibrate",),
         ),
     ]
@@ -85,7 +86,7 @@ def build_submit_steps(*, include_gpu: bool = True) -> list[SubmitStep]:
             SubmitStep(
                 key="gpu_all",
                 script_name="gpu_array.sh",
-                array="0-1",
+                array="0-2",
                 depends_on=("calibrate",),
             )
         )
@@ -234,11 +235,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--skip-gpu", action="store_true")
+    parser.add_argument(
+        "--skip-s6",
+        action="store_true",
+        help="Defer S6 by removing index 6 from cpu_non_d3 array submissions.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    steps = build_submit_steps(include_gpu=not bool(args.skip_gpu))
+    steps = build_submit_steps(
+        include_gpu=not bool(args.skip_gpu),
+        skip_s6=bool(args.skip_s6),
+    )
     summary = submit_steps(
         slurm_dir=Path(args.slurm_dir),
         steps=steps,
