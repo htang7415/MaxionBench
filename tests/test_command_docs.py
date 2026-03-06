@@ -30,7 +30,7 @@ def _assert_common_commands(text: str) -> None:
     ) in text
     assert (
         "maxionbench verify-engine-readiness --conformance-matrix artifacts/conformance/conformance_matrix.csv "
-        "--behavior-dir docs/behavior --allow-gpu-unavailable --allow-nonpass-status --json"
+        "--behavior-dir docs/behavior --allow-gpu-unavailable --allow-nonpass-status --require-mock-pass --json"
     ) in text
     assert (
         "maxionbench pre-run-gate --config configs/scenarios/s1_ann_frontier_qdrant.yaml "

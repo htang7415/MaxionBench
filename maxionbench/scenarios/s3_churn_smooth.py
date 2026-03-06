@@ -11,7 +11,7 @@ import numpy as np
 
 from maxionbench.datasets.d3_generator import D3Params, generate_d3_dataset, generate_synthetic_vectors
 from maxionbench.metrics.latency import latency_summary
-from maxionbench.metrics.quality import recall_at_k
+from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import sla_violation_rate
 from maxionbench.schemas.adapter_contract import QueryRequest, UpsertRecord
 
@@ -71,10 +71,16 @@ def run(
     total_rate = max(cfg.lambda_req_s, 1.0)
     next_maintenance_s = cfg.maintenance_interval_s
 
-    def run_phase(*, event_count: int, collect_metrics: bool) -> tuple[list[float], list[float], int, int, float]:
+    def run_phase(
+        *,
+        event_count: int,
+        collect_metrics: bool,
+    ) -> tuple[list[float], list[float], list[float], list[float], int, int, float]:
         nonlocal next_maintenance_s
         latencies_ms: list[float] = []
         recalls: list[float] = []
+        ndcgs: list[float] = []
+        mrrs: list[float] = []
         errors = 0
         reads = 0
         phase_clock_s = 0.0
@@ -89,6 +95,7 @@ def run(
 
             multiplier = burst_multiplier_fn(sim_t) if burst_multiplier_fn else 1.0
             op = _sample_operation(cfg, rng, write_multiplier=multiplier)
+            phase_clock_s += dt_s
             if op == "read":
                 reads += 1
                 q_idx = int(rng.integers(0, max(1, state.vectors.shape[0])))
@@ -102,8 +109,12 @@ def run(
                     got = []
                     errors += 1
                 if collect_metrics:
+                    k_eval = min(10, cfg.top_k)
+                    relevance = _ann_relevance_from_exact(exact_ids=exact, k=k_eval)
                     latencies_ms.append((time.perf_counter() - t0) * 1000.0)
-                    recalls.append(recall_at_k(got, exact, k=min(10, cfg.top_k)))
+                    recalls.append(recall_at_k(got, exact, k=k_eval))
+                    ndcgs.append(ndcg_at_10(got, relevance))
+                    mrrs.append(mrr_at_k(got, exact, k=k_eval))
                 continue
 
             if op == "insert":
@@ -124,12 +135,14 @@ def run(
                     state.delete_id(target)
                     adapter.delete([target])
                     adapter.flush_or_commit()
-            phase_clock_s += dt_s
         elapsed_s = time.perf_counter() - started
-        return latencies_ms, recalls, errors, reads, elapsed_s
+        return latencies_ms, recalls, ndcgs, mrrs, errors, reads, elapsed_s
 
-    _, _, _, _, warmup_elapsed = run_phase(event_count=warmup_events, collect_metrics=False)
-    latencies_ms, recalls, errors, reads, measure_elapsed = run_phase(event_count=measure_events, collect_metrics=True)
+    _, _, _, _, _, _, warmup_elapsed = run_phase(event_count=warmup_events, collect_metrics=False)
+    latencies_ms, recalls, ndcgs, mrrs, errors, reads, measure_elapsed = run_phase(
+        event_count=measure_events,
+        collect_metrics=True,
+    )
 
     elapsed = max(measure_elapsed, 1e-9)
     summary = latency_summary(latencies_ms)
@@ -152,14 +165,16 @@ def run(
         },
     }
     mean_recall = float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0
+    mean_ndcg = float(np.mean(np.asarray(ndcgs, dtype=np.float64))) if ndcgs else 0.0
+    mean_mrr = float(np.mean(np.asarray(mrrs, dtype=np.float64))) if mrrs else 0.0
     return S3Result(
         p50_ms=summary["p50_ms"],
         p95_ms=summary["p95_ms"],
         p99_ms=summary["p99_ms"],
         qps=float(reads) / elapsed,
         recall_at_10=mean_recall,
-        ndcg_at_10=mean_recall,
-        mrr_at_10=mean_recall,
+        ndcg_at_10=mean_ndcg,
+        mrr_at_10=mean_mrr,
         sla_violation_rate=sla_violation_rate(total_requests=max(1, reads), over_sla=over_sla, errors=errors),
         errors=errors,
         info_json=json.dumps(info, sort_keys=True),
@@ -237,11 +252,18 @@ class _ChurnState:
         if doc_id not in self.id_to_index:
             return
         idx = self.id_to_index[doc_id]
-        self.ids.pop(idx)
-        self.vectors = np.delete(self.vectors, idx, axis=0)
+        last_idx = len(self.ids) - 1
+        last_id = self.ids[last_idx]
+        # Keep delete/update bookkeeping near O(1) by swapping with the tail.
+        if idx != last_idx:
+            self.ids[idx] = last_id
+            self.vectors[idx] = self.vectors[last_idx]
+            self.id_to_index[last_id] = idx
+        self.ids.pop()
+        self.vectors = self.vectors[:-1]
         self.payloads.pop(doc_id, None)
         self.id_set.discard(doc_id)
-        self.id_to_index = {did: i for i, did in enumerate(self.ids)}
+        self.id_to_index.pop(doc_id, None)
 
 
 def _ingest_state(adapter: Any, state: _ChurnState) -> None:
@@ -275,3 +297,10 @@ def _random_unit_vector(dim: int, rng: np.random.Generator) -> np.ndarray:
     vec = rng.standard_normal(dim, dtype=np.float32)
     vec /= np.linalg.norm(vec) + 1e-12
     return vec
+
+
+def _ann_relevance_from_exact(*, exact_ids: list[str], k: int) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for rank, doc_id in enumerate(exact_ids[:k]):
+        values[doc_id] = float(max(1, k - rank))
+    return values

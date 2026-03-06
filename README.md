@@ -17,6 +17,7 @@ Implemented v0.1 harness components include:
 - engine readiness gate from conformance matrix + behavior cards (`maxionbench verify-engine-readiness`)
 - pre-run benchmark gate to block real-engine runs when readiness fails (`maxionbench pre-run-gate`)
 - promotion gate from strict readiness summary artifacts (`maxionbench verify-promotion-gate`)
+- S5 reranker runtime supports `hf_cross_encoder` when `MAXIONBENCH_ENABLE_HF_RERANKER=1` and local model/runtime deps are available, with explicit `heuristic_proxy` fallback provenance in `search_params_json`
 
 Artifact preflight before report generation:
 1. Validate artifacts: `maxionbench validate --input artifacts/runs --strict-schema --json`
@@ -70,7 +71,7 @@ Legacy compatibility mode:
 
 Pre-merge automation:
 - `.github/workflows/report_preflight.yml` runs a fast smoke benchmark, validates artifacts with `maxionbench validate --strict-schema`, then runs `maxionbench report`.
-- The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status`.
+- The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce structural readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status --require-mock-pass` (strict pass/fail readiness is handled in `strict_readiness.yml`).
 - Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`).
 - Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.

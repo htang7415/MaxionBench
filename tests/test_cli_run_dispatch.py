@@ -7,6 +7,8 @@ from maxionbench.tools import ci_protocol_audit as ci_protocol_audit_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
 from maxionbench.tools import verify_d3_calibration as verify_d3_calibration_mod
 from maxionbench.tools import verify_dataset_manifests as verify_dataset_manifests_mod
+from maxionbench.tools import verify_engine_readiness as verify_engine_readiness_mod
+from maxionbench.tools import verify_pins as verify_pins_mod
 from maxionbench.tools import verify_slurm_plan as verify_slurm_plan_mod
 from maxionbench.tools import validate_slurm_snapshots as validate_slurm_snapshots_mod
 
@@ -183,6 +185,66 @@ def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # 
     assert captured["argv"] == [
         "--manifest-dir",
         "maxionbench/datasets/manifests",
+        "--json",
+    ]
+
+
+def test_cli_verify_pins_dispatches_dev_scale_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 48
+
+    monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-pins",
+            "--config-dir",
+            "configs/scenarios",
+            "--allow-dev-calibrate-d3-scale",
+            "--json",
+        ]
+    )
+    assert code == 48
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/scenarios",
+        "--allow-dev-calibrate-d3-scale",
+        "--json",
+    ]
+
+
+def test_cli_verify_engine_readiness_dispatches_require_mock_pass(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 49
+
+    monkeypatch.setattr(verify_engine_readiness_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            "artifacts/conformance/conformance_matrix.csv",
+            "--behavior-dir",
+            "docs/behavior",
+            "--allow-gpu-unavailable",
+            "--allow-nonpass-status",
+            "--require-mock-pass",
+            "--json",
+        ]
+    )
+    assert code == 49
+    assert captured["argv"] == [
+        "--conformance-matrix",
+        "artifacts/conformance/conformance_matrix.csv",
+        "--behavior-dir",
+        "docs/behavior",
+        "--allow-gpu-unavailable",
+        "--allow-nonpass-status",
+        "--require-mock-pass",
         "--json",
     ]
 

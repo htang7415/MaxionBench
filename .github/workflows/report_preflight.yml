@@ -27,20 +27,21 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
-      - name: Run conformance matrix
+      - name: Run conformance matrix (structural readiness)
         run: |
           maxionbench conformance-matrix \
             --config-dir configs/conformance \
             --out-dir artifacts/conformance \
             --timeout-s 30
 
-      - name: Verify engine readiness policy
+      - name: Verify engine readiness coverage (non-pass statuses allowed)
         run: |
           maxionbench verify-engine-readiness \
             --conformance-matrix artifacts/conformance/conformance_matrix.csv \
             --behavior-dir docs/behavior \
             --allow-gpu-unavailable \
             --allow-nonpass-status \
+            --require-mock-pass \
             --json
 
       - name: Upload conformance readiness artifacts
