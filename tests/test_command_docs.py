@@ -59,6 +59,7 @@ def _assert_common_commands(text: str) -> None:
     ) in text
     assert "if summary provenance is non-strict" in text
     assert "allow_nonpass_status=true" in text
+    assert "require_mock_pass=false" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --json" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --enforce-protocol --json" in text
     assert "`--enforce-protocol` robustness payload checks:" in text

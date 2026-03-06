@@ -27,6 +27,8 @@ def verify_promotion_gate(
     allow_nonpass_status = (
         allow_nonpass_status_raw if isinstance(allow_nonpass_status_raw, bool) else None
     )
+    require_mock_pass_raw = payload.get("require_mock_pass")
+    require_mock_pass = require_mock_pass_raw if isinstance(require_mock_pass_raw, bool) else None
     error_count = payload.get("error_count", 0)
     conformance_rows = payload.get("conformance_rows", 0)
     behavior_cards_ok_raw = payload.get("behavior_cards_ok")
@@ -44,6 +46,10 @@ def verify_promotion_gate(
         reasons.append("strict readiness summary missing boolean `allow_nonpass_status` field")
     elif allow_nonpass_status:
         reasons.append("strict readiness summary was generated with allow_nonpass_status=true")
+    if require_mock_pass is None:
+        reasons.append("strict readiness summary missing boolean `require_mock_pass` field")
+    elif not require_mock_pass:
+        reasons.append("strict readiness summary was generated with require_mock_pass=false")
     if behavior_cards_ok is None:
         reasons.append("strict readiness summary missing boolean `behavior_cards_ok` field")
     elif not behavior_cards_ok:
@@ -73,6 +79,8 @@ def verify_promotion_gate(
             "pass_field": isinstance(pass_raw, bool),
             "allow_nonpass_status_field": allow_nonpass_status is not None,
             "allow_nonpass_status": allow_nonpass_status,
+            "require_mock_pass_field": require_mock_pass is not None,
+            "require_mock_pass": require_mock_pass,
             "behavior_cards_ok_field": behavior_cards_ok is not None,
             "behavior_cards_ok": behavior_cards_ok,
         },
