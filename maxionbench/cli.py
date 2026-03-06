@@ -71,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
     verify_dataset_manifests_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
     verify_dataset_manifests_parser.add_argument("--json", action="store_true")
 
+    verify_conformance_configs_parser = subparsers.add_parser(
+        "verify-conformance-configs",
+        help="Verify conformance config catalog shape and required adapter coverage",
+    )
+    verify_conformance_configs_parser.add_argument("--config-dir", default="configs/conformance")
+    verify_conformance_configs_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    verify_conformance_configs_parser.add_argument("--json", action="store_true")
+
     verify_d3_calibration_parser = subparsers.add_parser(
         "verify-d3-calibration",
         help="Verify D3 calibration params file is paper-ready",
@@ -285,6 +293,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_dataset_manifests_main(verify_argv)
+    if args.command == "verify-conformance-configs":
+        from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
+
+        verify_argv = ["--config-dir", args.config_dir]
+        if args.allow_gpu_unavailable:
+            verify_argv.append("--allow-gpu-unavailable")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_conformance_configs_main(verify_argv)
     if args.command == "verify-d3-calibration":
         from maxionbench.tools.verify_d3_calibration import main as verify_d3_calibration_main
 

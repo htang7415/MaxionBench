@@ -8,16 +8,25 @@ import pandas as pd
 import yaml
 
 from maxionbench.cli import main as cli_main
+from maxionbench.tools import pre_run_gate as pre_run_gate_mod
 from maxionbench.tools.pre_run_gate import evaluate_pre_run_gate
 from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS
 
 
-def _write_config(path: Path, *, engine: str) -> None:
+def _write_config(
+    path: Path,
+    *,
+    engine: str,
+    scenario: str = "s1_ann_frontier",
+    s5_require_hf_backend: bool = False,
+) -> None:
     payload = {
         "engine": engine,
-        "scenario": "s1_ann_frontier",
+        "scenario": scenario,
         "no_retry": True,
     }
+    if scenario == "s5_rerank":
+        payload["s5_require_hf_backend"] = bool(s5_require_hf_backend)
     path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
 
 
@@ -131,3 +140,64 @@ def test_pre_run_gate_cli_allows_gpu_omission_flag(tmp_path: Path, capsys) -> No
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["pass"] is True
+
+
+def test_pre_run_gate_rejects_s5_hf_requirement_when_env_or_deps_missing(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    cfg_path = tmp_path / "s5_mock.yaml"
+    _write_config(
+        cfg_path,
+        engine="mock",
+        scenario="s5_rerank",
+        s5_require_hf_backend=True,
+    )
+    monkeypatch.setattr(pre_run_gate_mod, "_detect_gpu_count", lambda: 0)
+    summary = evaluate_pre_run_gate(
+        config_path=cfg_path,
+        conformance_matrix_path=tmp_path / "missing.csv",
+        behavior_dir=tmp_path / "missing_behavior",
+    )
+    assert summary["pass"] is False
+    assert summary["reason"] == "s5 reranker runtime requirements not satisfied"
+    runtime = summary["s5_reranker_runtime"]
+    assert isinstance(runtime, dict)
+    assert runtime["required"] is True
+    assert runtime["pass"] is False
+    assert runtime["gpu_count"] == 0
+    assert any("MAXIONBENCH_ENABLE_HF_RERANKER" in msg for msg in runtime["errors"])
+    assert any("at least one NVIDIA GPU must be visible" in msg for msg in runtime["errors"])
+
+
+def test_pre_run_gate_accepts_s5_hf_requirement_when_runtime_flags_are_ready(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    cfg_path = tmp_path / "s5_mock_ready.yaml"
+    _write_config(
+        cfg_path,
+        engine="mock",
+        scenario="s5_rerank",
+        s5_require_hf_backend=True,
+    )
+    monkeypatch.setenv("MAXIONBENCH_ENABLE_HF_RERANKER", "1")
+
+    def _fake_find_spec(name: str):  # type: ignore[no-untyped-def]
+        if name in {"torch", "transformers"}:
+            return object()
+        return None
+
+    monkeypatch.setattr(pre_run_gate_mod.importlib.util, "find_spec", _fake_find_spec)
+    monkeypatch.setattr(pre_run_gate_mod, "_detect_gpu_count", lambda: 1)
+    summary = evaluate_pre_run_gate(
+        config_path=cfg_path,
+        conformance_matrix_path=tmp_path / "missing.csv",
+        behavior_dir=tmp_path / "missing_behavior",
+    )
+    assert summary["pass"] is True
+    assert summary["skipped"] is True
+    runtime = summary["s5_reranker_runtime"]
+    assert runtime["required"] is True
+    assert runtime["pass"] is True
+    assert runtime["errors"] == []

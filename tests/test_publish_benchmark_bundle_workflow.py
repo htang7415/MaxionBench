@@ -39,10 +39,16 @@ def test_publish_benchmark_bundle_workflow_enforces_strict_readiness_gate() -> N
     assert isinstance(strict_steps, list)
     strict_blob = "\n".join(str(step.get("run", "")) for step in strict_steps if isinstance(step, dict))
     assert "python -m pip install -e \".[dev,engines]\"" in strict_blob
+    assert "maxionbench verify-conformance-configs" in strict_blob
+    assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in strict_blob
+    assert "--allow-gpu-unavailable" in strict_blob
+    assert "--json" in strict_blob
     assert "maxionbench conformance-matrix" in strict_blob
+    assert strict_blob.index("maxionbench verify-conformance-configs") < strict_blob.index("maxionbench conformance-matrix")
     assert "--out-dir artifacts/conformance_publish" in strict_blob
     assert "maxionbench verify-engine-readiness" in strict_blob
     assert "--conformance-matrix artifacts/conformance_publish/conformance_matrix.csv" in strict_blob
+    assert "--require-mock-pass" in strict_blob
     assert "--allow-nonpass-status" not in strict_blob
     assert "engine_readiness_summary.json" in text
     assert "strict-readiness-proof" in text

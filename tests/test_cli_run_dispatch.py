@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from maxionbench.cli import main as cli_main
+from maxionbench.conformance import matrix as conformance_matrix_mod
 from maxionbench.orchestration.slurm import submit_plan as submit_plan_mod
 from maxionbench.orchestration import runner as runner_mod
 from maxionbench.tools import ci_protocol_audit as ci_protocol_audit_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
+from maxionbench.tools import verify_conformance_configs as verify_conformance_configs_mod
 from maxionbench.tools import verify_d3_calibration as verify_d3_calibration_mod
 from maxionbench.tools import verify_dataset_manifests as verify_dataset_manifests_mod
 from maxionbench.tools import verify_engine_readiness as verify_engine_readiness_mod
@@ -107,6 +109,36 @@ def test_cli_verify_branch_protection_dispatches_optional_flags(monkeypatch) -> 
     ]
 
 
+def test_cli_conformance_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 39
+
+    monkeypatch.setattr(conformance_matrix_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "conformance-matrix",
+            "--config-dir",
+            "configs/conformance",
+            "--out-dir",
+            "artifacts/conformance",
+            "--timeout-s",
+            "45.5",
+        ]
+    )
+    assert code == 39
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/conformance",
+        "--out-dir",
+        "artifacts/conformance",
+        "--timeout-s",
+        "45.5",
+    ]
+
+
 def test_cli_submit_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
@@ -185,6 +217,32 @@ def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # 
     assert captured["argv"] == [
         "--manifest-dir",
         "maxionbench/datasets/manifests",
+        "--json",
+    ]
+
+
+def test_cli_verify_conformance_configs_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 52
+
+    monkeypatch.setattr(verify_conformance_configs_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-conformance-configs",
+            "--config-dir",
+            "configs/conformance",
+            "--allow-gpu-unavailable",
+            "--json",
+        ]
+    )
+    assert code == 52
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/conformance",
+        "--allow-gpu-unavailable",
         "--json",
     ]
 

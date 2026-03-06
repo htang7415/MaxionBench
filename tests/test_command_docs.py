@@ -6,6 +6,9 @@ from pathlib import Path
 
 def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-pins --config-dir configs/scenarios --json" in text
+    assert "maxionbench verify-pins --config-dir configs/scenarios --allow-dev-calibrate-d3-scale --json" in text
+    assert "maxionbench verify-conformance-configs --config-dir configs/conformance --json" in text
+    assert "maxionbench verify-conformance-configs --config-dir configs/conformance --allow-gpu-unavailable --json" in text
     assert (
         "MAXIONBENCH_ENABLE_HF_RERANKER=1 maxionbench run --config configs/scenarios/s5_rerank.yaml "
         "--seed 42 --repeats 3 --no-retry"
@@ -45,6 +48,11 @@ def _assert_common_commands(text: str) -> None:
         "--conformance-matrix artifacts/conformance/conformance_matrix.csv --behavior-dir docs/behavior "
         "--allow-gpu-unavailable --json"
     ) in text
+    assert "S5 strict reranker readiness note:" in text
+    assert "s5_require_hf_backend: true" in text
+    assert "MAXIONBENCH_ENABLE_HF_RERANKER=1" in text
+    assert "local Python packages `torch` and `transformers`" in text
+    assert "at least one visible NVIDIA GPU (`gpu_count >= 1`)" in text
     assert (
         "maxionbench verify-promotion-gate --strict-readiness-summary "
         "artifacts/conformance_strict/engine_readiness_summary.json --json"
@@ -66,6 +74,13 @@ def _assert_common_commands(text: str) -> None:
     assert "`fallback_reason` empty/null" in text
     assert "`p99_inflation_vs_s1_baseline`" in text
     assert "S3/S3b rows must set `burst_clock_anchor` to `measurement_start`." in text
+    assert "S3b (`s3b_churn_bursty`) rows must also include burst metadata keys:" in text
+    assert "`burst_on_s`" in text
+    assert "`burst_off_s`" in text
+    assert "`burst_cycle_s`" in text
+    assert "`burst_on_write_mult`" in text
+    assert "`burst_off_write_mult`" in text
+    assert "S3b rows must set `mode = s3_bursty` and enforce `burst_cycle_s = burst_on_s + burst_off_s`." in text
     assert "`s1_baseline_error`" in text
     assert "run metadata must set `rtt_baseline_request_profile` to `healthcheck_plus_query_topk1_zero_vector`." in text
     assert "run metadata must include matching `dataset_cache_checksums` entries" in text

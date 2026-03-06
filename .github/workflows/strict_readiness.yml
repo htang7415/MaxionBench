@@ -37,6 +37,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,engines]"
 
+      - name: Verify conformance config catalog
+        run: |
+          ARGS=( \
+            --config-dir "${{ inputs.conformance_config_dir }}" \
+            --json \
+          )
+          if [[ "${{ inputs.allow_gpu_unavailable }}" == "true" ]]; then
+            ARGS+=(--allow-gpu-unavailable)
+          fi
+          maxionbench verify-conformance-configs "${ARGS[@]}"
+
       - name: Run strict conformance matrix
         run: |
           maxionbench conformance-matrix \
@@ -50,6 +61,7 @@ jobs:
           ARGS=( \
             --conformance-matrix artifacts/conformance_strict/conformance_matrix.csv \
             --behavior-dir docs/behavior \
+            --require-mock-pass \
             --json \
           )
           if [[ "${{ inputs.allow_gpu_unavailable }}" == "true" ]]; then

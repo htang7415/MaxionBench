@@ -209,6 +209,12 @@ def test_s3_and_s3b_smoke(tmp_path: Path) -> None:
     assert int(s3b_payload["s1_baseline_match_rows"]) >= 1
     assert float(s3b_payload["p99_inflation_vs_s1_baseline"]) >= 0.0
     assert str(s3b_payload["burst_clock_anchor"]) == "measurement_start"
+    assert str(s3b_payload["mode"]) == "s3_bursty"
+    assert float(s3b_payload["burst_on_s"]) == 10.0
+    assert float(s3b_payload["burst_off_s"]) == 20.0
+    assert float(s3b_payload["burst_cycle_s"]) == 30.0
+    assert float(s3b_payload["burst_on_write_mult"]) == 8.0
+    assert float(s3b_payload["burst_off_write_mult"]) == 0.25
 
 
 def test_s3_requires_matched_s1_baseline(tmp_path: Path) -> None:

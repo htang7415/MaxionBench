@@ -25,6 +25,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
         "maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json"
     )
     verify_behavior_cards_cmd = "maxionbench verify-behavior-cards --behavior-dir docs/behavior --json"
+    verify_conformance_configs_cmd = "maxionbench verify-conformance-configs --config-dir configs/conformance --json"
     verify_hygiene_cmd = "pytest -q tests/test_repo_hygiene.py"
     verify_command_docs_cmd = "pytest -q tests/test_command_docs.py"
     verify_figure_policy_sync_cmd = "pytest -q tests/test_report_figure_policy_sync.py"
@@ -52,6 +53,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert verify_pins_cmd in text
     assert verify_dataset_manifests_cmd in text
     assert verify_behavior_cards_cmd in text
+    assert verify_conformance_configs_cmd in text
     assert verify_hygiene_cmd in text
     assert verify_command_docs_cmd in text
     assert verify_figure_policy_sync_cmd in text
@@ -91,6 +93,7 @@ def test_report_preflight_workflow_validates_before_report() -> None:
     assert text.index(verify_pins_cmd) < text.index(validate_cmd)
     assert text.index(verify_dataset_manifests_cmd) < text.index(validate_cmd)
     assert text.index(verify_behavior_cards_cmd) < text.index(validate_cmd)
+    assert text.index(verify_conformance_configs_cmd) < text.index(validate_cmd)
     assert text.index(verify_hygiene_cmd) < text.index(validate_cmd)
     assert text.index(verify_command_docs_cmd) < text.index(validate_cmd)
     assert text.index(verify_figure_policy_sync_cmd) < text.index(validate_cmd)
@@ -161,6 +164,7 @@ def test_report_preflight_workflow_has_conformance_readiness_gate_job() -> None:
     runs_blob = "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
 
     assert "maxionbench conformance-matrix" in runs_blob
+    assert "maxionbench verify-conformance-configs --config-dir configs/conformance --json" in runs_blob
     assert "--config-dir configs/conformance" in runs_blob
     assert "--out-dir artifacts/conformance" in runs_blob
     assert "maxionbench verify-engine-readiness" in runs_blob
@@ -170,6 +174,7 @@ def test_report_preflight_workflow_has_conformance_readiness_gate_job() -> None:
     assert "--allow-nonpass-status" in runs_blob
     assert "--require-mock-pass" in runs_blob
     assert "--json" in runs_blob
+    assert runs_blob.index("maxionbench verify-conformance-configs") < runs_blob.index("maxionbench conformance-matrix")
     text = workflow.read_text(encoding="utf-8")
     assert "conformance-readiness-artifacts" in text
     assert "artifacts/conformance/**" in text

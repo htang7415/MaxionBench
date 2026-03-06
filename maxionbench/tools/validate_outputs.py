@@ -100,6 +100,14 @@ REQUIRED_S3_BASELINE_INFO_KEYS = (
     "p99_inflation_vs_s1_baseline",
 )
 PINNED_S3_BURST_CLOCK_ANCHOR = "measurement_start"
+PINNED_S3B_MODE = "s3_bursty"
+REQUIRED_S3B_BURST_INFO_KEYS = (
+    "burst_on_s",
+    "burst_off_s",
+    "burst_cycle_s",
+    "burst_on_write_mult",
+    "burst_off_write_mult",
+)
 REQUIRED_S2_ROBUSTNESS_INFO_KEYS = (
     "selectivity",
     "filter",
@@ -1111,6 +1119,63 @@ def _validate_s3_baseline_provenance_payloads(
             )
             ok = False
             continue
+
+        if scenario == "s3b_churn_bursty":
+            mode = payload.get("mode")
+            if not isinstance(mode, str) or mode != PINNED_S3B_MODE:
+                _raise_or_warn(
+                    f"{row_label} `mode` must equal {PINNED_S3B_MODE!r} for S3b",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+
+            missing_burst = [key for key in REQUIRED_S3B_BURST_INFO_KEYS if key not in payload]
+            if missing_burst:
+                _raise_or_warn(
+                    f"{row_label} missing S3b burst metadata keys: {missing_burst}",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+                continue
+
+            try:
+                burst_on_s = float(payload.get("burst_on_s"))
+                burst_off_s = float(payload.get("burst_off_s"))
+                burst_cycle_s = float(payload.get("burst_cycle_s"))
+                burst_on_write_mult = float(payload.get("burst_on_write_mult"))
+                burst_off_write_mult = float(payload.get("burst_off_write_mult"))
+            except (TypeError, ValueError):
+                _raise_or_warn(
+                    f"{row_label} S3b burst metadata values must be numeric",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+                continue
+
+            if burst_on_s <= 0.0 or burst_off_s <= 0.0:
+                _raise_or_warn(
+                    f"{row_label} S3b burst durations must be > 0",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            if burst_on_write_mult <= 0.0 or burst_off_write_mult <= 0.0:
+                _raise_or_warn(
+                    f"{row_label} S3b burst write multipliers must be > 0",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            if abs(burst_cycle_s - (burst_on_s + burst_off_s)) > 1e-9:
+                _raise_or_warn(
+                    f"{row_label} `burst_cycle_s` must equal `burst_on_s + burst_off_s`",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
 
         baseline_p99 = payload.get("s1_baseline_p99_ms")
         inflation = payload.get("p99_inflation_vs_s1_baseline")

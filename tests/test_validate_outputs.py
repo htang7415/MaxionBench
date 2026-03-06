@@ -100,6 +100,60 @@ def _make_pinned_s3_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 
     )
 
 
+def _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 201) -> Path:
+    runs_root = tmp_path / "runs_s3b"
+    _make_run(
+        runs_root,
+        name="run-s1-d3-baseline-protocol-s3b",
+        seed=seed,
+        overrides={
+            "scenario": "s1_ann_frontier",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 0,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 16,
+        },
+    )
+    return _make_run(
+        runs_root,
+        name="run-s3b-with-baseline-protocol",
+        seed=seed + 1,
+        overrides={
+            "scenario": "s3b_churn_bursty",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 8,
+            "clients_grid": [32],
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "lambda_req_s": 1000.0,
+            "s3_read_rate": 800.0,
+            "s3_insert_rate": 100.0,
+            "s3_update_rate": 50.0,
+            "s3_delete_rate": 50.0,
+            "maintenance_interval_s": 60.0,
+            "s3b_on_s": 30.0,
+            "s3b_off_s": 90.0,
+            "s3b_on_write_mult": 8.0,
+            "s3b_off_write_mult": 0.25,
+            "sla_threshold_ms": 120.0,
+            "s3_max_events": 60,
+        },
+    )
+
+
 def _make_pinned_s2_run(tmp_path: Path, *, seed: int = 121) -> Path:
     runs_root = tmp_path / "runs_s2"
     return _make_run(
@@ -739,3 +793,67 @@ def test_validate_run_directory_enforce_protocol_rejects_s3_burst_clock_anchor_d
 
     with pytest.raises(ValueError, match="burst_clock_anchor"):
         validate_run_directory(s3_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_accepts_s3b_burst_metadata_payloads(tmp_path: Path) -> None:
+    s3b_run = _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path, seed=211)
+    summary = validate_run_directory(s3b_run, enforce_protocol=True)
+    assert summary["runtime_protocol_ok"] is True
+
+
+def test_validate_run_directory_enforce_protocol_rejects_missing_s3b_burst_metadata_key(tmp_path: Path) -> None:
+    s3b_run = _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path, seed=223)
+    results_path = s3b_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    mutated_payloads: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        payload.pop("burst_on_s", None)
+        mutated_payloads.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = mutated_payloads
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="missing S3b burst metadata keys"):
+        validate_run_directory(s3b_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_s3b_mode_drift(tmp_path: Path) -> None:
+    s3b_run = _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path, seed=233)
+    results_path = s3b_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    mutated_payloads: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        payload["mode"] = "s3_smooth"
+        mutated_payloads.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = mutated_payloads
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="`mode` must equal"):
+        validate_run_directory(s3b_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_missing_s3b_burst_metadata_when_baseline_missing(
+    tmp_path: Path,
+) -> None:
+    s3b_run = _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path, seed=239)
+    results_path = s3b_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    mutated_payloads: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        payload["s1_baseline_missing"] = True
+        payload["s1_baseline_p99_ms"] = None
+        payload["p99_inflation_vs_s1_baseline"] = None
+        payload["s1_baseline_error"] = "missing matched S1 baseline"
+        payload["s1_baseline_match_rows"] = 0
+        payload.pop("burst_off_s", None)
+        mutated_payloads.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = mutated_payloads
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="missing S3b burst metadata keys"):
+        validate_run_directory(s3b_run, enforce_protocol=True)

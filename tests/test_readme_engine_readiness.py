@@ -17,6 +17,10 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "include-publish-bundle-check" in text
     assert "pre-run-gate" in text
     assert "pre-run-gate --config ci_s1_smoke.yaml --json" in text
+    assert "verify-conformance-configs --config-dir configs/conformance --json" in text
+    assert "s5_require_hf_backend: true" in text
+    assert "MAXIONBENCH_ENABLE_HF_RERANKER" in text
+    assert "visible NVIDIA GPU" in text
     assert "verify-slurm-plan --json" in text
     assert "verify-slurm-plan --skip-gpu --json" in text
     assert "verify-dataset-manifests" in text

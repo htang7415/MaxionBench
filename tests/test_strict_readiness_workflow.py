@@ -35,13 +35,19 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     runs_blob = "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
 
     assert "python -m pip install -e \".[dev,engines]\"" in runs_blob
+    assert "maxionbench verify-conformance-configs" in runs_blob
+    assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in runs_blob
+    assert "--allow-gpu-unavailable" in runs_blob
+    assert "--json" in runs_blob
     assert "maxionbench conformance-matrix" in runs_blob
     assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in runs_blob
     assert "--out-dir artifacts/conformance_strict" in runs_blob
     assert "--timeout-s \"${{ inputs.timeout_s }}\"" in runs_blob
+    assert runs_blob.index("maxionbench verify-conformance-configs") < runs_blob.index("maxionbench conformance-matrix")
     assert "maxionbench verify-engine-readiness" in runs_blob
     assert "--conformance-matrix artifacts/conformance_strict/conformance_matrix.csv" in runs_blob
     assert "--behavior-dir docs/behavior" in runs_blob
+    assert "--require-mock-pass" in runs_blob
     assert "--allow-gpu-unavailable" in runs_blob
     assert "--allow-nonpass-status" not in runs_blob
     assert "tee artifacts/conformance_strict/engine_readiness_summary.json" in runs_blob

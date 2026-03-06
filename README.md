@@ -14,6 +14,7 @@ Implemented v0.1 harness components include:
 - dataset manifest coverage + checksum format validation (`maxionbench verify-dataset-manifests`)
 - D3 calibration paper-readiness verification (`maxionbench verify-d3-calibration`)
 - behavior-card coverage validation (`maxionbench verify-behavior-cards`)
+- conformance config catalog validation (`maxionbench verify-conformance-configs`)
 - engine readiness gate from conformance matrix + behavior cards (`maxionbench verify-engine-readiness`)
 - pre-run benchmark gate to block real-engine runs when readiness fails (`maxionbench pre-run-gate`)
 - promotion gate from strict readiness summary artifacts (`maxionbench verify-promotion-gate`)
@@ -24,7 +25,8 @@ Artifact preflight before report generation:
    - optional pinned protocol audit for paper-grade runs: `maxionbench validate --input artifacts/runs --strict-schema --enforce-protocol --json`
    - `--enforce-protocol` also validates per-row robustness payloads:
    - S2 requires `search_params_json` keys `selectivity`, `filter`, `p99_inflation_vs_unfiltered`, and an explicit 100% anchor row (`selectivity=1.0`) with inflation `1.0`
-   - S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`, `s1_baseline_match_rows`, `s1_baseline_lookup_root`, `s1_baseline_missing`, `p99_inflation_vs_s1_baseline`, `burst_clock_anchor`; enforce `burst_clock_anchor="measurement_start"` plus consistent missing/non-missing baseline semantics
+  - S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`, `s1_baseline_match_rows`, `s1_baseline_lookup_root`, `s1_baseline_missing`, `p99_inflation_vs_s1_baseline`, `burst_clock_anchor`; enforce `burst_clock_anchor="measurement_start"` plus consistent missing/non-missing baseline semantics
+  - S3b additionally requires burst metadata keys `burst_on_s`, `burst_off_s`, `burst_cycle_s`, `burst_on_write_mult`, `burst_off_write_mult` and enforces `mode="s3_bursty"` with `burst_cycle_s = burst_on_s + burst_off_s`
    - S5 requires `search_params_json.reranker.backend="hf_cross_encoder"`, `device="cuda"`, `local_files_only=true`, `uses_qrels_supervision=false`, pinned reranker config fields, and `runtime_errors=0` with empty `fallback_reason`
    - run metadata must pin `rtt_baseline_request_profile="healthcheck_plus_query_topk1_zero_vector"` for cross-engine baseline comparability
      - run metadata must include `dataset_cache_checksums` provenance entries (`path_key`, `resolved_path`, `source`, `expected_sha256`, `actual_sha256`) when dataset checksum pins are provided
@@ -77,7 +79,9 @@ Pre-merge automation:
 - Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.
 - The workflow runs `maxionbench verify-behavior-cards --behavior-dir docs/behavior --json` to enforce behavior-card coverage/sections.
+- The workflow runs `maxionbench verify-conformance-configs --config-dir configs/conformance --json` to enforce conformance config catalog shape and adapter coverage.
 - The smoke path runs `maxionbench pre-run-gate --config ci_s1_smoke.yaml --json` before `maxionbench run`.
+- For S5 configs with `s5_require_hf_backend: true`, pre-run gate also checks `MAXIONBENCH_ENABLE_HF_RERANKER`, local `torch`/`transformers` availability, and at least one visible NVIDIA GPU.
 - The workflow uploads smoke run/report artifacts (`actions/upload-artifact`) for debugging on both success and failure.
 - The same workflow also exercises the legacy migration path: report failure on missing stage timing columns, migration backfill, re-validation, then successful report generation.
 - It also exercises a legacy resource-profile path: strict validation/report failure for missing RHU fields plus `--legacy-ok` warning diagnostics artifact.
