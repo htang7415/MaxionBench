@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import yaml
@@ -19,6 +19,12 @@ from maxionbench.datasets.d3_generator import (
 )
 from maxionbench.metrics.latency import percentile_ms
 from maxionbench.metrics.quality import recall_at_k
+
+MIN_TEST_A_MEDIAN_CONCENTRATION = 0.60
+MAX_TEST_B_CLUSTER_SPREAD = 25.0
+MIN_P99_RATIO_1PCT_TO_50PCT = 2.0
+MIN_RECALL_GAP_50_MINUS_1 = 0.05
+PAPER_MIN_CALIBRATION_VECTORS = 10_000_000
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,108 @@ class CalibrationResult:
     adjusted: bool
 
 
+def is_trivial_curve(*, p99_ratio_1pct_to_50pct: float, recall_gap_50_minus_1: float) -> bool:
+    """Documented trivial-curve criterion for D3 calibration.
+
+    Trivial when either latency separation is too small OR recall separation is too small:
+    p99_1% / p99_50% < 2.0 OR E_q[Recall@10_50% - Recall@10_1%] < 0.05
+    """
+
+    # Negative signed gap (recall@10_50% < recall@10_1%) still counts as trivial
+    # under the pinned document criterion because it is strictly < 0.05.
+    return (
+        p99_ratio_1pct_to_50pct < MIN_P99_RATIO_1PCT_TO_50PCT
+        or recall_gap_50_minus_1 < MIN_RECALL_GAP_50_MINUS_1
+    )
+
+
+def calibration_eval_passes_thresholds(eval_data: CalibrationEval) -> bool:
+    return (
+        eval_data.test_a_median_concentration >= MIN_TEST_A_MEDIAN_CONCENTRATION
+        and eval_data.test_b_cluster_spread <= MAX_TEST_B_CLUSTER_SPREAD
+        and not eval_data.trivial
+    )
+
+
+def paper_calibration_issues(
+    *,
+    payload: Mapping[str, Any],
+    min_vectors: int = PAPER_MIN_CALIBRATION_VECTORS,
+) -> list[str]:
+    issues: list[str] = []
+    eval_payload = payload.get("calibration_eval")
+    if not isinstance(eval_payload, Mapping):
+        issues.append("missing `calibration_eval` mapping")
+        return issues
+
+    test_a = _as_float(eval_payload.get("test_a_median_concentration"))
+    if test_a is None:
+        issues.append("calibration_eval.test_a_median_concentration must be numeric")
+    elif test_a < MIN_TEST_A_MEDIAN_CONCENTRATION:
+        issues.append(
+            "calibration_eval.test_a_median_concentration must be >= "
+            f"{MIN_TEST_A_MEDIAN_CONCENTRATION:.2f} (got {test_a:.6f})"
+        )
+
+    test_b = _as_float(eval_payload.get("test_b_cluster_spread"))
+    if test_b is None:
+        issues.append("calibration_eval.test_b_cluster_spread must be numeric")
+    elif test_b > MAX_TEST_B_CLUSTER_SPREAD:
+        issues.append(
+            "calibration_eval.test_b_cluster_spread must be <= "
+            f"{MAX_TEST_B_CLUSTER_SPREAD:.1f} (got {test_b:.6f})"
+        )
+
+    p99_ratio = _as_float(eval_payload.get("p99_ratio_1pct_to_50pct"))
+    if p99_ratio is None:
+        issues.append("calibration_eval.p99_ratio_1pct_to_50pct must be numeric")
+    elif p99_ratio < MIN_P99_RATIO_1PCT_TO_50PCT:
+        issues.append(
+            "calibration_eval.p99_ratio_1pct_to_50pct must be >= "
+            f"{MIN_P99_RATIO_1PCT_TO_50PCT:.1f} (got {p99_ratio:.6f})"
+        )
+
+    recall_gap = _as_float(eval_payload.get("recall_gap_50_minus_1"))
+    if recall_gap is None:
+        issues.append("calibration_eval.recall_gap_50_minus_1 must be numeric")
+    else:
+        if recall_gap < 0.0:
+            issues.append(
+                "calibration_eval.recall_gap_50_minus_1 is negative; "
+                "this inverts Recall@10_50% vs Recall@10_1% ordering and is not paper-ready"
+            )
+        if recall_gap < MIN_RECALL_GAP_50_MINUS_1:
+            issues.append(
+                "calibration_eval.recall_gap_50_minus_1 must be >= "
+                f"{MIN_RECALL_GAP_50_MINUS_1:.2f} (got {recall_gap:.6f})"
+            )
+
+    trivial = eval_payload.get("trivial")
+    if not isinstance(trivial, bool):
+        issues.append("calibration_eval.trivial must be a boolean")
+    elif trivial:
+        issues.append("calibration_eval.trivial must be false for paper-ready calibration")
+
+    vector_count = _as_int(payload.get("calibration_vector_count"))
+    if vector_count is None:
+        issues.append("missing numeric `calibration_vector_count` in d3 params metadata")
+    elif vector_count < int(min_vectors):
+        issues.append(
+            f"calibration_vector_count must be >= {int(min_vectors)} for paper-ready D3 calibration "
+            f"(got {vector_count})"
+        )
+
+    source = str(payload.get("calibration_source") or "").strip().lower()
+    if not source:
+        issues.append("missing non-empty `calibration_source` in d3 params metadata")
+    elif source.startswith("synthetic"):
+        issues.append(
+            f"calibration_source={source!r} indicates synthetic/mock calibration; "
+            "paper runs require real LAION-subset calibration"
+        )
+    return issues
+
+
 def calibrate_d3_params(
     vectors: np.ndarray,
     initial_params: D3Params,
@@ -58,11 +166,7 @@ def calibrate_d3_params(
         dataset = generate_d3_dataset(vectors, params)
         current_eval = evaluate_calibration(dataset, seed=seed, top_k=top_k)
         last_eval = current_eval
-        passes_tests = (
-            current_eval.test_a_median_concentration >= 0.60
-            and current_eval.test_b_cluster_spread <= 25.0
-            and not current_eval.trivial
-        )
+        passes_tests = calibration_eval_passes_thresholds(current_eval)
         if passes_tests:
             return CalibrationResult(
                 selected_params=params,
@@ -140,7 +244,10 @@ def evaluate_calibration(
     recall_1 = float(np.mean(np.asarray(rec_1pct, dtype=np.float64))) if rec_1pct else 0.0
     recall_50 = float(np.mean(np.asarray(rec_50pct, dtype=np.float64))) if rec_50pct else 0.0
     recall_gap = recall_50 - recall_1
-    trivial = p99_ratio < 2.0 or recall_gap < 0.05
+    trivial = is_trivial_curve(
+        p99_ratio_1pct_to_50pct=p99_ratio,
+        recall_gap_50_minus_1=recall_gap,
+    )
     return CalibrationEval(
         test_a_median_concentration=test_a,
         test_b_cluster_spread=test_b,
@@ -154,7 +261,13 @@ def evaluate_calibration(
     )
 
 
-def write_d3_params_yaml(path: Path, params: D3Params, eval_data: CalibrationEval | None = None) -> None:
+def write_d3_params_yaml(
+    path: Path,
+    params: D3Params,
+    eval_data: CalibrationEval | None = None,
+    *,
+    calibration_metadata: Mapping[str, Any] | None = None,
+) -> None:
     payload: dict[str, Any] = params.as_dict()
     if eval_data is not None:
         payload["calibration_eval"] = {
@@ -162,11 +275,31 @@ def write_d3_params_yaml(path: Path, params: D3Params, eval_data: CalibrationEva
             "test_b_cluster_spread": eval_data.test_b_cluster_spread,
             "p99_ratio_1pct_to_50pct": eval_data.p99_ratio_1pct_to_50pct,
             "recall_gap_50_minus_1": eval_data.recall_gap_50_minus_1,
+            "recall_gap_50_minus_1_abs": abs(eval_data.recall_gap_50_minus_1),
+            "recall_gap_50_minus_1_negative": bool(eval_data.recall_gap_50_minus_1 < 0.0),
             "trivial": eval_data.trivial,
         }
+    if calibration_metadata:
+        for key, value in calibration_metadata.items():
+            payload[str(key)] = value
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=True)
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _exact_topk_ids(dataset: D3Dataset, query_vec: np.ndarray, mask: np.ndarray, *, top_k: int) -> list[str]:

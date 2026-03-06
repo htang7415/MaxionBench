@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping
 
 import pandas as pd
@@ -26,9 +27,14 @@ REQUIRED_METADATA_FIELDS = (
     "quality_target",
     "rtt_baseline_ms_p50",
     "rtt_baseline_ms_p99",
+    "rtt_baseline_request_profile",
     "sla_threshold_ms",
     "rhu_weights",
+    "dataset_cache_checksums",
 )
+
+PINNED_RTT_BASELINE_REQUEST_PROFILE = "healthcheck_plus_query_topk1_zero_vector"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 REQUIRED_HARDWARE_RUNTIME_FIELDS = (
     "hostname",
@@ -109,6 +115,7 @@ class RunMetadata:
     ground_truth_engine: str
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    rtt_baseline_request_profile: str
     sla_threshold_ms: float
     rhu_weights: Mapping[str, float]
     config_fingerprint: str
@@ -119,6 +126,7 @@ class RunMetadata:
     rhu_references: Mapping[str, float] | None = None
     resource_profile: Mapping[str, float] | None = None
     hardware_runtime: Mapping[str, Any] | None = None
+    dataset_cache_checksums: list[Mapping[str, str]] = field(default_factory=list)
     gpu_tracks_omitted: bool = False
     gpu_tracks_omission_reason: str | None = None
 
@@ -134,6 +142,11 @@ class RunMetadata:
             raise ValueError(f"missing required metadata fields: {missing}")
         if sorted(self.rhu_weights.keys()) != ["w_c", "w_d", "w_g", "w_r"]:
             raise ValueError("rhu_weights must include exactly w_c,w_g,w_r,w_d")
+        if self.rtt_baseline_request_profile != PINNED_RTT_BASELINE_REQUEST_PROFILE:
+            raise ValueError(
+                "rtt_baseline_request_profile must equal "
+                f"{PINNED_RTT_BASELINE_REQUEST_PROFILE!r}"
+            )
         if not self.ground_truth_source.strip():
             raise ValueError("ground_truth_source must be non-empty")
         if not self.ground_truth_metric.strip():
@@ -153,6 +166,21 @@ class RunMetadata:
         missing_hardware_runtime = [name for name in REQUIRED_HARDWARE_RUNTIME_FIELDS if name not in self.hardware_runtime]
         if missing_hardware_runtime:
             raise ValueError(f"hardware_runtime missing keys: {missing_hardware_runtime}")
+        if not isinstance(self.dataset_cache_checksums, list):
+            raise ValueError("dataset_cache_checksums must be a list")
+        for idx, entry in enumerate(self.dataset_cache_checksums):
+            if not isinstance(entry, Mapping):
+                raise ValueError(f"dataset_cache_checksums[{idx}] must be a mapping")
+            for key in ("path_key", "resolved_path", "source", "expected_sha256", "actual_sha256"):
+                value = entry.get(key)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"dataset_cache_checksums[{idx}] missing non-empty {key}")
+            expected = str(entry.get("expected_sha256")).strip().lower()
+            actual = str(entry.get("actual_sha256")).strip().lower()
+            if not _SHA256_RE.fullmatch(expected) or not _SHA256_RE.fullmatch(actual):
+                raise ValueError(f"dataset_cache_checksums[{idx}] sha256 fields must be lowercase 64-char hex")
+            if expected != actual:
+                raise ValueError(f"dataset_cache_checksums[{idx}] expected_sha256 must equal actual_sha256")
         if self.gpu_tracks_omission_reason is not None and not str(self.gpu_tracks_omission_reason).strip():
             raise ValueError("gpu_tracks_omission_reason must be non-empty when provided")
 

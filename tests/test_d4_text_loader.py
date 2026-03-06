@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import bz2
+import hashlib
 import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
@@ -115,6 +117,39 @@ def test_load_d4_from_local_bundles_beir_plus_crag(tmp_path: Path) -> None:
     for qid in ds.query_ids:
         assert qid in ds.qrels
         assert ds.qrels[qid]
+
+
+def test_load_d4_from_local_bundles_enforces_crag_sha256(tmp_path: Path) -> None:
+    beir_root = tmp_path / "beir"
+    _make_beir_subset(beir_root, "fiqa")
+    crag_path = _make_crag_file(tmp_path / "crag.jsonl.bz2")
+    crag_sha = hashlib.sha256(crag_path.read_bytes()).hexdigest()
+
+    ds = load_d4_from_local_bundles(
+        vector_dim=8,
+        seed=5,
+        beir_root=beir_root,
+        beir_subsets=["fiqa"],
+        crag_path=crag_path,
+        crag_expected_sha256=crag_sha,
+        include_crag=True,
+        max_docs=10,
+        max_queries=10,
+    )
+    assert ds.doc_vectors.shape[1] == 8
+
+    with pytest.raises(ValueError, match="sha256 mismatch"):
+        load_d4_from_local_bundles(
+            vector_dim=8,
+            seed=5,
+            beir_root=beir_root,
+            beir_subsets=["fiqa"],
+            crag_path=crag_path,
+            crag_expected_sha256=("0" * 64),
+            include_crag=True,
+            max_docs=10,
+            max_queries=10,
+        )
 
 
 def test_runner_s4_with_real_d4_bundle(tmp_path: Path) -> None:

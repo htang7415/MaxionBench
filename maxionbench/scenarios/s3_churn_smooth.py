@@ -70,21 +70,22 @@ def run(
     measure_events = _phase_event_count(cfg, phase_s=cfg.steady_state_s)
     total_rate = max(cfg.lambda_req_s, 1.0)
     next_maintenance_s = cfg.maintenance_interval_s
-    phase_cursor = 0
 
     def run_phase(*, event_count: int, collect_metrics: bool) -> tuple[list[float], list[float], int, int, float]:
-        nonlocal next_maintenance_s, phase_cursor
+        nonlocal next_maintenance_s
         latencies_ms: list[float] = []
         recalls: list[float] = []
         errors = 0
         reads = 0
+        phase_clock_s = 0.0
+        dt_s = 1.0 / total_rate
         started = time.perf_counter()
-        for offset in range(event_count):
-            event_idx = phase_cursor + offset
-            sim_t = float(event_idx) / total_rate
-            if sim_t >= next_maintenance_s:
-                adapter.optimize_or_compact()
-                next_maintenance_s += cfg.maintenance_interval_s
+        for _ in range(event_count):
+            sim_t = phase_clock_s
+            if collect_metrics:
+                while sim_t >= next_maintenance_s:
+                    adapter.optimize_or_compact()
+                    next_maintenance_s += cfg.maintenance_interval_s
 
             multiplier = burst_multiplier_fn(sim_t) if burst_multiplier_fn else 1.0
             op = _sample_operation(cfg, rng, write_multiplier=multiplier)
@@ -112,21 +113,19 @@ def run(
                 adapter.flush_or_commit()
             elif op == "update":
                 target = state.sample_id(rng)
-                if target is None:
-                    continue
-                new_vec = _random_unit_vector(cfg.vector_dim, rng)
-                state.update_vector(target, new_vec)
-                adapter.update_vectors([target], [new_vec.tolist()])
-                adapter.flush_or_commit()
+                if target is not None:
+                    new_vec = _random_unit_vector(cfg.vector_dim, rng)
+                    state.update_vector(target, new_vec)
+                    adapter.update_vectors([target], [new_vec.tolist()])
+                    adapter.flush_or_commit()
             elif op == "delete":
                 target = state.sample_id(rng)
-                if target is None:
-                    continue
-                state.delete_id(target)
-                adapter.delete([target])
-                adapter.flush_or_commit()
+                if target is not None:
+                    state.delete_id(target)
+                    adapter.delete([target])
+                    adapter.flush_or_commit()
+            phase_clock_s += dt_s
         elapsed_s = time.perf_counter() - started
-        phase_cursor += event_count
         return latencies_ms, recalls, errors, reads, elapsed_s
 
     _, _, _, _, warmup_elapsed = run_phase(event_count=warmup_events, collect_metrics=False)
@@ -144,6 +143,7 @@ def run(
         "insert_rate": cfg.insert_rate,
         "update_rate": cfg.update_rate,
         "delete_rate": cfg.delete_rate,
+        "burst_clock_anchor": "measurement_start",
         "phase": {
             "warmup_events": warmup_events,
             "warmup_elapsed_s": warmup_elapsed,

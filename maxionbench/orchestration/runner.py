@@ -10,15 +10,23 @@ import time
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import yaml
 
 from maxionbench.adapters import create_adapter
+from maxionbench.datasets.cache_integrity import (
+    load_dataset_manifest,
+    resolve_expected_sha256_with_source,
+    verify_file_sha256,
+)
+from maxionbench.datasets.d3_calibrate import PAPER_MIN_CALIBRATION_VECTORS, paper_calibration_issues
 from maxionbench.datasets.d3_generator import D3Params, params_from_mapping
 from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_hdf5
 from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.metrics.cost_rhu import rhu_hours
+from maxionbench.metrics.robustness import p99_inflation
 from maxionbench.metrics.resources import ResourceProfile, profile_from_adapter_stats, rhu_rate_for_profile
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 from maxionbench.runtime.rpc_baseline import measure_rpc_baseline, minimal_rpc_request_fn
@@ -33,6 +41,7 @@ from maxionbench.scenarios.s4_hybrid import S4Config, run as run_s4
 from maxionbench.scenarios.s5_rerank import S5Config, run as run_s5
 from maxionbench.scenarios.s6_fusion import S6Config, run as run_s6
 from maxionbench.schemas.result_schema import (
+    PINNED_RTT_BASELINE_REQUEST_PROFILE,
     ResultRow,
     RunMetadata,
     stable_config_fingerprint,
@@ -151,6 +160,10 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
             raise RuntimeError(f"pre-run readiness gate failed: {json.dumps(gate_summary, sort_keys=True)}")
 
     config_payload = cfg.as_dict()
+    dataset_cache_checksums = _collect_dataset_cache_checksum_provenance(
+        cfg=cfg,
+        config_path=config_path.resolve(),
+    )
     config_payload["d3_params"] = d3_params_path
     config_payload["readiness"] = {
         "enforced": enforce_readiness,
@@ -212,6 +225,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         ground_truth_engine=ground_truth["engine"],
         rtt_baseline_ms_p50=first.rtt_baseline_ms_p50,
         rtt_baseline_ms_p99=first.rtt_baseline_ms_p99,
+        rtt_baseline_request_profile=PINNED_RTT_BASELINE_REQUEST_PROFILE,
         sla_threshold_ms=cfg.sla_threshold_ms,
         rhu_weights=asdict(cfg.weights),
         config_fingerprint=config_fingerprint,
@@ -222,6 +236,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         rhu_references=_rhu_references_payload(cfg),
         resource_profile=_summarize_resource_profile(rows),
         hardware_runtime=hardware_runtime,
+        dataset_cache_checksums=dataset_cache_checksums,
         gpu_tracks_omitted=gpu_tracks_omitted,
         gpu_tracks_omission_reason=gpu_tracks_omission_reason,
     )
@@ -246,6 +261,9 @@ def _run_calibrate_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_pa
         seed=cfg.seed,
         output_params_path=cfg.output_d3_params_path,
         initial_params=params,
+        dataset_path=cfg.dataset_path,
+        calibration_source="dataset_path" if cfg.dataset_path else "synthetic_vectors",
+        calibration_dataset_hash=cfg.dataset_hash,
     )
     calibration = run_calibrate_d3(calibrate_cfg)
     eval_payload = {
@@ -774,6 +792,18 @@ def _run_s3_like_rows(
     bursty: bool,
 ) -> list[ResultRow]:
     d3_params = _resolve_d3_params(cfg, d3_params_path)
+    baseline_missing = False
+    baseline_error: str | None = None
+    try:
+        s1_baseline_p99_ms, baseline_match_rows, baseline_lookup_root = _resolve_s3_s1_baseline_p99(cfg=cfg)
+    except RuntimeError as exc:
+        if not cfg.allow_missing_s3_baseline:
+            raise
+        s1_baseline_p99_ms = None
+        baseline_match_rows = 0
+        baseline_lookup_root = str(Path(cfg.output_dir).resolve().parent)
+        baseline_missing = True
+        baseline_error = str(exc)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
@@ -824,6 +854,17 @@ def _run_s3_like_rows(
                 d3_params=d3_params,
             )
             suffix = "s3"
+        info_payload = _parse_info_json(result.info_json)
+        info_payload["s1_baseline_p99_ms"] = s1_baseline_p99_ms
+        info_payload["s1_baseline_match_rows"] = baseline_match_rows
+        info_payload["s1_baseline_lookup_root"] = baseline_lookup_root
+        info_payload["s1_baseline_missing"] = baseline_missing
+        if baseline_missing:
+            info_payload["s1_baseline_error"] = baseline_error
+            info_payload["p99_inflation_vs_s1_baseline"] = None
+        else:
+            assert s1_baseline_p99_ms is not None
+            info_payload["p99_inflation_vs_s1_baseline"] = p99_inflation(result.p99_ms, s1_baseline_p99_ms)
 
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
@@ -848,7 +889,7 @@ def _run_s3_like_rows(
                 clients_read=cfg.clients_read,
                 clients_write=cfg.clients_write,
                 quality_target=cfg.quality_target,
-                search_params_json=result.info_json,
+                search_params_json=json.dumps(info_payload, sort_keys=True),
                 recall_at_10=result.recall_at_10,
                 ndcg_at_10=result.ndcg_at_10,
                 mrr_at_10=result.mrr_at_10,
@@ -877,6 +918,59 @@ def _run_s3_like_rows(
             )
         )
     return rows
+
+
+def _parse_info_json(payload_json: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(payload_json)
+    except Exception:
+        return {"raw_info_json": payload_json}
+    if not isinstance(payload, dict):
+        return {"raw_info_json": payload}
+    return dict(payload)
+
+
+def _resolve_s3_s1_baseline_p99(*, cfg: RunConfig) -> tuple[float, int, str]:
+    lookup_root = Path(cfg.output_dir).resolve().parent
+    p99_values: list[float] = []
+    match_rows = 0
+    for path in sorted(lookup_root.rglob("results.parquet")):
+        try:
+            frame = pd.read_parquet(path)
+        except Exception:
+            continue
+        required = {"scenario", "engine", "dataset_bundle", "dataset_hash", "clients_read", "p99_ms"}
+        if not required.issubset(frame.columns):
+            continue
+        mask = (
+            (frame["scenario"] == "s1_ann_frontier")
+            & (frame["engine"] == cfg.engine)
+            & (frame["dataset_bundle"] == cfg.dataset_bundle)
+            & (frame["dataset_hash"] == cfg.dataset_hash)
+            & (frame["clients_read"] == cfg.clients_read)
+        )
+        if "clients_write" in frame.columns:
+            mask = mask & (frame["clients_write"] == 0)
+        matched = frame.loc[mask, "p99_ms"]
+        if matched.empty:
+            continue
+        match_rows += int(len(matched))
+        for value in matched.tolist():
+            try:
+                p99 = float(value)
+            except (TypeError, ValueError):
+                continue
+            if p99 > 0:
+                p99_values.append(p99)
+    if not p99_values:
+        raise RuntimeError(
+            "S3/S3b requires a matched S1 baseline under the same run root. "
+            f"Expected at least one s1_ann_frontier result with engine={cfg.engine!r}, "
+            f"dataset_bundle={cfg.dataset_bundle!r}, dataset_hash={cfg.dataset_hash!r}, "
+            f"clients_read={cfg.clients_read}. "
+            f"Lookup root: {lookup_root}"
+        )
+    return float(np.median(np.asarray(p99_values, dtype=np.float64))), match_rows, str(lookup_root)
 
 
 def _run_id(config_fingerprint: str, repeat_idx: int, client_count: int, quality_target: float, suffix: str = "") -> str:
@@ -1031,6 +1125,17 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
             payload = yaml.safe_load(handle) or {}
         if not isinstance(payload, dict):
             raise ValueError(f"d3 params file must contain a mapping: {d3_params_path}")
+        if _requires_paper_d3_calibration_check(cfg):
+            min_vectors = max(1, int(getattr(cfg, "d3_min_calibration_vectors", PAPER_MIN_CALIBRATION_VECTORS)))
+            issues = paper_calibration_issues(payload=payload, min_vectors=min_vectors)
+            if issues and not bool(getattr(cfg, "allow_unverified_d3_params", False)):
+                joined = "; ".join(issues[:4])
+                raise ValueError(
+                    "d3 params are not paper-ready for D3 robustness scenarios. "
+                    f"Provided file: {Path(d3_params_path).resolve()}. "
+                    "Re-run `calibrate_d3` on real D3 (LAION subset) scale and provide the regenerated params. "
+                    f"Detected issues: {joined}"
+                )
         return params_from_mapping(payload, seed=cfg.d3_seed)
     return D3Params(
         k_clusters=cfg.d3_k_clusters,
@@ -1041,6 +1146,13 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
         beta_acl=cfg.d3_beta_acl,
         beta_time=cfg.d3_beta_time,
         seed=cfg.d3_seed,
+    )
+
+
+def _requires_paper_d3_calibration_check(cfg: RunConfig) -> bool:
+    return (
+        str(cfg.dataset_bundle).upper() == "D3"
+        and str(cfg.scenario) in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
     )
 
 
@@ -1158,6 +1270,94 @@ def _gpu_count_for_cfg(cfg: RunConfig) -> float:
     if normalized == "faiss-gpu":
         return 1.0
     return 0.0
+
+
+def _collect_dataset_cache_checksum_provenance(*, cfg: RunConfig, config_path: Path) -> list[dict[str, str]]:
+    manifest = load_dataset_manifest(cfg.dataset_bundle)
+    cfg_payload = cfg.as_dict()
+    rows: list[dict[str, str]] = []
+    checks: list[tuple[str, str, str, str, str]] = []
+    if cfg.dataset_bundle == "D1":
+        checks.append(
+            (
+                "dataset_path",
+                "dataset_path_sha256",
+                "cache_sha256_dataset_path",
+                "D1 dataset_path",
+                "dataset_path",
+            )
+        )
+    elif cfg.dataset_bundle == "D2":
+        checks.extend(
+            [
+                (
+                    "d2_base_fvecs_path",
+                    "d2_base_fvecs_sha256",
+                    "cache_sha256_d2_base_fvecs_path",
+                    "D2 d2_base_fvecs_path",
+                    "d2_base_fvecs_path",
+                ),
+                (
+                    "d2_query_fvecs_path",
+                    "d2_query_fvecs_sha256",
+                    "cache_sha256_d2_query_fvecs_path",
+                    "D2 d2_query_fvecs_path",
+                    "d2_query_fvecs_path",
+                ),
+                (
+                    "d2_gt_ivecs_path",
+                    "d2_gt_ivecs_sha256",
+                    "cache_sha256_d2_gt_ivecs_path",
+                    "D2 d2_gt_ivecs_path",
+                    "d2_gt_ivecs_path",
+                ),
+            ]
+        )
+    elif cfg.dataset_bundle == "D4" and cfg.d4_use_real_data and cfg.d4_include_crag:
+        checks.append(
+            (
+                "d4_crag_path",
+                "d4_crag_sha256",
+                "cache_sha256_d4_crag_path",
+                "D4 d4_crag_path",
+                "d4_crag_path",
+            )
+        )
+
+    for path_key, config_key, manifest_key, label, record_path_key in checks:
+        raw_path = cfg_payload.get(path_key)
+        expected, source = resolve_expected_sha256_with_source(
+            config_payload=cfg_payload,
+            manifest_payload=manifest,
+            config_key=config_key,
+            manifest_key=manifest_key,
+            label=label,
+        )
+        if raw_path is None or raw_path == "":
+            if expected is not None and isinstance(source, str) and source.startswith("config key "):
+                raise ValueError(f"{label}: checksum provided but `{path_key}` is missing")
+            continue
+        if expected is None:
+            continue
+        resolved = _resolve_config_value_path(value=str(raw_path), config_path=config_path)
+        actual = verify_file_sha256(path=resolved, expected_sha256=expected, label=label)
+        rows.append(
+            {
+                "path_key": record_path_key,
+                "resolved_path": str(resolved),
+                "source": source or "",
+                "expected_sha256": expected,
+                "actual_sha256": actual,
+            }
+        )
+    return rows
+
+
+def _resolve_config_value_path(*, value: str, config_path: Path) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (config_path.parent / candidate).resolve()
 
 
 def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:

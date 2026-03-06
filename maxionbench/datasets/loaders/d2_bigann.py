@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from maxionbench.datasets.cache_integrity import verify_file_sha256
+
 
 @dataclass(frozen=True)
 class D2BigAnnDataset:
@@ -25,7 +27,17 @@ def load_d2_bigann(
     max_vectors: int | None = None,
     max_queries: int | None = None,
     top_k: int = 10,
+    base_expected_sha256: str | None = None,
+    query_expected_sha256: str | None = None,
+    gt_expected_sha256: str | None = None,
 ) -> D2BigAnnDataset:
+    if base_expected_sha256 is not None:
+        verify_file_sha256(path=base_fvecs, expected_sha256=base_expected_sha256, label="D2 d2_base_fvecs_path")
+    if query_expected_sha256 is not None:
+        verify_file_sha256(path=query_fvecs, expected_sha256=query_expected_sha256, label="D2 d2_query_fvecs_path")
+    if gt_ivecs is not None and gt_expected_sha256 is not None:
+        verify_file_sha256(path=gt_ivecs, expected_sha256=gt_expected_sha256, label="D2 d2_gt_ivecs_path")
+
     vectors = read_fvecs(base_fvecs)
     queries = read_fvecs(query_fvecs)
     if max_vectors is not None:

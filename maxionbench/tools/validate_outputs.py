@@ -5,12 +5,20 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import json
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 import pandas as pd
 import yaml
 
-from maxionbench.schemas.result_schema import REQUIRED_HARDWARE_RUNTIME_FIELDS, REQUIRED_METADATA_FIELDS, read_metadata
+from maxionbench.datasets.cache_integrity import load_dataset_manifest, resolve_expected_sha256_with_source
+from maxionbench.datasets.d3_calibrate import PAPER_MIN_CALIBRATION_VECTORS, paper_calibration_issues
+from maxionbench.schemas.result_schema import (
+    PINNED_RTT_BASELINE_REQUEST_PROFILE,
+    REQUIRED_HARDWARE_RUNTIME_FIELDS,
+    REQUIRED_METADATA_FIELDS,
+    read_metadata,
+)
 
 REQUIRED_STAGE_TIMING_COLUMNS = (
     "setup_elapsed_s",
@@ -84,6 +92,34 @@ PINNED_S5_MAX_SEQ_LEN = 512
 PINNED_S5_PRECISION = "fp16"
 PINNED_S5_BATCH_SIZE = 32
 PINNED_S5_TRUNCATION = "right"
+REQUIRED_S3_BASELINE_INFO_KEYS = (
+    "s1_baseline_p99_ms",
+    "s1_baseline_match_rows",
+    "s1_baseline_lookup_root",
+    "s1_baseline_missing",
+    "p99_inflation_vs_s1_baseline",
+)
+PINNED_S3_BURST_CLOCK_ANCHOR = "measurement_start"
+REQUIRED_S2_ROBUSTNESS_INFO_KEYS = (
+    "selectivity",
+    "filter",
+    "p99_inflation_vs_unfiltered",
+)
+OPTIONAL_CONFIG_CHECKSUM_KEYS = (
+    "dataset_path_sha256",
+    "d2_base_fvecs_sha256",
+    "d2_query_fvecs_sha256",
+    "d2_gt_ivecs_sha256",
+    "d4_crag_sha256",
+)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DATASET_CACHE_CHECKSUM_ENTRY_KEYS = (
+    "path_key",
+    "resolved_path",
+    "source",
+    "expected_sha256",
+    "actual_sha256",
+)
 
 
 def _is_run_directory(path: Path) -> bool:
@@ -160,6 +196,11 @@ def validate_run_directory(
     if missing_keys:
         raise ValueError(f"run_metadata.json missing keys: {missing_keys}")
     config_payload = _read_resolved_config(path / "config_resolved.yaml")
+    config_checksum_fields_ok = _validate_optional_config_checksum_fields(
+        config_payload,
+        strict_schema=strict_schema,
+        warnings=warnings,
+    )
     ground_truth_metadata_ok = _validate_required_ground_truth_metadata(
         metadata,
         strict_schema=strict_schema,
@@ -203,6 +244,7 @@ def validate_run_directory(
     return {
         "rows": int(len(frame)),
         "metadata_keys_ok": True,
+        "config_checksum_fields_ok": config_checksum_fields_ok,
         "stage_timing_ok": stage_timing_ok,
         "resource_fields_ok": resource_fields_ok,
         "ground_truth_metadata_ok": ground_truth_metadata_ok,
@@ -252,6 +294,28 @@ def _validate_non_negative_numeric_columns(
         if (values < 0.0).any():
             _raise_or_warn(
                 f"results.parquet column `{col}` contains negative values",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+    return ok
+
+
+def _validate_optional_config_checksum_fields(
+    config_payload: Mapping[str, Any],
+    *,
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    ok = True
+    for key in OPTIONAL_CONFIG_CHECKSUM_KEYS:
+        raw = config_payload.get(key)
+        if raw is None or raw == "":
+            continue
+        text = str(raw).strip().lower()
+        if not _SHA256_RE.fullmatch(text):
+            _raise_or_warn(
+                f"config_resolved.yaml `{key}` must be a 64-character lowercase hex sha256 string",
                 strict_schema=strict_schema,
                 warnings=warnings,
             )
@@ -554,6 +618,16 @@ def _validate_runtime_protocol(
         )
         ok = False
 
+    baseline_profile = metadata.get("rtt_baseline_request_profile")
+    if baseline_profile != PINNED_RTT_BASELINE_REQUEST_PROFILE:
+        _raise_or_warn(
+            "run_metadata.json `rtt_baseline_request_profile` must equal "
+            f"{PINNED_RTT_BASELINE_REQUEST_PROFILE!r} for pinned protocol runs",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        ok = False
+
     repeats_value = metadata.get("repeats")
     try:
         repeats = int(repeats_value)
@@ -618,6 +692,31 @@ def _validate_runtime_protocol(
         scenario=scenario,
         config_payload=config_payload,
         metadata=metadata,
+        strict_schema=strict_schema,
+        warnings=warnings,
+    ) and ok
+    ok = _validate_dataset_cache_checksum_provenance(
+        metadata=metadata,
+        config_payload=config_payload,
+        strict_schema=strict_schema,
+        warnings=warnings,
+    ) and ok
+    if scenario == "s2_filtered_ann":
+        ok = _validate_s2_robustness_payloads(
+            frame=frame,
+            strict_schema=strict_schema,
+            warnings=warnings,
+        ) and ok
+    if scenario in {"s3_churn_smooth", "s3b_churn_bursty"}:
+        ok = _validate_s3_baseline_provenance_payloads(
+            frame=frame,
+            strict_schema=strict_schema,
+            warnings=warnings,
+            scenario=scenario,
+        ) and ok
+    ok = _validate_d3_params_paper_readiness(
+        metadata=metadata,
+        config_payload=config_payload,
         strict_schema=strict_schema,
         warnings=warnings,
     ) and ok
@@ -691,6 +790,513 @@ def _validate_gpu_track_omission_metadata(
         )
         return False
     return True
+
+
+def _validate_d3_params_paper_readiness(
+    *,
+    metadata: Mapping[str, Any],
+    config_payload: Mapping[str, Any],
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    scenario = str(metadata.get("scenario") or config_payload.get("scenario") or "")
+    dataset_bundle = str(metadata.get("dataset_bundle") or config_payload.get("dataset_bundle") or "").upper()
+    if dataset_bundle != "D3" or scenario not in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}:
+        return True
+
+    raw_path = config_payload.get("d3_params")
+    if raw_path in {None, ""}:
+        return True
+    d3_params_path = Path(str(raw_path)).expanduser()
+    if not d3_params_path.exists():
+        _raise_or_warn(
+            f"config_resolved.yaml d3_params path does not exist: {d3_params_path}",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    try:
+        payload = yaml.safe_load(d3_params_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        _raise_or_warn(
+            f"d3 params file is not valid YAML: {d3_params_path} ({exc})",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    if not isinstance(payload, Mapping):
+        _raise_or_warn(
+            f"d3 params file root must be a mapping: {d3_params_path}",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    min_vectors = PAPER_MIN_CALIBRATION_VECTORS
+    raw_min = config_payload.get("d3_min_calibration_vectors")
+    if raw_min not in {None, ""}:
+        try:
+            min_vectors = max(1, int(raw_min))
+        except (TypeError, ValueError):
+            min_vectors = PAPER_MIN_CALIBRATION_VECTORS
+    issues = paper_calibration_issues(payload=payload, min_vectors=min_vectors)
+    if not issues:
+        return True
+    _raise_or_warn(
+        "d3 params file is not paper-ready for D3 robustness scenarios: "
+        + "; ".join(issues[:4]),
+        strict_schema=strict_schema,
+        warnings=warnings,
+    )
+    return False
+
+
+def _validate_dataset_cache_checksum_provenance(
+    *,
+    metadata: Mapping[str, Any],
+    config_payload: Mapping[str, Any],
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    entries = metadata.get("dataset_cache_checksums")
+    if not isinstance(entries, list):
+        _raise_or_warn(
+            "run_metadata.json `dataset_cache_checksums` must be a list for pinned protocol runs",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    ok = True
+    by_path_key: dict[str, list[Mapping[str, Any]]] = {}
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] must be an object",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        missing = [key for key in DATASET_CACHE_CHECKSUM_ENTRY_KEYS if key not in entry]
+        if missing:
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] missing keys: {missing}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        path_key = str(entry.get("path_key") or "")
+        if not path_key:
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] path_key must be non-empty",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        resolved_path = str(entry.get("resolved_path") or "")
+        if not resolved_path:
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] resolved_path must be non-empty",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+        expected = str(entry.get("expected_sha256") or "").strip().lower()
+        actual = str(entry.get("actual_sha256") or "").strip().lower()
+        if not _SHA256_RE.fullmatch(expected) or not _SHA256_RE.fullmatch(actual):
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] sha256 fields must be 64-char lowercase hex",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if expected != actual:
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums[{idx}] expected_sha256 must equal actual_sha256",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+        by_path_key.setdefault(path_key, []).append(entry)
+
+    dataset_bundle = str(config_payload.get("dataset_bundle", metadata.get("dataset_bundle", ""))).upper()
+    manifest = load_dataset_manifest(dataset_bundle)
+    for path_key, config_key, manifest_key, label in _checksum_mappings_for_bundle(
+        dataset_bundle=dataset_bundle,
+        config_payload=config_payload,
+    ):
+        raw_path = config_payload.get(path_key)
+        expected, source = resolve_expected_sha256_with_source(
+            config_payload=config_payload,
+            manifest_payload=manifest,
+            config_key=config_key,
+            manifest_key=manifest_key,
+            label=label,
+        )
+        if raw_path is None or raw_path == "":
+            if expected is not None and isinstance(source, str) and source.startswith("config key "):
+                _raise_or_warn(
+                    f"config_resolved.yaml provides {config_key} but `{path_key}` is missing",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            continue
+        if expected is None:
+            continue
+        matches = by_path_key.get(path_key, [])
+        if not matches:
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums missing provenance entry for {path_key}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if not any(str(item.get("expected_sha256")).strip().lower() == expected for item in matches):
+            _raise_or_warn(
+                f"run_metadata.json dataset_cache_checksums entries for {path_key} do not include expected sha256 {expected}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+    return ok
+
+
+def _checksum_mappings_for_bundle(
+    *,
+    dataset_bundle: str,
+    config_payload: Mapping[str, Any],
+) -> list[tuple[str, str, str, str]]:
+    bundle = str(dataset_bundle).upper()
+    if bundle == "D1":
+        return [
+            ("dataset_path", "dataset_path_sha256", "cache_sha256_dataset_path", "D1 dataset_path"),
+        ]
+    if bundle == "D2":
+        return [
+            ("d2_base_fvecs_path", "d2_base_fvecs_sha256", "cache_sha256_d2_base_fvecs_path", "D2 d2_base_fvecs_path"),
+            ("d2_query_fvecs_path", "d2_query_fvecs_sha256", "cache_sha256_d2_query_fvecs_path", "D2 d2_query_fvecs_path"),
+            ("d2_gt_ivecs_path", "d2_gt_ivecs_sha256", "cache_sha256_d2_gt_ivecs_path", "D2 d2_gt_ivecs_path"),
+        ]
+    if bundle == "D4" and bool(config_payload.get("d4_use_real_data", False)) and bool(
+        config_payload.get("d4_include_crag", True)
+    ):
+        return [
+            ("d4_crag_path", "d4_crag_sha256", "cache_sha256_d4_crag_path", "D4 d4_crag_path"),
+        ]
+    return []
+
+
+def _validate_s3_baseline_provenance_payloads(
+    *,
+    frame: pd.DataFrame,
+    strict_schema: bool,
+    warnings: list[str],
+    scenario: str,
+) -> bool:
+    if "search_params_json" not in frame.columns:
+        _raise_or_warn(
+            f"{scenario} results.parquet missing `search_params_json` for baseline provenance checks",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    ok = True
+    for row_idx, raw_payload in enumerate(frame["search_params_json"].tolist()):
+        row_label = f"{scenario} row[{row_idx}]"
+        if not isinstance(raw_payload, str) or not raw_payload.strip():
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must be a non-empty JSON object string",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            _raise_or_warn(
+                f"{row_label} `search_params_json` is not valid JSON",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if not isinstance(payload, Mapping):
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must decode to a JSON object",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        missing = [key for key in REQUIRED_S3_BASELINE_INFO_KEYS if key not in payload]
+        if missing:
+            _raise_or_warn(
+                f"{row_label} missing S3 baseline provenance keys: {missing}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        lookup_root = payload.get("s1_baseline_lookup_root")
+        if not isinstance(lookup_root, str) or not lookup_root.strip():
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_lookup_root` must be a non-empty string",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        burst_clock_anchor = payload.get("burst_clock_anchor")
+        if not isinstance(burst_clock_anchor, str) or burst_clock_anchor != PINNED_S3_BURST_CLOCK_ANCHOR:
+            _raise_or_warn(
+                f"{row_label} `burst_clock_anchor` must equal {PINNED_S3_BURST_CLOCK_ANCHOR!r}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        match_rows = payload.get("s1_baseline_match_rows")
+        try:
+            match_rows_numeric = int(match_rows)
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_match_rows` must be an integer",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            match_rows_numeric = -1
+        if match_rows_numeric < 0:
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_match_rows` must be >= 0",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        baseline_missing = payload.get("s1_baseline_missing")
+        if not isinstance(baseline_missing, bool):
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_missing` must be a boolean",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        baseline_p99 = payload.get("s1_baseline_p99_ms")
+        inflation = payload.get("p99_inflation_vs_s1_baseline")
+        if baseline_missing:
+            if baseline_p99 is not None:
+                _raise_or_warn(
+                    f"{row_label} `s1_baseline_p99_ms` must be null when `s1_baseline_missing` is true",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            if inflation is not None:
+                _raise_or_warn(
+                    f"{row_label} `p99_inflation_vs_s1_baseline` must be null when `s1_baseline_missing` is true",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            baseline_error = payload.get("s1_baseline_error")
+            if not isinstance(baseline_error, str) or not baseline_error.strip():
+                _raise_or_warn(
+                    f"{row_label} `s1_baseline_error` must be a non-empty string when `s1_baseline_missing` is true",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            if match_rows_numeric != 0:
+                _raise_or_warn(
+                    f"{row_label} `s1_baseline_match_rows` must be 0 when `s1_baseline_missing` is true",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+            continue
+
+        try:
+            baseline_p99_numeric = float(baseline_p99)
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_p99_ms` must be numeric when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            baseline_p99_numeric = 0.0
+        if baseline_p99_numeric <= 0.0:
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_p99_ms` must be > 0 when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        try:
+            inflation_numeric = float(inflation)
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} `p99_inflation_vs_s1_baseline` must be numeric when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            inflation_numeric = -1.0
+        if inflation_numeric < 0.0:
+            _raise_or_warn(
+                f"{row_label} `p99_inflation_vs_s1_baseline` must be >= 0 when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+        if "s1_baseline_error" in payload and payload.get("s1_baseline_error") not in {None, ""}:
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_error` must be empty/null when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+        if match_rows_numeric < 1:
+            _raise_or_warn(
+                f"{row_label} `s1_baseline_match_rows` must be >= 1 when `s1_baseline_missing` is false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+    return ok
+
+
+def _validate_s2_robustness_payloads(
+    *,
+    frame: pd.DataFrame,
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    if "search_params_json" not in frame.columns:
+        _raise_or_warn(
+            "s2_filtered_ann results.parquet missing `search_params_json` for robustness payload checks",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    ok = True
+    saw_unfiltered_anchor = False
+    for row_idx, raw_payload in enumerate(frame["search_params_json"].tolist()):
+        row_label = f"s2_filtered_ann row[{row_idx}]"
+        if not isinstance(raw_payload, str) or not raw_payload.strip():
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must be a non-empty JSON object string",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            _raise_or_warn(
+                f"{row_label} `search_params_json` is not valid JSON",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if not isinstance(payload, Mapping):
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must decode to a JSON object",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        missing = [key for key in REQUIRED_S2_ROBUSTNESS_INFO_KEYS if key not in payload]
+        if missing:
+            _raise_or_warn(
+                f"{row_label} missing S2 robustness keys: {missing}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        try:
+            selectivity = float(payload.get("selectivity"))
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} `selectivity` must be numeric",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if selectivity <= 0.0 or selectivity > 1.0:
+            _raise_or_warn(
+                f"{row_label} `selectivity` must be in (0, 1]",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        filter_payload = payload.get("filter")
+        if not isinstance(filter_payload, Mapping):
+            _raise_or_warn(
+                f"{row_label} `filter` must be a JSON object",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        try:
+            inflation = float(payload.get("p99_inflation_vs_unfiltered"))
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} `p99_inflation_vs_unfiltered` must be numeric",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if inflation < 0.0:
+            _raise_or_warn(
+                f"{row_label} `p99_inflation_vs_unfiltered` must be >= 0",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        if abs(selectivity - 1.0) < 1e-9:
+            saw_unfiltered_anchor = True
+            if abs(inflation - 1.0) > 1e-6:
+                _raise_or_warn(
+                    f"{row_label} unfiltered anchor must have `p99_inflation_vs_unfiltered` == 1.0",
+                    strict_schema=strict_schema,
+                    warnings=warnings,
+                )
+                ok = False
+
+    if not saw_unfiltered_anchor:
+        _raise_or_warn(
+            "s2_filtered_ann results.parquet is missing 100% selectivity unfiltered anchor row",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        ok = False
+    return ok
 
 
 def _validate_frame_constant(

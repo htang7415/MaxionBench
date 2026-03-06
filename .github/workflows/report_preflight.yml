@@ -77,6 +77,10 @@ jobs:
         run: |
           maxionbench verify-pins --config-dir configs/scenarios --json
 
+      - name: Verify dataset manifests
+        run: |
+          maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json
+
       - name: Verify behavior cards
         run: |
           maxionbench verify-behavior-cards --behavior-dir docs/behavior --json
@@ -120,6 +124,16 @@ jobs:
         run: |
           mkdir -p artifacts/ci
           maxionbench submit-slurm-plan --skip-gpu --dry-run --json | tee artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
+
+      - name: Validate Slurm plan snapshot payloads
+        run: |
+          maxionbench validate-slurm-snapshots \
+            --verify-path artifacts/ci/slurm_plan_verify.json \
+            --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
+            --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
+            --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
+            --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
+            --json | tee artifacts/ci/slurm_snapshot_validation.json
 
       - name: Write required checks snapshot
         run: |
@@ -191,6 +205,23 @@ jobs:
             --strict \
             --json
 
+      - name: Run consolidated CI protocol audit
+        run: |
+          maxionbench ci-protocol-audit \
+            --config-dir configs/scenarios \
+            --slurm-dir maxionbench/orchestration/slurm \
+            --manifest-dir maxionbench/datasets/manifests \
+            --verify-path artifacts/ci/slurm_plan_verify.json \
+            --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
+            --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
+            --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
+            --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
+            --report-input artifacts/figures/ci_preflight \
+            --require-report-policy \
+            --output artifacts/ci/ci_protocol_audit.json \
+            --strict \
+            --json
+
       - name: Assert report outputs
         run: |
           test -f artifacts/figures/ci_preflight/m2_runner_stage_timing.png
@@ -211,6 +242,8 @@ jobs:
             artifacts/ci/slurm_plan_verify_skip_gpu.json
             artifacts/ci/slurm_submit_plan_dry_run.json
             artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
+            artifacts/ci/slurm_snapshot_validation.json
+            artifacts/ci/ci_protocol_audit.json
             artifacts/runs/ci_preflight/**
             artifacts/figures/ci_preflight/**
 
