@@ -61,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Verify pinned scenario config values",
     )
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
+    verify_pins_parser.add_argument("--allow-dev-calibrate-d3-scale", action="store_true")
     verify_pins_parser.add_argument("--json", action="store_true")
 
     verify_dataset_manifests_parser = subparsers.add_parser(
@@ -133,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     verify_engine_readiness_parser.add_argument("--behavior-dir", default="docs/behavior")
     verify_engine_readiness_parser.add_argument("--allow-gpu-unavailable", action="store_true")
     verify_engine_readiness_parser.add_argument("--allow-nonpass-status", action="store_true")
+    verify_engine_readiness_parser.add_argument("--require-mock-pass", action="store_true")
     verify_engine_readiness_parser.add_argument("--json", action="store_true")
 
     pre_run_gate_parser = subparsers.add_parser(
@@ -271,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.verify_pins import main as verify_pins_main
 
         verify_argv: list[str] = ["--config-dir", args.config_dir]
+        if args.allow_dev_calibrate_d3_scale:
+            verify_argv.append("--allow-dev-calibrate-d3-scale")
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
@@ -358,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
             verify_argv.append("--allow-gpu-unavailable")
         if args.allow_nonpass_status:
             verify_argv.append("--allow-nonpass-status")
+        if args.require_mock_pass:
+            verify_argv.append("--require-mock-pass")
         if args.json:
             verify_argv.append("--json")
         return verify_engine_readiness_main(verify_argv)

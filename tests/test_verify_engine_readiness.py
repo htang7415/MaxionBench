@@ -115,6 +115,27 @@ def test_verify_engine_readiness_allows_nonpass_status_when_flag_enabled(tmp_pat
     assert int(summary["error_count"]) == 0
 
 
+def test_verify_engine_readiness_requires_mock_pass_when_enabled(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "timeout"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "mock", "status": "fail"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=True,
+        require_mock_pass=True,
+    )
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    assert any("adapter `mock` has no pass status" in str(item.get("message", "")) for item in summary["errors"])
+
+
 def test_verify_engine_readiness_cli_dispatch_supports_allow_nonpass_status(
     tmp_path: Path,
     capsys,  # type: ignore[no-untyped-def]
@@ -141,3 +162,34 @@ def test_verify_engine_readiness_cli_dispatch_supports_allow_nonpass_status(
     assert code == 0
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["pass"] is True
+
+
+def test_verify_engine_readiness_cli_dispatch_supports_require_mock_pass(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "fail"} for adapter in REQUIRED_ADAPTERS if adapter != "faiss-gpu"]
+    rows.append({"adapter": "mock", "status": "pass"})
+    _write_matrix(matrix_path, rows)
+
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            str(matrix_path),
+            "--behavior-dir",
+            str(behavior_dir),
+            "--allow-gpu-unavailable",
+            "--allow-nonpass-status",
+            "--require-mock-pass",
+            "--json",
+        ]
+    )
+    assert code == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["pass"] is True
+    assert parsed["require_mock_pass"] is True

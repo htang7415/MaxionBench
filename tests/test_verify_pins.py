@@ -158,3 +158,18 @@ def test_verify_pins_detects_calibrate_d3_scale_drift(tmp_path: Path) -> None:
     assert int(summary["error_count"]) >= 1
     messages = [str(item.get("message", "")) for item in summary["errors"]]
     assert any("D3-10M+ scale" in msg for msg in messages)
+
+
+def test_verify_pins_allows_dev_calibrate_d3_scale_relaxation(tmp_path: Path) -> None:
+    src = Path("configs/scenarios/calibrate_d3.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["num_vectors"] = 10000
+
+    out = tmp_path / "calibrate_d3.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path, allow_dev_calibrate_d3_scale=True)
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+    assert summary["allow_dev_calibrate_d3_scale"] is True

@@ -41,6 +41,7 @@ def verify_engine_readiness(
     behavior_dir: Path,
     allow_gpu_unavailable: bool = False,
     allow_nonpass_status: bool = False,
+    require_mock_pass: bool = False,
 ) -> dict[str, Any]:
     matrix_path = conformance_matrix_path.resolve()
     if not matrix_path.exists():
@@ -103,6 +104,33 @@ def verify_engine_readiness(
                     }
                 )
 
+    if require_mock_pass:
+        mock_matches = frame[frame["adapter"] == "mock"]
+        if mock_matches.empty:
+            errors.append(
+                {
+                    "source": "conformance_matrix",
+                    "adapter": "mock",
+                    "field": "status",
+                    "expected": "pass row present",
+                    "actual": "missing",
+                    "message": "missing conformance row for adapter `mock`",
+                }
+            )
+        else:
+            mock_statuses = sorted({str(v) for v in mock_matches["status"].tolist()})
+            if "pass" not in mock_statuses:
+                errors.append(
+                    {
+                        "source": "conformance_matrix",
+                        "adapter": "mock",
+                        "field": "status",
+                        "expected": "pass",
+                        "actual": mock_statuses,
+                        "message": "adapter `mock` has no pass status in conformance matrix",
+                    }
+                )
+
     status_counts: dict[str, int] = {}
     for value in frame["status"].tolist():
         key = str(value)
@@ -113,6 +141,7 @@ def verify_engine_readiness(
         "behavior_dir": str(behavior_dir.resolve()),
         "allow_gpu_unavailable": allow_gpu_unavailable,
         "allow_nonpass_status": allow_nonpass_status,
+        "require_mock_pass": require_mock_pass,
         "required_adapters": required_adapters,
         "conformance_rows": int(len(frame)),
         "conformance_status_counts": dict(sorted(status_counts.items())),
@@ -137,6 +166,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Allow readiness checks to pass when adapter rows exist but have non-pass statuses.",
     )
+    parser.add_argument(
+        "--require-mock-pass",
+        action="store_true",
+        help="Require a `mock` adapter row with pass status to prevent false-green structural checks.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -145,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         behavior_dir=Path(args.behavior_dir),
         allow_gpu_unavailable=bool(args.allow_gpu_unavailable),
         allow_nonpass_status=bool(args.allow_nonpass_status),
+        require_mock_pass=bool(args.require_mock_pass),
     )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))

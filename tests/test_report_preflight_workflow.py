@@ -168,6 +168,7 @@ def test_report_preflight_workflow_has_conformance_readiness_gate_job() -> None:
     assert "--behavior-dir docs/behavior" in runs_blob
     assert "--allow-gpu-unavailable" in runs_blob
     assert "--allow-nonpass-status" in runs_blob
+    assert "--require-mock-pass" in runs_blob
     assert "--json" in runs_blob
     text = workflow.read_text(encoding="utf-8")
     assert "conformance-readiness-artifacts" in text

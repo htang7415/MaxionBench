@@ -93,4 +93,6 @@ def test_s5_rerank_smoke(tmp_path: Path) -> None:
         assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
         budgets.add(int(payload["candidate_budget"]))
         assert payload["reranker"]["revision_tag"] == "2026-03-04"
+        assert payload["reranker"]["backend"] in {"hf_cross_encoder", "heuristic_proxy"}
+        assert payload["reranker"]["uses_qrels_supervision"] is False
     assert budgets.issubset({20, 40, 80})

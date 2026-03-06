@@ -17,7 +17,7 @@ D3_10M_MIN_VECTORS = 10_000_000
 D3_50M_MIN_VECTORS = 50_000_000
 
 
-def verify_scenario_config_dir(config_dir: Path) -> dict[str, Any]:
+def verify_scenario_config_dir(config_dir: Path, *, allow_dev_calibrate_d3_scale: bool = False) -> dict[str, Any]:
     root = config_dir.resolve()
     if not root.exists():
         raise FileNotFoundError(f"Config directory does not exist: {root}")
@@ -30,13 +30,20 @@ def verify_scenario_config_dir(config_dir: Path) -> dict[str, Any]:
     for cfg_path in files:
         cfg = load_run_config(cfg_path)
         errors.extend(_verify_common_pins(cfg_path, cfg))
-        errors.extend(_verify_scenario_pins(cfg_path, cfg))
+        errors.extend(
+            _verify_scenario_pins(
+                cfg_path,
+                cfg,
+                allow_dev_calibrate_d3_scale=allow_dev_calibrate_d3_scale,
+            )
+        )
         errors.extend(_verify_d3_pins(cfg_path, cfg))
         errors.extend(_verify_d4_real_data_pins(cfg_path, cfg))
 
     return {
         "config_dir": str(root),
         "files_checked": len(files),
+        "allow_dev_calibrate_d3_scale": bool(allow_dev_calibrate_d3_scale),
         "error_count": len(errors),
         "errors": errors,
         "pass": len(errors) == 0,
@@ -61,14 +68,19 @@ def _verify_common_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     return errors
 
 
-def _verify_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
+def _verify_scenario_pins(
+    path: Path,
+    cfg: RunConfig,
+    *,
+    allow_dev_calibrate_d3_scale: bool,
+) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     scenario = cfg.scenario
     if scenario == "calibrate_d3":
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
         _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [1])
-        if int(cfg.num_vectors) < D3_10M_MIN_VECTORS:
+        if (not allow_dev_calibrate_d3_scale) and int(cfg.num_vectors) < D3_10M_MIN_VECTORS:
             errors.append(
                 {
                     "file": str(path),
@@ -232,10 +244,18 @@ def _expect_equal(
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Verify scenario configs against pinned benchmark values")
     parser.add_argument("--config-dir", default="configs/scenarios")
+    parser.add_argument(
+        "--allow-dev-calibrate-d3-scale",
+        action="store_true",
+        help="Allow calibrate_d3 num_vectors below 10M for development-only smoke configs.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    summary = verify_scenario_config_dir(Path(args.config_dir))
+    summary = verify_scenario_config_dir(
+        Path(args.config_dir),
+        allow_dev_calibrate_d3_scale=bool(args.allow_dev_calibrate_d3_scale),
+    )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
