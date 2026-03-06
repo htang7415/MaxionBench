@@ -15,6 +15,7 @@ from maxionbench.datasets.d3_calibrate import (
     write_d3_params_yaml,
 )
 from maxionbench.datasets.d3_generator import D3Params, generate_synthetic_vectors
+from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
 
 
 @dataclass(frozen=True)
@@ -67,31 +68,9 @@ def _load_vectors_for_calibration(cfg: CalibrateD3Config) -> tuple[np.ndarray, s
             generate_synthetic_vectors(num_vectors=cfg.num_vectors, dim=cfg.vector_dim, seed=cfg.seed),
             str(cfg.calibration_source),
         )
-    dataset_path = Path(cfg.dataset_path).expanduser().resolve()
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"calibration dataset_path does not exist: {dataset_path}")
-    suffix = dataset_path.suffix.lower()
-    if suffix == ".npy":
-        data = np.load(dataset_path, mmap_mode="r")
-    elif suffix == ".npz":
-        npz = np.load(dataset_path, allow_pickle=False)
-        if "vectors" not in npz:
-            raise ValueError("npz calibration dataset must contain `vectors` array")
-        data = npz["vectors"]
-    else:
-        raise ValueError(
-            f"unsupported calibration dataset format for {dataset_path}; supported extensions: .npy, .npz"
-        )
-    if not isinstance(data, np.ndarray):
-        data = np.asarray(data)
-    if data.ndim != 2:
-        raise ValueError(f"calibration dataset must be 2D [N, D]; got shape={tuple(data.shape)}")
-    if int(data.shape[0]) < int(cfg.num_vectors):
-        raise ValueError(
-            f"calibration dataset has {int(data.shape[0])} vectors, fewer than requested num_vectors={cfg.num_vectors}"
-        )
-    if int(data.shape[1]) != int(cfg.vector_dim):
-        raise ValueError(
-            f"calibration dataset dimension mismatch: expected {cfg.vector_dim}, got {int(data.shape[1])}"
-        )
-    return np.asarray(data[: cfg.num_vectors], dtype=np.float32), "real_dataset_path"
+    vectors = load_d3_vectors(
+        Path(cfg.dataset_path).expanduser().resolve(),
+        max_vectors=cfg.num_vectors,
+        expected_dim=cfg.vector_dim,
+    )
+    return vectors, "real_dataset_path"

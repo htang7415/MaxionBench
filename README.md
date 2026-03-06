@@ -75,8 +75,11 @@ Legacy compatibility mode:
 Pre-merge automation:
 - `.github/workflows/report_preflight.yml` runs a fast smoke benchmark, validates artifacts with `maxionbench validate --strict-schema`, then runs `maxionbench report`.
 - The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce structural readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status --require-mock-pass` (strict pass/fail readiness is handled in `strict_readiness.yml`).
-- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status` and installs `.[dev,engines]`).
+- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`, so non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active, and installs `.[dev,engines]`).
 - Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
+- Publish workflow promotion gate cross-checks both strict summary and downloaded conformance matrix (`--strict-readiness-summary` + `--conformance-matrix`).
+- In that cross-check mode, `require_mock_pass=true` also requires a `mock` row with `status=pass` in the matrix artifact.
+- In `allow_gpu_unavailable` mode, promotion-gate non-pass rows are allowed only for `faiss-gpu`, and only when matrix cross-check is provided.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.
 - The workflow runs `maxionbench verify-behavior-cards --behavior-dir docs/behavior --json` to enforce behavior-card coverage/sections.
 - The workflow runs `maxionbench verify-conformance-configs --config-dir configs/conformance --json` to enforce conformance config catalog shape and adapter coverage.

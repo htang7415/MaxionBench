@@ -173,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         "--strict-readiness-summary",
         default="artifacts/conformance_strict/engine_readiness_summary.json",
     )
+    verify_promotion_gate_parser.add_argument("--conformance-matrix", default=None)
     verify_promotion_gate_parser.add_argument("--json", action="store_true")
 
     snapshot_checks_parser = subparsers.add_parser(
@@ -415,6 +416,8 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
 
         verify_argv: list[str] = ["--strict-readiness-summary", args.strict_readiness_summary]
+        if args.conformance_matrix:
+            verify_argv.extend(["--conformance-matrix", args.conformance_matrix])
         if args.json:
             verify_argv.append("--json")
         return verify_promotion_gate_main(verify_argv)

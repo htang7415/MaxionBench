@@ -11,6 +11,7 @@ from maxionbench.tools import verify_d3_calibration as verify_d3_calibration_mod
 from maxionbench.tools import verify_dataset_manifests as verify_dataset_manifests_mod
 from maxionbench.tools import verify_engine_readiness as verify_engine_readiness_mod
 from maxionbench.tools import verify_pins as verify_pins_mod
+from maxionbench.tools import verify_promotion_gate as verify_promotion_gate_mod
 from maxionbench.tools import verify_slurm_plan as verify_slurm_plan_mod
 from maxionbench.tools import validate_slurm_snapshots as validate_slurm_snapshots_mod
 
@@ -303,6 +304,34 @@ def test_cli_verify_engine_readiness_dispatches_require_mock_pass(monkeypatch) -
         "--allow-gpu-unavailable",
         "--allow-nonpass-status",
         "--require-mock-pass",
+        "--json",
+    ]
+
+
+def test_cli_verify_promotion_gate_dispatches_conformance_matrix(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 59
+
+    monkeypatch.setattr(verify_promotion_gate_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-promotion-gate",
+            "--strict-readiness-summary",
+            "artifacts/promotion/engine_readiness_summary.json",
+            "--conformance-matrix",
+            "artifacts/promotion/conformance_matrix.csv",
+            "--json",
+        ]
+    )
+    assert code == 59
+    assert captured["argv"] == [
+        "--strict-readiness-summary",
+        "artifacts/promotion/engine_readiness_summary.json",
+        "--conformance-matrix",
+        "artifacts/promotion/conformance_matrix.csv",
         "--json",
     ]
 

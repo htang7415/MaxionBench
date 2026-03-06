@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 
 import pandas as pd
+import pytest
 
 from maxionbench.cli import main as cli_main
 from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS, verify_engine_readiness
@@ -55,6 +56,27 @@ def test_verify_engine_readiness_detects_failed_adapter_status(tmp_path: Path) -
     assert any("qdrant" in message.lower() for message in messages)
 
 
+def test_verify_engine_readiness_rejects_mixed_pass_fail_status_in_strict_mode(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "qdrant", "status": "fail"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=False,
+    )
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("non-pass statuses in strict mode" in message for message in messages)
+
+
 def test_verify_engine_readiness_allows_missing_faiss_gpu_with_flag(tmp_path: Path) -> None:
     behavior_dir = tmp_path / "behavior"
     shutil.copytree(Path("docs/behavior"), behavior_dir)
@@ -67,6 +89,25 @@ def test_verify_engine_readiness_allows_missing_faiss_gpu_with_flag(tmp_path: Pa
         conformance_matrix_path=matrix_path,
         behavior_dir=behavior_dir,
         allow_gpu_unavailable=True,
+    )
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+
+
+def test_verify_engine_readiness_allows_nonpass_faiss_gpu_with_flag_in_strict_mode(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS if adapter != "faiss-gpu"]
+    rows.append({"adapter": "faiss-gpu", "status": "fail"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=True,
+        allow_nonpass_status=False,
     )
     assert summary["pass"] is True
     assert int(summary["error_count"]) == 0
@@ -103,6 +144,107 @@ def test_verify_engine_readiness_allows_nonpass_status_when_flag_enabled(tmp_pat
 
     matrix_path = tmp_path / "conformance_matrix.csv"
     rows = [{"adapter": adapter, "status": "timeout"} for adapter in REQUIRED_ADAPTERS]
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=True,
+    )
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+
+
+def test_verify_engine_readiness_rejects_empty_adapter_rows_even_with_allow_nonpass(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "timeout"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "", "status": "pass"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=True,
+    )
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("empty adapter values" in message for message in messages)
+
+
+def test_verify_engine_readiness_rejects_empty_status_rows_even_with_allow_nonpass(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "timeout"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "mock", "status": ""})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=True,
+    )
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("empty status values" in message for message in messages)
+
+
+def test_verify_engine_readiness_allows_mixed_status_when_allow_nonpass_enabled(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "qdrant", "status": "fail"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=True,
+    )
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+
+
+def test_verify_engine_readiness_rejects_nonpass_row_outside_required_adapters_in_strict_mode(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "experimental-adapter", "status": "invalid_config"})
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=False,
+    )
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("strict readiness requires pass-only statuses" in message for message in messages)
+
+
+def test_verify_engine_readiness_allows_nonpass_row_outside_required_adapters_when_flag_enabled(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]
+    rows.append({"adapter": "experimental-adapter", "status": "invalid_config"})
     _write_matrix(matrix_path, rows)
 
     summary = verify_engine_readiness(
@@ -193,3 +335,48 @@ def test_verify_engine_readiness_cli_dispatch_supports_require_mock_pass(
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["pass"] is True
     assert parsed["require_mock_pass"] is True
+
+
+def test_verify_engine_readiness_cli_missing_matrix_returns_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            str(tmp_path / "missing.csv"),
+            "--behavior-dir",
+            str(behavior_dir),
+            "--json",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "verify-engine-readiness failed:" in captured.err
+
+
+def test_verify_engine_readiness_cli_invalid_matrix_columns_returns_2(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame([{"adapter": "qdrant", "exit_code": 0}]).to_csv(matrix_path, index=False)
+
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            str(matrix_path),
+            "--behavior-dir",
+            str(behavior_dir),
+            "--json",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "verify-engine-readiness failed:" in captured.err

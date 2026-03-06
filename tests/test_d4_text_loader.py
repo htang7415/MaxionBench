@@ -197,3 +197,51 @@ def test_runner_s4_with_real_d4_bundle(tmp_path: Path) -> None:
     assert len(frame) >= 1
     payload = json.loads(frame.iloc[0]["search_params_json"])
     assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
+
+
+def test_runner_s4_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    beir_root = data_root / "beir"
+    _make_beir_subset(beir_root, "fiqa")
+
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s4_hybrid",
+        "dataset_bundle": "D4",
+        "dataset_hash": "local-beir-relative",
+        "seed": 4,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "s4-real-relative"),
+        "quality_target": 0.35,
+        "clients_read": 2,
+        "clients_write": 0,
+        "clients_grid": [2],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 150.0,
+        "vector_dim": 16,
+        "num_vectors": 50,
+        "num_queries": 10,
+        "top_k": 10,
+        "rrf_k": 60,
+        "s4_dense_candidates": 20,
+        "s4_bm25_candidates": 20,
+        "d4_use_real_data": True,
+        "d4_beir_root": "data/beir",
+        "d4_beir_subsets": ["fiqa"],
+        "d4_beir_split": "test",
+        "d4_include_crag": False,
+        "d4_max_docs": 50,
+        "d4_max_queries": 10,
+    }
+    cfg_path = tmp_path / "cfg_relative.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(cfg, handle, sort_keys=True)
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) >= 1
+    payload = json.loads(frame.iloc[0]["search_params_json"])
+    assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
