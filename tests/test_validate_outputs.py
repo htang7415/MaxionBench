@@ -124,6 +124,36 @@ def _make_pinned_s2_run(tmp_path: Path, *, seed: int = 121) -> Path:
     )
 
 
+def _make_pinned_s5_run(tmp_path: Path, *, seed: int = 151) -> Path:
+    runs_root = tmp_path / "runs_s5"
+    return _make_run(
+        runs_root,
+        name="run-s5-protocol",
+        seed=seed,
+        overrides={
+            "scenario": "s5_rerank",
+            "dataset_bundle": "D4",
+            "dataset_hash": "synthetic-d4-v1",
+            "clients_read": 16,
+            "clients_write": 0,
+            "clients_grid": [16],
+            "s5_candidate_budgets": [50, 200, 1000],
+            "s5_reranker_model_id": "BAAI/bge-reranker-base",
+            "s5_reranker_revision_tag": "2026-03-04",
+            "s5_reranker_max_seq_len": 512,
+            "s5_reranker_precision": "fp16",
+            "s5_reranker_batch_size": 32,
+            "s5_reranker_truncation": "right",
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "sla_threshold_ms": 300.0,
+        },
+    )
+
+
 def test_validate_path_supports_parent_directory(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
     run1 = _make_run(runs_root, name="run-a", seed=17)
@@ -413,6 +443,33 @@ def test_validate_run_directory_enforce_protocol_rejects_s2_unfiltered_anchor_mi
 
     with pytest.raises(ValueError, match="unfiltered anchor"):
         validate_run_directory(s2_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_s5_non_hf_backend(tmp_path: Path) -> None:
+    s5_run = _make_pinned_s5_run(tmp_path, seed=157)
+    with pytest.raises(ValueError, match="reranker.backend"):
+        validate_run_directory(s5_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_accepts_s5_hf_backend_payloads(tmp_path: Path) -> None:
+    s5_run = _make_pinned_s5_run(tmp_path, seed=163)
+    results_path = s5_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    updated: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        reranker = payload.get("reranker")
+        assert isinstance(reranker, dict)
+        reranker["backend"] = "hf_cross_encoder"
+        reranker["runtime_errors"] = 0
+        reranker["fallback_reason"] = None
+        updated.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = updated
+    frame.to_parquet(results_path, index=False)
+
+    summary = validate_run_directory(s5_run, enforce_protocol=True)
+    assert summary["runtime_protocol_ok"] is True
 
 
 def test_validate_run_directory_enforce_protocol_rejects_non_paper_d3_params_file(tmp_path: Path) -> None:

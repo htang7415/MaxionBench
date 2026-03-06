@@ -23,9 +23,10 @@ Artifact preflight before report generation:
 1. Validate artifacts: `maxionbench validate --input artifacts/runs --strict-schema --json`
    - optional pinned protocol audit for paper-grade runs: `maxionbench validate --input artifacts/runs --strict-schema --enforce-protocol --json`
    - `--enforce-protocol` also validates per-row robustness payloads:
-     - S2 requires `search_params_json` keys `selectivity`, `filter`, `p99_inflation_vs_unfiltered`, and an explicit 100% anchor row (`selectivity=1.0`) with inflation `1.0`
-     - S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`, `s1_baseline_match_rows`, `s1_baseline_lookup_root`, `s1_baseline_missing`, `p99_inflation_vs_s1_baseline`, `burst_clock_anchor`; enforce `burst_clock_anchor="measurement_start"` plus consistent missing/non-missing baseline semantics
-     - run metadata must pin `rtt_baseline_request_profile="healthcheck_plus_query_topk1_zero_vector"` for cross-engine baseline comparability
+   - S2 requires `search_params_json` keys `selectivity`, `filter`, `p99_inflation_vs_unfiltered`, and an explicit 100% anchor row (`selectivity=1.0`) with inflation `1.0`
+   - S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`, `s1_baseline_match_rows`, `s1_baseline_lookup_root`, `s1_baseline_missing`, `p99_inflation_vs_s1_baseline`, `burst_clock_anchor`; enforce `burst_clock_anchor="measurement_start"` plus consistent missing/non-missing baseline semantics
+   - S5 requires `search_params_json.reranker.backend="hf_cross_encoder"`, `uses_qrels_supervision=false`, pinned reranker config fields, and `runtime_errors=0`
+   - run metadata must pin `rtt_baseline_request_profile="healthcheck_plus_query_topk1_zero_vector"` for cross-engine baseline comparability
      - run metadata must include `dataset_cache_checksums` provenance entries (`path_key`, `resolved_path`, `source`, `expected_sha256`, `actual_sha256`) when dataset checksum pins are provided
 2. Verify D3 calibration params before D3 robustness runs: `maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json`
    - paper-ready calibration requires non-trivial eval metrics and calibration on real large-scale vectors (default minimum `10,000,000`)

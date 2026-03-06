@@ -105,6 +105,17 @@ REQUIRED_S2_ROBUSTNESS_INFO_KEYS = (
     "filter",
     "p99_inflation_vs_unfiltered",
 )
+REQUIRED_S5_RERANKER_INFO_KEYS = (
+    "model_id",
+    "revision_tag",
+    "max_seq_len",
+    "precision",
+    "batch_size",
+    "truncation",
+    "backend",
+    "uses_qrels_supervision",
+    "runtime_errors",
+)
 OPTIONAL_CONFIG_CHECKSUM_KEYS = (
     "dataset_path_sha256",
     "d2_base_fvecs_sha256",
@@ -714,6 +725,12 @@ def _validate_runtime_protocol(
             warnings=warnings,
             scenario=scenario,
         ) and ok
+    if scenario == "s5_rerank":
+        ok = _validate_s5_reranker_payloads(
+            frame=frame,
+            strict_schema=strict_schema,
+            warnings=warnings,
+        ) and ok
     ok = _validate_d3_params_paper_readiness(
         metadata=metadata,
         config_payload=config_payload,
@@ -1296,6 +1313,146 @@ def _validate_s2_robustness_payloads(
             warnings=warnings,
         )
         ok = False
+    return ok
+
+
+def _validate_s5_reranker_payloads(
+    *,
+    frame: pd.DataFrame,
+    strict_schema: bool,
+    warnings: list[str],
+) -> bool:
+    if "search_params_json" not in frame.columns:
+        _raise_or_warn(
+            "s5_rerank results.parquet missing `search_params_json` for reranker payload checks",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+
+    ok = True
+    for row_idx, raw_payload in enumerate(frame["search_params_json"].tolist()):
+        row_label = f"s5_rerank row[{row_idx}]"
+        if not isinstance(raw_payload, str) or not raw_payload.strip():
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must be a non-empty JSON object string",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            _raise_or_warn(
+                f"{row_label} `search_params_json` is not valid JSON",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if not isinstance(payload, Mapping):
+            _raise_or_warn(
+                f"{row_label} `search_params_json` must decode to a JSON object",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        reranker = payload.get("reranker")
+        if not isinstance(reranker, Mapping):
+            _raise_or_warn(
+                f"{row_label} missing `reranker` object in `search_params_json`",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        missing = [key for key in REQUIRED_S5_RERANKER_INFO_KEYS if key not in reranker]
+        if missing:
+            _raise_or_warn(
+                f"{row_label} missing S5 reranker keys: {missing}",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+
+        checks: list[tuple[str, Any]] = [
+            ("model_id", PINNED_S5_MODEL_ID),
+            ("revision_tag", PINNED_S5_REVISION_TAG),
+            ("max_seq_len", PINNED_S5_MAX_SEQ_LEN),
+            ("precision", PINNED_S5_PRECISION),
+            ("batch_size", PINNED_S5_BATCH_SIZE),
+            ("truncation", PINNED_S5_TRUNCATION),
+        ]
+        for field, expected in checks:
+            observed = reranker.get(field)
+            if isinstance(expected, str):
+                if str(observed) != expected:
+                    _raise_or_warn(
+                        f"{row_label} reranker.{field} must equal {expected!r} (observed {observed!r})",
+                        strict_schema=strict_schema,
+                        warnings=warnings,
+                    )
+                    ok = False
+            else:
+                try:
+                    numeric = int(observed)
+                except (TypeError, ValueError):
+                    _raise_or_warn(
+                        f"{row_label} reranker.{field} must be an integer",
+                        strict_schema=strict_schema,
+                        warnings=warnings,
+                    )
+                    ok = False
+                    continue
+                if numeric != int(expected):
+                    _raise_or_warn(
+                        f"{row_label} reranker.{field} must equal {expected} (observed {numeric})",
+                        strict_schema=strict_schema,
+                        warnings=warnings,
+                    )
+                    ok = False
+
+        backend = str(reranker.get("backend", ""))
+        if backend != "hf_cross_encoder":
+            _raise_or_warn(
+                f"{row_label} reranker.backend must be 'hf_cross_encoder' for enforce-protocol runs",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        uses_qrels_supervision = reranker.get("uses_qrels_supervision")
+        if uses_qrels_supervision is not False:
+            _raise_or_warn(
+                f"{row_label} reranker.uses_qrels_supervision must be false",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        runtime_errors = reranker.get("runtime_errors")
+        try:
+            runtime_errors_numeric = int(runtime_errors)
+        except (TypeError, ValueError):
+            _raise_or_warn(
+                f"{row_label} reranker.runtime_errors must be an integer",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+            continue
+        if runtime_errors_numeric != 0:
+            _raise_or_warn(
+                f"{row_label} reranker.runtime_errors must be 0 for enforce-protocol runs",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
     return ok
 
 
