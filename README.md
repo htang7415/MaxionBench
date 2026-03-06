@@ -17,7 +17,7 @@ Implemented v0.1 harness components include:
 - engine readiness gate from conformance matrix + behavior cards (`maxionbench verify-engine-readiness`)
 - pre-run benchmark gate to block real-engine runs when readiness fails (`maxionbench pre-run-gate`)
 - promotion gate from strict readiness summary artifacts (`maxionbench verify-promotion-gate`)
-- S5 reranker runtime supports `hf_cross_encoder` when `MAXIONBENCH_ENABLE_HF_RERANKER=1` and local model/runtime deps are available, with explicit `heuristic_proxy` fallback provenance in `search_params_json`
+- S5 reranker runtime supports `hf_cross_encoder` when `MAXIONBENCH_ENABLE_HF_RERANKER=1` and local model/runtime deps are available, with explicit `heuristic_proxy` fallback provenance in `search_params_json` (pinned S5 configs set `s5_require_hf_backend: true` to fail fast if fallback occurs)
 
 Artifact preflight before report generation:
 1. Validate artifacts: `maxionbench validate --input artifacts/runs --strict-schema --json`
@@ -25,7 +25,7 @@ Artifact preflight before report generation:
    - `--enforce-protocol` also validates per-row robustness payloads:
    - S2 requires `search_params_json` keys `selectivity`, `filter`, `p99_inflation_vs_unfiltered`, and an explicit 100% anchor row (`selectivity=1.0`) with inflation `1.0`
    - S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`, `s1_baseline_match_rows`, `s1_baseline_lookup_root`, `s1_baseline_missing`, `p99_inflation_vs_s1_baseline`, `burst_clock_anchor`; enforce `burst_clock_anchor="measurement_start"` plus consistent missing/non-missing baseline semantics
-   - S5 requires `search_params_json.reranker.backend="hf_cross_encoder"`, `uses_qrels_supervision=false`, pinned reranker config fields, and `runtime_errors=0`
+   - S5 requires `search_params_json.reranker.backend="hf_cross_encoder"`, `device="cuda"`, `local_files_only=true`, `uses_qrels_supervision=false`, pinned reranker config fields, and `runtime_errors=0` with empty `fallback_reason`
    - run metadata must pin `rtt_baseline_request_profile="healthcheck_plus_query_topk1_zero_vector"` for cross-engine baseline comparability
      - run metadata must include `dataset_cache_checksums` provenance entries (`path_key`, `resolved_path`, `source`, `expected_sha256`, `actual_sha256`) when dataset checksum pins are provided
 2. Verify D3 calibration params before D3 robustness runs: `maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json`
@@ -73,7 +73,7 @@ Legacy compatibility mode:
 Pre-merge automation:
 - `.github/workflows/report_preflight.yml` runs a fast smoke benchmark, validates artifacts with `maxionbench validate --strict-schema`, then runs `maxionbench report`.
 - The workflow runs `conformance_readiness_gate` to generate `artifacts/conformance/conformance_matrix.csv` and enforce structural readiness coverage via `maxionbench verify-engine-readiness --allow-nonpass-status --require-mock-pass` (strict pass/fail readiness is handled in `strict_readiness.yml`).
-- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`).
+- Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status` and installs `.[dev,engines]`).
 - Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml`.
 - The workflow runs `maxionbench verify-pins --config-dir configs/scenarios --json` before smoke generation.
 - The workflow runs `maxionbench verify-behavior-cards --behavior-dir docs/behavior --json` to enforce behavior-card coverage/sections.

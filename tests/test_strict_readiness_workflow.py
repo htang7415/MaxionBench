@@ -34,6 +34,7 @@ def test_strict_readiness_workflow_has_dispatch_inputs_and_commands() -> None:
     assert isinstance(steps, list)
     runs_blob = "\n".join(str(step.get("run", "")) for step in steps if isinstance(step, dict))
 
+    assert "python -m pip install -e \".[dev,engines]\"" in runs_blob
     assert "maxionbench conformance-matrix" in runs_blob
     assert "--config-dir \"${{ inputs.conformance_config_dir }}\"" in runs_blob
     assert "--out-dir artifacts/conformance_strict" in runs_blob

@@ -38,6 +38,7 @@ def test_publish_benchmark_bundle_workflow_enforces_strict_readiness_gate() -> N
     strict_steps = strict_job.get("steps", [])
     assert isinstance(strict_steps, list)
     strict_blob = "\n".join(str(step.get("run", "")) for step in strict_steps if isinstance(step, dict))
+    assert "python -m pip install -e \".[dev,engines]\"" in strict_blob
     assert "maxionbench conformance-matrix" in strict_blob
     assert "--out-dir artifacts/conformance_publish" in strict_blob
     assert "maxionbench verify-engine-readiness" in strict_blob

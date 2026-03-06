@@ -161,6 +161,7 @@ def _verify_scenario_pins(
         _expect_equal(errors, path, "s5_reranker_precision", cfg.s5_reranker_precision, "fp16")
         _expect_equal(errors, path, "s5_reranker_batch_size", cfg.s5_reranker_batch_size, 32)
         _expect_equal(errors, path, "s5_reranker_truncation", cfg.s5_reranker_truncation, "right")
+        _expect_equal(errors, path, "s5_require_hf_backend", cfg.s5_require_hf_backend, True)
         _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 300.0)
         return errors
 
