@@ -21,6 +21,7 @@ def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
     assert "maxionbench submit-slurm-plan --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --skip-gpu --dry-run --json" in text
+    assert "maxionbench submit-slurm-plan --skip-s6 --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
     assert "calibrate_d3 also uses the override when configs/scenarios_paper/calibrate_d3.yaml exists" in text
@@ -28,6 +29,8 @@ def _assert_common_commands(text: str) -> None:
     assert "CPU_D3_BASELINE_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=1" in text
     assert "CPU_D3_WORKLOADS_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID}:${CPU_D3_BASELINE_JOB_ID} --array=2-4" in text
     assert "CPU_NON_D3_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=0,5-6" in text
+    assert "CPU_NON_D3_NO_S6_JOB_ID=$(MAXIONBENCH_SKIP_S6=1 sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=0,5-6" in text
+    assert "sbatch --dependency=afterok:${CALIB_JOB_ID} --array=0-2 maxionbench/orchestration/slurm/gpu_array.sh" in text
     assert "maxionbench verify-behavior-cards --behavior-dir docs/behavior --json" in text
     assert "--enforce-readiness" in text
     assert "--conformance-matrix artifacts/conformance/conformance_matrix.csv" in text

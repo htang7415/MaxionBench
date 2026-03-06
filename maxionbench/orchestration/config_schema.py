@@ -109,7 +109,7 @@ class RunConfig:
     s5_reranker_precision: str = "fp16"
     s5_reranker_batch_size: int = 32
     s5_reranker_truncation: str = "right"
-    s5_require_hf_backend: bool = False
+    s5_require_hf_backend: bool = True
     s6_dense_a_candidates: int = 200
     s6_dense_b_candidates: int = 200
     s6_bm25_candidates: int = 200

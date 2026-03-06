@@ -19,6 +19,18 @@ if [[ "${TASK_ID}" -lt 0 || "${TASK_ID}" -ge "${#SCENARIOS[@]}" ]]; then
 fi
 
 DEFAULT_CONFIG_PATH="${SCENARIOS[${TASK_ID}]}"
+SKIP_S6_RAW="${MAXIONBENCH_SKIP_S6:-0}"
+SKIP_S6=0
+case "$(echo "${SKIP_S6_RAW}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on)
+    SKIP_S6=1
+    ;;
+esac
+if [[ "${SKIP_S6}" -eq 1 && "$(basename "${DEFAULT_CONFIG_PATH}")" == "s6_fusion.yaml" ]]; then
+  echo "MAXIONBENCH_SKIP_S6 is enabled; skipping S6 task index ${TASK_ID}."
+  exit 0
+fi
+
 CANDIDATE_CONFIG_PATH=""
 CONFIG_PATH="${DEFAULT_CONFIG_PATH}"
 if [[ -n "${SCENARIO_CONFIG_DIR}" ]]; then

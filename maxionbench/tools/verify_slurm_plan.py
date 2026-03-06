@@ -12,11 +12,15 @@ from maxionbench.orchestration.slurm.submit_plan import build_submit_steps
 
 D3_BASELINE_SCENARIO = "s1_ann_frontier_d3"
 D3_WORKLOAD_SCENARIOS = {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
+GPU_REQUIRED_S5_SCENARIO = "s5_rerank"
+GPU_TRACK_B_MARKER = "track_b"
+GPU_TRACK_C_MARKER = "track_c"
 
 
 def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str, Any]:
     resolved = slurm_dir.resolve()
     errors: list[dict[str, Any]] = []
+    gpu_scenarios: list[str] = []
 
     cpu_array_path = resolved / "cpu_array.sh"
     calibrate_path = resolved / "calibrate_d3.sh"
@@ -47,6 +51,7 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
             slurm_dir=resolved,
             errors=errors,
             cpu_scenarios=[],
+            gpu_scenarios=[],
             include_gpu=include_gpu,
         )
 
@@ -65,6 +70,7 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
             slurm_dir=resolved,
             errors=errors,
             cpu_scenarios=cpu_scenarios,
+            gpu_scenarios=[],
             include_gpu=include_gpu,
         )
 
@@ -108,6 +114,7 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
             slurm_dir=resolved,
             errors=errors,
             cpu_scenarios=cpu_scenarios,
+            gpu_scenarios=[],
             include_gpu=include_gpu,
         )
 
@@ -185,6 +192,49 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
         expected=["calibrate"],
     )
     if include_gpu:
+        gpu_scenarios = _extract_gpu_scenarios(gpu_path)
+        if not gpu_scenarios:
+            errors.append(
+                {
+                    "file": str(gpu_path),
+                    "field": "SCENARIOS",
+                    "expected": "non-empty array",
+                    "actual": "empty",
+                    "message": "gpu_array.sh SCENARIOS array is empty or unreadable",
+                }
+            )
+        else:
+            gpu_base_names = [Path(item).stem for item in gpu_scenarios]
+            if GPU_REQUIRED_S5_SCENARIO not in gpu_base_names:
+                errors.append(
+                    {
+                        "file": str(gpu_path),
+                        "field": GPU_REQUIRED_S5_SCENARIO,
+                        "expected": "present in SCENARIOS",
+                        "actual": "missing",
+                        "message": "gpu_array.sh must include s5_rerank for pinned S5 GPU workloads",
+                    }
+                )
+            if not any(GPU_TRACK_B_MARKER in name for name in gpu_base_names):
+                errors.append(
+                    {
+                        "file": str(gpu_path),
+                        "field": "track_b_marker",
+                        "expected": f"scenario name containing `{GPU_TRACK_B_MARKER}`",
+                        "actual": gpu_base_names,
+                        "message": "gpu_array.sh must include an explicit Track B GPU scenario entry",
+                    }
+                )
+            if not any(GPU_TRACK_C_MARKER in name for name in gpu_base_names):
+                errors.append(
+                    {
+                        "file": str(gpu_path),
+                        "field": "track_c_marker",
+                        "expected": f"scenario name containing `{GPU_TRACK_C_MARKER}`",
+                        "actual": gpu_base_names,
+                        "message": "gpu_array.sh must include an explicit Track C GPU scenario entry",
+                    }
+                )
         if "gpu_all" not in by_key:
             errors.append(
                 {
@@ -208,12 +258,22 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
         slurm_dir=resolved,
         errors=errors,
         cpu_scenarios=cpu_scenarios,
+        gpu_scenarios=gpu_scenarios,
         include_gpu=include_gpu,
     )
 
 
 def _extract_cpu_scenarios(cpu_array_path: Path) -> list[str]:
     text = cpu_array_path.read_text(encoding="utf-8")
+    match = re.search(r"SCENARIOS=\((.*?)\)", text, flags=re.DOTALL)
+    if not match:
+        return []
+    body = match.group(1)
+    return re.findall(r'"([^"]+)"', body)
+
+
+def _extract_gpu_scenarios(gpu_array_path: Path) -> list[str]:
+    text = gpu_array_path.read_text(encoding="utf-8")
     match = re.search(r"SCENARIOS=\((.*?)\)", text, flags=re.DOTALL)
     if not match:
         return []
@@ -260,12 +320,21 @@ def _expect_equal(
     )
 
 
-def _summary(*, slurm_dir: Path, errors: list[dict[str, Any]], cpu_scenarios: list[str], include_gpu: bool) -> dict[str, Any]:
+def _summary(
+    *,
+    slurm_dir: Path,
+    errors: list[dict[str, Any]],
+    cpu_scenarios: list[str],
+    gpu_scenarios: list[str],
+    include_gpu: bool,
+) -> dict[str, Any]:
     return {
         "slurm_dir": str(slurm_dir),
         "include_gpu": include_gpu,
         "cpu_scenarios": cpu_scenarios,
         "cpu_scenario_count": len(cpu_scenarios),
+        "gpu_scenarios": gpu_scenarios,
+        "gpu_scenario_count": len(gpu_scenarios),
         "error_count": len(errors),
         "errors": errors,
         "pass": len(errors) == 0,

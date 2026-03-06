@@ -8,6 +8,7 @@ SCENARIO_CONFIG_DIR="configs/scenarios_paper"
 SEED="42"
 SLURM_PROFILE=""
 CPU_ONLY=0
+SKIP_S6=0
 LAUNCH=0
 SKIP_PYTEST=0
 SKIP_CALIBRATION=0
@@ -33,6 +34,7 @@ Options:
   --slurm-profile <name>       Slurm profile preset (your_cluster|your_cluster)
   --seed <int>                 Seed forwarded to submit-slurm-plan (default: 42)
   --cpu-only                   Use skip-gpu mode when submitting Slurm jobs
+  --skip-s6                    Defer S6 by forwarding --skip-s6 to submit-slurm-plan
   --launch                     Submit Slurm jobs after checks pass
   --skip-pytest                Skip pytest -q
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cpu-only)
       CPU_ONLY=1
+      shift
+      ;;
+    --skip-s6)
+      SKIP_S6=1
       shift
       ;;
     --launch)
@@ -104,6 +110,10 @@ if [[ -n "${SLURM_PROFILE}" ]]; then
       ;;
   esac
 fi
+SLURM_S6_ARGS=()
+if [[ "${SKIP_S6}" -eq 1 ]]; then
+  SLURM_S6_ARGS=(--skip-s6)
+fi
 
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_ID="workstation_${RUN_TS}"
@@ -140,7 +150,8 @@ SLURM_SUBMIT_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_dry_run.json"
 SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_skip_gpu_dry_run.json"
 SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_paper_skip_gpu_dry_run.json"
 SLURM_SNAPSHOT_VALIDATION_JSON="${RUN_CHECKS_DIR}/slurm_snapshot_validation.json"
-CI_PROTOCOL_AUDIT_JSON="${RUN_CHECKS_DIR}/ci_protocol_audit.json"
+CI_PROTOCOL_AUDIT_DEFAULT_JSON="${RUN_CHECKS_DIR}/ci_protocol_audit_default.json"
+CI_PROTOCOL_AUDIT_PAPER_JSON="${RUN_CHECKS_DIR}/ci_protocol_audit_paper.json"
 
 cat > "${RENDER_FIGURES_HELPER}" <<EOF
 #!/usr/bin/env bash
@@ -200,6 +211,7 @@ cpu_only=${CPU_ONLY}
 launch=${LAUNCH}
 skip_pytest=${SKIP_PYTEST}
 skip_calibration=${SKIP_CALIBRATION}
+skip_s6=${SKIP_S6}
 args=${args_rendered}
 bundle_root=${RUN_BUNDLE_ROOT}
 report_log=${REPORT_LOG}
@@ -218,6 +230,7 @@ EOF
 - slurm_profile: \`${SLURM_PROFILE:-none}\`
 - launch: \`${LAUNCH}\`
 - cpu_only: \`${CPU_ONLY}\`
+- skip_s6: \`${SKIP_S6}\`
 - args: \`${args_rendered}\`
 
 ## Bundle Paths
@@ -239,7 +252,8 @@ EOF
 - slurm_submit_plan_skip_gpu: \`${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}\`
 - slurm_submit_plan_paper_skip_gpu: \`${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}\`
 - slurm_snapshot_validation: \`${SLURM_SNAPSHOT_VALIDATION_JSON}\`
-- ci_protocol_audit: \`${CI_PROTOCOL_AUDIT_JSON}\`
+- ci_protocol_audit_default: \`${CI_PROTOCOL_AUDIT_DEFAULT_JSON}\`
+- ci_protocol_audit_paper: \`${CI_PROTOCOL_AUDIT_PAPER_JSON}\`
 EOF
 
   ln -sfn "${RUN_ID}" "artifacts/workstation_runs/latest"
@@ -280,17 +294,20 @@ maxionbench verify-slurm-plan --json | tee "${SLURM_PLAN_VERIFY_JSON}"
 maxionbench verify-slurm-plan --skip-gpu --json | tee "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}"
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
+  "${SLURM_S6_ARGS[@]}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --dry-run \
   --json | tee "${SLURM_SUBMIT_DRY_RUN_JSON}"
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
+  "${SLURM_S6_ARGS[@]}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
   --dry-run \
   --json | tee "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}"
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
+  "${SLURM_S6_ARGS[@]}" \
   --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
@@ -305,6 +322,19 @@ maxionbench validate-slurm-snapshots \
   --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
   --json | tee "${SLURM_SNAPSHOT_VALIDATION_JSON}"
 maxionbench ci-protocol-audit \
+  --config-dir configs/scenarios \
+  --slurm-dir maxionbench/orchestration/slurm \
+  --manifest-dir maxionbench/datasets/manifests \
+  --verify-path "${SLURM_PLAN_VERIFY_JSON}" \
+  --verify-path "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}" \
+  --submit-path "${SLURM_SUBMIT_DRY_RUN_JSON}" \
+  --submit-path "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}" \
+  --submit-path "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}" \
+  --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
+  --output "${CI_PROTOCOL_AUDIT_DEFAULT_JSON}" \
+  --strict \
+  --json
+maxionbench ci-protocol-audit \
   --config-dir "${SCENARIO_CONFIG_DIR}" \
   --slurm-dir maxionbench/orchestration/slurm \
   --manifest-dir maxionbench/datasets/manifests \
@@ -315,7 +345,7 @@ maxionbench ci-protocol-audit \
   --submit-path "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}" \
   --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
   --strict-d3-scenario-scale \
-  --output "${CI_PROTOCOL_AUDIT_JSON}" \
+  --output "${CI_PROTOCOL_AUDIT_PAPER_JSON}" \
   --strict \
   --json
 
@@ -324,6 +354,7 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
   if [[ "${CPU_ONLY}" -eq 1 ]]; then
     maxionbench submit-slurm-plan \
       "${SLURM_PROFILE_ARGS[@]}" \
+      "${SLURM_S6_ARGS[@]}" \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --skip-gpu \
@@ -331,6 +362,7 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
   else
     maxionbench submit-slurm-plan \
       "${SLURM_PROFILE_ARGS[@]}" \
+      "${SLURM_S6_ARGS[@]}" \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --seed "${SEED}"
