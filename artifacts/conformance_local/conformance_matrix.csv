@@ -1,0 +1,803 @@
+adapter,config_file,status,exit_code,duration_s,command,note
+faiss-cpu,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/faiss_cpu.json,fail,1,0.341458,/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter faiss-cpu --adapter-options-json {} --collection conformance --dimension 4 --metric ip,"EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.faiss_cpu.FaissCpuAdapter object at 0x10b7e5b50>
+
+    def __init__(self) -> None:
+        try:
+>           import faiss  # type: ignore
+            ^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'faiss'
+
+maxionbench/adapters/faiss_cpu.py:33: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_cpu.FaissCpuAdapter object at 0x10b7e5b50>
+
+    def __init__(self) -> None:
+        try:
+            import faiss  # type: ignore
+        except ImportError as exc:
+>           raise ImportError(""faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`."") from exc
+E           ImportError: faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`.
+
+maxionbench/adapters/faiss_cpu.py:35: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.faiss_cpu.FaissCpuAdapter object at 0x10d10b710>
+
+    def __init__(self) -> None:
+        try:
+>           import faiss  # type: ignore
+            ^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'faiss'
+
+maxionbench/adapters/faiss_cpu.py:33: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_cpu.FaissCpuAdapter object at 0x10d10b710>
+
+    def __init__(self) -> None:
+        try:
+            import faiss  # type: ignore
+        except ImportError as exc:
+>           raise ImportError(""faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`."") from exc
+E           ImportError: faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`.
+
+maxionbench/adapters/faiss_cpu.py:35: Imp...(truncated)"
+faiss-gpu,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/faiss_gpu.json,fail,1,0.331368,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter faiss-gpu --adapter-options-json {""device_id"":0} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x10d123290>
+
+    def __init__(self) -> None:
+        try:
+>           import faiss  # type: ignore
+            ^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'faiss'
+
+maxionbench/adapters/faiss_cpu.py:33: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:14: in __init__
+    super().__init__()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x10d123290>
+
+    def __init__(self) -> None:
+        try:
+            import faiss  # type: ignore
+        except ImportError as exc:
+>           raise ImportError(""faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`."") from exc
+E           ImportError: faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`.
+
+maxionbench/adapters/faiss_cpu.py:35: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x10ea90fd0>
+
+    def __init__(self) -> None:
+        try:
+>           import faiss  # type: ignore
+            ^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'faiss'
+
+maxionbench/adapters/faiss_cpu.py:33: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:14: in __init__
+    super().__init__()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x10ea90fd0>
+
+    def __init__(self) -> None:
+        try:
+            import faiss  # type: ignore
+        except ImportError as exc:
+>           raise ImportError(""faiss is required for FaissCpuAdapter. Install with `pip install faiss-cpu`."") from ex...(truncated)"
+lancedb-inproc,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/lancedb_inproc.json,fail,1,0.306551,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter lancedb-inproc --adapter-options-json {""uri"":""artifacts/lancedb/conformance""} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.lancedb_inproc.LanceDbInprocAdapter object at 0x10c864510>
+uri = 'artifacts/lancedb/conformance'
+
+    def __init__(self, uri: str = ""artifacts/lancedb/inproc"") -> None:
+        try:
+>           import lancedb  # type: ignore
+            ^^^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'lancedb'
+
+maxionbench/adapters/lancedb_inproc.py:28: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.lancedb_inproc.LanceDbInprocAdapter object at 0x10c864510>
+uri = 'artifacts/lancedb/conformance'
+
+    def __init__(self, uri: str = ""artifacts/lancedb/inproc"") -> None:
+        try:
+            import lancedb  # type: ignore
+        except ImportError as exc:
+>           raise ImportError(""lancedb is required for LanceDbInprocAdapter. Install with `pip install lancedb`."") from exc
+E           ImportError: lancedb is required for LanceDbInprocAdapter. Install with `pip install lancedb`.
+
+maxionbench/adapters/lancedb_inproc.py:30: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.lancedb_inproc.LanceDbInprocAdapter object at 0x10c890290>
+uri = 'artifacts/lancedb/conformance'
+
+    def __init__(self, uri: str = ""artifacts/lancedb/inproc"") -> None:
+        try:
+>           import lancedb  # type: ignore
+            ^^^^^^^^^^^^^^
+E           ModuleNotFoundError: No module named 'lancedb'
+
+maxionbench/adapters/lancedb_inproc.py:28: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.lancedb_inproc.LanceDbInprocAdapter object at 0x10c890290>
+uri = 'artifacts/lancedb/conformance'
+
+    def __init__(self, uri: str = ""a...(truncated)"
+lancedb-service,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/lancedb_service.json,fail,1,0.885413,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter lancedb-service --adapter-options-json {""base_url"":""http://127.0.0.1:18080""} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <urllib3.connection.HTTPConnection object at 0x10d09f590>
+
+    def _new_conn(self) -> socket.socket:
+        """"""Establish a socket connection and set nodelay settings on it.
+    
+        :return: New socket connection.
+        """"""
+        try:
+>           sock = connection.create_connection(
+                (self._dns_host, self.port),
+                self.timeout,
+                source_address=self.source_address,
+                socket_options=self.socket_options,
+            )
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/connection.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:85: in create_connection
+    raise err
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+address = ('127.0.0.1', 18080), timeout = 30.0, source_address = None
+socket_options = [(6, 1, 1)]
+
+    def create_connection(
+        address: tuple[str, int],
+        timeout: _TYPE_TIMEOUT = _DEFAULT_TIMEOUT,
+        source_address: tuple[str, int] | None = None,
+        socket_options: _TYPE_SOCKET_OPTIONS | None = None,
+    ) -> socket.socket:
+        """"""Connect to *address* and return the socket object.
+    
+        Convenience function.  Connect to *address* (a 2-tuple ``(host,
+        port)``) and return the socket object.  Passing the optional
+        *timeout* parameter will set the timeout on the socket instance
+        before attempting to connect.  If no *timeout* is supplied, the
+        global default timeout setting returned by :func:`socket.getdefaulttimeout`
+        is used.  If *source_address* is set it must be a tuple of (host, port)
+        for the socket to bind as a source address before making the connection.
+        An host of '' or port 0 tells the OS to use the default.
+        """"""
+    
+        host, port = address
+        if host.startswith(""[""):
+            host = host.strip(""[]"")
+        err = None
+    
+        # Using the value from allowed_gai_family() in the context of getaddrinfo lets
+        # us select whether to work with IPv4 DNS records, IPv6 records, or both.
+        # The original create_connection function always returns all records.
+        family = allowed_gai_family()
+    
+        try:
+            host.encode(""idna"")
+        except UnicodeError:
+            raise LocationParseError(f""'{host}', label empty or too long"") from None
+    
+        for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = socket.socket(af, socktype, proto)
+    
+                # If provided, set socket level options before connecting.
+                _set_socket_options(sock, socket_options)
+    
+                if timeout is not _DEFAULT_TIMEOUT:
+                    sock.settimeout(timeout)
+                if source_address:
+                    sock.bind(source_address)
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 61] Connection refused
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:73: ConnectionRefusedError
+
+The above exception was the direct cause of the following exception:
+
+self = <urllib3.connectionpool.HTTPConnectionPool object at 0x10eebad10>
+method = 'POST', url = '/v1/collections/create'
+body = b'{""collection"": ""conformance"", ""dimension"": 4, ""metric"": ""ip""}'
+headers = {'User-Agent': 'python-requests/2.32.5', 'Accept-Encoding': 'gzip, deflate', 'Accept': '*/*', 'Connection': 'keep-alive', 'Content-Length': '61', 'Content-Type': 'application/json'}
+retries = Retry(total=0, connect=...(truncated)"
+milvus,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/milvus.json,fail,1,0.358071,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter milvus --adapter-options-json {""host"":""127.0.0.1"",""port"":19530} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.milvus.MilvusAdapter object at 0x10cc4ca50>
+host = '127.0.0.1', port = 19530, uri = None, user = None, password = None
+db_name = None, token = None
+
+    def __init__(
+        self,
+        host: str = ""127.0.0.1"",
+        port: int = 19530,
+        uri: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        db_name: str | None = None,
+        token: str | None = None,
+    ) -> None:
+        try:
+>           from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+E           ModuleNotFoundError: No module named 'pymilvus'
+
+maxionbench/adapters/milvus.py:38: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.milvus.MilvusAdapter object at 0x10cc4ca50>
+host = '127.0.0.1', port = 19530, uri = None, user = None, password = None
+db_name = None, token = None
+
+    def __init__(
+        self,
+        host: str = ""127.0.0.1"",
+        port: int = 19530,
+        uri: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        db_name: str | None = None,
+        token: str | None = None,
+    ) -> None:
+        try:
+            from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+        except ImportError as exc:
+>           raise ImportError(""pymilvus is required for MilvusAdapter. Install with `pip install pymilvus`."") from exc
+E           ImportError: pymilvus is required for MilvusAdapter. Install with `pip install pymilvus`.
+
+maxionbench/adapters/milvus.py:40: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.milvus.MilvusAdapter object at 0x10cc828d0>
+host = '127.0.0.1', port = 19530, uri = None, user = None, password = None
+db_name = None, token = None
+
+    def __init__(
+        self,
+        host: str = ""127.0.0.1"",
+        port: int = 19530,
+        uri: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        db_name: str | None = None,
+        token: str | None = None,
+    ) -> None:
+        try:
+>           from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+E           ModuleNotFoundError: No module named 'pymilvus'
+
+maxionbench/adapters/milvus.py:38: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_js...(truncated)"
+mock,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/mock.json,pass,0,0.282126,/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter mock --adapter-options-json {} --collection conformance --dimension 4 --metric ip,".........                                                                [100%]
+9 passed in 0.10s"
+opensearch,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/opensearch.json,fail,1,0.955042,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter opensearch --adapter-options-json {""host"":""127.0.0.1"",""port"":9200,""scheme"":""http"",""verify_ssl"":false} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <urllib3.connection.HTTPConnection object at 0x10d24e0d0>
+
+    def _new_conn(self) -> socket.socket:
+        """"""Establish a socket connection and set nodelay settings on it.
+    
+        :return: New socket connection.
+        """"""
+        try:
+>           sock = connection.create_connection(
+                (self._dns_host, self.port),
+                self.timeout,
+                source_address=self.source_address,
+                socket_options=self.socket_options,
+            )
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/connection.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:85: in create_connection
+    raise err
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+address = ('127.0.0.1', 9200), timeout = 30.0, source_address = None
+socket_options = [(6, 1, 1)]
+
+    def create_connection(
+        address: tuple[str, int],
+        timeout: _TYPE_TIMEOUT = _DEFAULT_TIMEOUT,
+        source_address: tuple[str, int] | None = None,
+        socket_options: _TYPE_SOCKET_OPTIONS | None = None,
+    ) -> socket.socket:
+        """"""Connect to *address* and return the socket object.
+    
+        Convenience function.  Connect to *address* (a 2-tuple ``(host,
+        port)``) and return the socket object.  Passing the optional
+        *timeout* parameter will set the timeout on the socket instance
+        before attempting to connect.  If no *timeout* is supplied, the
+        global default timeout setting returned by :func:`socket.getdefaulttimeout`
+        is used.  If *source_address* is set it must be a tuple of (host, port)
+        for the socket to bind as a source address before making the connection.
+        An host of '' or port 0 tells the OS to use the default.
+        """"""
+    
+        host, port = address
+        if host.startswith(""[""):
+            host = host.strip(""[]"")
+        err = None
+    
+        # Using the value from allowed_gai_family() in the context of getaddrinfo lets
+        # us select whether to work with IPv4 DNS records, IPv6 records, or both.
+        # The original create_connection function always returns all records.
+        family = allowed_gai_family()
+    
+        try:
+            host.encode(""idna"")
+        except UnicodeError:
+            raise LocationParseError(f""'{host}', label empty or too long"") from None
+    
+        for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = socket.socket(af, socktype, proto)
+    
+                # If provided, set socket level options before connecting.
+                _set_socket_options(sock, socket_options)
+    
+                if timeout is not _DEFAULT_TIMEOUT:
+                    sock.settimeout(timeout)
+                if source_address:
+                    sock.bind(source_address)
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 61] Connection refused
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:73: ConnectionRefusedError
+
+The above exception was the direct cause of the following exception:
+
+self = <urllib3.connectionpool.HTTPConnectionPool object at 0x10d34aa10>
+method = 'DELETE', url = '/conformance', body = None
+headers = {'User-Agent': 'python-requests/2.32.5', 'Accept-Encoding': 'gzip, deflate', 'Accept': '*/*', 'Connection': 'keep-alive', 'Content-Length': '0'}
+retries = Retry(total=0, connect=None, read=False, redirect=None, status=None)
+redirect = False, assert_same_host = False
+timeout = Timeou...(truncated)"
+pgvector,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/pgvector.json,fail,1,0.354505,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter pgvector --adapter-options-json {""dsn"":""postgresql://postgres:postgres@127.0.0.1:5432/postgres"",""schema"":""public""} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.pgvector.PgVectorAdapter object at 0x10cf38110>
+dsn = 'postgresql://postgres:postgres@127.0.0.1:5432/postgres'
+schema = 'public', connect_timeout_s = 10.0
+
+    def __init__(
+        self,
+        dsn: str = ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"",
+        schema: str = ""public"",
+        connect_timeout_s: float = 10.0,
+    ) -> None:
+        try:
+>           import psycopg
+E           ModuleNotFoundError: No module named 'psycopg'
+
+maxionbench/adapters/pgvector.py:38: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.pgvector.PgVectorAdapter object at 0x10cf38110>
+dsn = 'postgresql://postgres:postgres@127.0.0.1:5432/postgres'
+schema = 'public', connect_timeout_s = 10.0
+
+    def __init__(
+        self,
+        dsn: str = ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"",
+        schema: str = ""public"",
+        connect_timeout_s: float = 10.0,
+    ) -> None:
+        try:
+            import psycopg
+        except ImportError as exc:
+>           raise ImportError(
+                ""psycopg is required for PgVectorAdapter. Install with `pip install psycopg[binary]`.""
+            ) from exc
+E           ImportError: psycopg is required for PgVectorAdapter. Install with `pip install psycopg[binary]`.
+
+maxionbench/adapters/pgvector.py:40: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.pgvector.PgVectorAdapter object at 0x10cf744d0>
+dsn = 'postgresql://postgres:postgres@127.0.0.1:5432/postgres'
+schema = 'public', connect_timeout_s = 10.0
+
+    def __init__(
+        self,
+        dsn: str = ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"",
+        schema: str = ""public"",
+        connect_timeout_s: float = 10.0,
+    ) -> None:
+        try:
+>           import psycopg
+E           ModuleNotFoundError: No module named 'psycopg'
+
+maxionbench/adapters/pgvector.py:38: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _...(truncated)"
+qdrant,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/qdrant_local.json,fail,1,0.341246,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter qdrant --adapter-options-json {""location"":"":memory:""} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <maxionbench.adapters.qdrant.QdrantAdapter object at 0x10e6f01d0>
+
+    def _init_local_client(self) -> None:
+        try:
+>           from qdrant_client import QdrantClient
+E           ModuleNotFoundError: No module named 'qdrant_client'
+
+maxionbench/adapters/qdrant.py:324: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/qdrant.py:64: in __init__
+    self._init_local_client()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.qdrant.QdrantAdapter object at 0x10e6f01d0>
+
+    def _init_local_client(self) -> None:
+        try:
+            from qdrant_client import QdrantClient
+            from qdrant_client.http import models as qm
+        except ImportError as exc:
+>           raise ImportError(
+                ""qdrant-client is required for local-mode QdrantAdapter. ""
+                ""Install with `pip install qdrant-client`.""
+            ) from exc
+E           ImportError: qdrant-client is required for local-mode QdrantAdapter. Install with `pip install qdrant-client`.
+
+maxionbench/adapters/qdrant.py:327: ImportError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+self = <maxionbench.adapters.qdrant.QdrantAdapter object at 0x10e72cd10>
+
+    def _init_local_client(self) -> None:
+        try:
+>           from qdrant_client import QdrantClient
+E           ModuleNotFoundError: No module named 'qdrant_client'
+
+maxionbench/adapters/qdrant.py:324: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER"", ""mock"")
+        options_json = os.environ.get(""MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON"", ""{}"")
+        options = json.loads(options_json)
+        collection = os.environ.get(""MAXIONBENCH_CONFORMANCE_COLLECTION"", ""conformance"")
+        dimension = int(os.environ.get(""MAXIONBENCH_CONFORMANCE_DIMENSION"", ""4""))
+        metric = os.environ.get(""MAXIONBENCH_CONFORMANCE_METRIC"", ""ip"")
+    
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/qdrant.py:64: in __init__
+    self._init_local_client()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.qdrant.QdrantAdapter object at 0x10e72cd10>
+
+    def _init_local_client(self) -> None:
+        try:
+            from qdrant_clie...(truncated)"
+weaviate,/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/conformance/weaviate.json,fail,1,0.933146,"/Users/haotang/anaconda3/envs/contest/bin/python -m maxionbench.conformance.run --adapter weaviate --adapter-options-json {""host"":""127.0.0.1"",""port"":8080,""scheme"":""http""} --collection conformance --dimension 4 --metric ip","EEEEEEEEE                                                                [100%]
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+self = <urllib3.connection.HTTPConnection object at 0x10d1aab10>
+
+    def _new_conn(self) -> socket.socket:
+        """"""Establish a socket connection and set nodelay settings on it.
+    
+        :return: New socket connection.
+        """"""
+        try:
+>           sock = connection.create_connection(
+                (self._dns_host, self.port),
+                self.timeout,
+                source_address=self.source_address,
+                socket_options=self.socket_options,
+            )
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/connection.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:85: in create_connection
+    raise err
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+address = ('127.0.0.1', 8080), timeout = 30.0, source_address = None
+socket_options = [(6, 1, 1)]
+
+    def create_connection(
+        address: tuple[str, int],
+        timeout: _TYPE_TIMEOUT = _DEFAULT_TIMEOUT,
+        source_address: tuple[str, int] | None = None,
+        socket_options: _TYPE_SOCKET_OPTIONS | None = None,
+    ) -> socket.socket:
+        """"""Connect to *address* and return the socket object.
+    
+        Convenience function.  Connect to *address* (a 2-tuple ``(host,
+        port)``) and return the socket object.  Passing the optional
+        *timeout* parameter will set the timeout on the socket instance
+        before attempting to connect.  If no *timeout* is supplied, the
+        global default timeout setting returned by :func:`socket.getdefaulttimeout`
+        is used.  If *source_address* is set it must be a tuple of (host, port)
+        for the socket to bind as a source address before making the connection.
+        An host of '' or port 0 tells the OS to use the default.
+        """"""
+    
+        host, port = address
+        if host.startswith(""[""):
+            host = host.strip(""[]"")
+        err = None
+    
+        # Using the value from allowed_gai_family() in the context of getaddrinfo lets
+        # us select whether to work with IPv4 DNS records, IPv6 records, or both.
+        # The original create_connection function always returns all records.
+        family = allowed_gai_family()
+    
+        try:
+            host.encode(""idna"")
+        except UnicodeError:
+            raise LocationParseError(f""'{host}', label empty or too long"") from None
+    
+        for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = socket.socket(af, socktype, proto)
+    
+                # If provided, set socket level options before connecting.
+                _set_socket_options(sock, socket_options)
+    
+                if timeout is not _DEFAULT_TIMEOUT:
+                    sock.settimeout(timeout)
+                if source_address:
+                    sock.bind(source_address)
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 61] Connection refused
+
+/Users/haotang/anaconda3/envs/contest/lib/python3.11/site-packages/urllib3/util/connection.py:73: ConnectionRefusedError
+
+The above exception was the direct cause of the following exception:
+
+self = <urllib3.connectionpool.HTTPConnectionPool object at 0x10d1aa490>
+method = 'DELETE', url = '/v1/schema/Conformance', body = None
+headers = {'User-Agent': 'python-requests/2.32.5', 'Accept-Encoding': 'gzip, deflate', 'Accept': '*/*', 'Connection': 'keep-alive', 'Content-Length': '0'}
+retries = Retry(total=0, connect=None, read=False, redirect=None, status=None)
+redirect = False, assert_same_host = False
+timeou...(truncated)"

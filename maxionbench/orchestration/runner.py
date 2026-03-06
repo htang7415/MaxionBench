@@ -23,6 +23,7 @@ from maxionbench.datasets.d3_calibrate import PAPER_MIN_CALIBRATION_VECTORS, pap
 from maxionbench.datasets.d3_generator import D3Params, params_from_mapping
 from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_hdf5
 from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
+from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.metrics.cost_rhu import rhu_hours
@@ -136,6 +137,7 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
 
 def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = None) -> Path:
     overrides = dict(cli_overrides or {})
+    resolved_config_path = config_path.resolve()
     d3_params_path = overrides.pop("d3_params", None)
     enforce_readiness = bool(overrides.pop("enforce_readiness", False))
     conformance_matrix = Path(str(overrides.pop("conformance_matrix", "artifacts/conformance/conformance_matrix.csv")))
@@ -162,7 +164,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     config_payload = cfg.as_dict()
     dataset_cache_checksums = _collect_dataset_cache_checksum_provenance(
         cfg=cfg,
-        config_path=config_path.resolve(),
+        config_path=resolved_config_path,
     )
     config_payload["d3_params"] = d3_params_path
     config_payload["readiness"] = {
@@ -174,21 +176,41 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     config_fingerprint = stable_config_fingerprint(config_payload)
 
     if cfg.scenario == "calibrate_d3":
-        rows = _run_calibrate_rows(cfg=cfg, config_fingerprint=config_fingerprint, d3_params_path=d3_params_path)
+        rows = _run_calibrate_rows(
+            cfg=cfg,
+            config_fingerprint=config_fingerprint,
+            d3_params_path=d3_params_path,
+            config_path=resolved_config_path,
+        )
     elif cfg.scenario == "s1_ann_frontier":
-        rows = _run_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint)
+        rows = _run_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
     elif cfg.scenario == "s2_filtered_ann":
-        rows = _run_s2_rows(cfg=cfg, config_fingerprint=config_fingerprint, d3_params_path=d3_params_path)
+        rows = _run_s2_rows(
+            cfg=cfg,
+            config_fingerprint=config_fingerprint,
+            d3_params_path=d3_params_path,
+            config_path=resolved_config_path,
+        )
     elif cfg.scenario == "s3_churn_smooth":
-        rows = _run_s3_rows(cfg=cfg, config_fingerprint=config_fingerprint, d3_params_path=d3_params_path)
+        rows = _run_s3_rows(
+            cfg=cfg,
+            config_fingerprint=config_fingerprint,
+            d3_params_path=d3_params_path,
+            config_path=resolved_config_path,
+        )
     elif cfg.scenario == "s3b_churn_bursty":
-        rows = _run_s3b_rows(cfg=cfg, config_fingerprint=config_fingerprint, d3_params_path=d3_params_path)
+        rows = _run_s3b_rows(
+            cfg=cfg,
+            config_fingerprint=config_fingerprint,
+            d3_params_path=d3_params_path,
+            config_path=resolved_config_path,
+        )
     elif cfg.scenario == "s4_hybrid":
-        rows = _run_s4_rows(cfg=cfg, config_fingerprint=config_fingerprint)
+        rows = _run_s4_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
     elif cfg.scenario == "s5_rerank":
-        rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint)
+        rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
     elif cfg.scenario == "s6_fusion":
-        rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint)
+        rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
     else:
         raise ValueError(f"Unsupported scenario: {cfg.scenario}")
 
@@ -253,15 +275,22 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     return output_dir
 
 
-def _run_calibrate_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str | None) -> list[ResultRow]:
+def _run_calibrate_rows(
+    *,
+    cfg: RunConfig,
+    config_fingerprint: str,
+    d3_params_path: str | None,
+    config_path: Path,
+) -> list[ResultRow]:
     params = _resolve_d3_params(cfg, d3_params_path)
+    resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
     calibrate_cfg = CalibrateD3Config(
         vector_dim=cfg.vector_dim,
         num_vectors=cfg.num_vectors,
         seed=cfg.seed,
         output_params_path=cfg.output_d3_params_path,
         initial_params=params,
-        dataset_path=cfg.dataset_path,
+        dataset_path=str(resolved_dataset_path) if resolved_dataset_path is not None else None,
         calibration_source="dataset_path" if cfg.dataset_path else "synthetic_vectors",
         calibration_dataset_hash=cfg.dataset_hash,
     )
@@ -313,8 +342,8 @@ def _run_calibrate_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_pa
     return [row]
 
 
-def _run_s1_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
-    s1_data = _maybe_load_s1_data(cfg)
+def _run_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    s1_data = _maybe_load_s1_data(cfg, config_path=config_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         for client_count in cfg.clients_grid:
@@ -336,8 +365,15 @@ def _run_s1_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     return rows
 
 
-def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str | None) -> list[ResultRow]:
+def _run_s2_rows(
+    *,
+    cfg: RunConfig,
+    config_fingerprint: str,
+    d3_params_path: str | None,
+    config_path: Path,
+) -> list[ResultRow]:
     d3_params = _resolve_d3_params(cfg, d3_params_path)
+    d3_vectors = _maybe_load_d3_vectors(cfg, config_path=config_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
@@ -367,6 +403,7 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),
             d3_params=d3_params,
+            vectors=d3_vectors,
         )
         stats = adapter.stats()
         adapter.drop(collection="maxionbench")
@@ -432,26 +469,40 @@ def _run_s2_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str
     return rows
 
 
-def _run_s3_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str | None) -> list[ResultRow]:
+def _run_s3_rows(
+    *,
+    cfg: RunConfig,
+    config_fingerprint: str,
+    d3_params_path: str | None,
+    config_path: Path,
+) -> list[ResultRow]:
     return _run_s3_like_rows(
         cfg=cfg,
         config_fingerprint=config_fingerprint,
         d3_params_path=d3_params_path,
         bursty=False,
+        config_path=config_path,
     )
 
 
-def _run_s3b_rows(*, cfg: RunConfig, config_fingerprint: str, d3_params_path: str | None) -> list[ResultRow]:
+def _run_s3b_rows(
+    *,
+    cfg: RunConfig,
+    config_fingerprint: str,
+    d3_params_path: str | None,
+    config_path: Path,
+) -> list[ResultRow]:
     return _run_s3_like_rows(
         cfg=cfg,
         config_fingerprint=config_fingerprint,
         d3_params_path=d3_params_path,
         bursty=True,
+        config_path=config_path,
     )
 
 
-def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
-    d4_data = _maybe_load_d4_data(cfg)
+def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg, config_path=config_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
@@ -533,8 +584,8 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     return rows
 
 
-def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
-    d4_data = _maybe_load_d4_data(cfg)
+def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg, config_path=config_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
@@ -623,8 +674,8 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
     return rows
 
 
-def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
-    d4_data = _maybe_load_d4_data(cfg)
+def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    d4_data = _maybe_load_d4_data(cfg, config_path=config_path)
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
@@ -791,8 +842,10 @@ def _run_s3_like_rows(
     config_fingerprint: str,
     d3_params_path: str | None,
     bursty: bool,
+    config_path: Path,
 ) -> list[ResultRow]:
     d3_params = _resolve_d3_params(cfg, d3_params_path)
+    d3_vectors = _maybe_load_d3_vectors(cfg, config_path=config_path)
     baseline_missing = False
     baseline_error: str | None = None
     try:
@@ -845,6 +898,7 @@ def _run_s3_like_rows(
                 ),
                 rng=np.random.default_rng(cfg.seed + repeat_idx),
                 d3_params=d3_params,
+                vectors=d3_vectors,
             )
             suffix = "s3b"
         else:
@@ -853,6 +907,7 @@ def _run_s3_like_rows(
                 cfg=base_cfg,
                 rng=np.random.default_rng(cfg.seed + repeat_idx),
                 d3_params=d3_params,
+                vectors=d3_vectors,
             )
             suffix = "s3"
         info_payload = _parse_info_json(result.info_json)
@@ -1184,8 +1239,14 @@ def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:
             "engine": "synthetic_qrels",
         }
     if dataset == "D3":
+        if scenario == "s2_filtered_ann":
+            source = "exact_filtered_subset"
+        elif scenario in {"s3_churn_smooth", "s3b_churn_bursty"}:
+            source = "exact_dynamic_topk"
+        else:
+            source = "exact_topk"
         return {
-            "source": "exact_filtered_subset",
+            "source": source,
             "metric": "recall_at_10",
             "k": ann_k,
             "engine": "numpy_exact",
@@ -1314,6 +1375,16 @@ def _collect_dataset_cache_checksum_provenance(*, cfg: RunConfig, config_path: P
                 ),
             ]
         )
+    elif cfg.dataset_bundle == "D3":
+        checks.append(
+            (
+                "dataset_path",
+                "dataset_path_sha256",
+                "cache_sha256_dataset_path",
+                "D3 dataset_path",
+                "dataset_path",
+            )
+        )
     elif cfg.dataset_bundle == "D4" and cfg.d4_use_real_data and cfg.d4_include_crag:
         checks.append(
             (
@@ -1361,25 +1432,59 @@ def _resolve_config_value_path(*, value: str, config_path: Path) -> Path:
     return (config_path.parent / candidate).resolve()
 
 
-def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:
-    if cfg.dataset_bundle != "D1":
-        if cfg.dataset_bundle != "D2":
-            return None
-        if not cfg.d2_base_fvecs_path or not cfg.d2_query_fvecs_path:
-            return None
-        dataset_d2 = load_d2_bigann(
-            base_fvecs=Path(cfg.d2_base_fvecs_path),
-            query_fvecs=Path(cfg.d2_query_fvecs_path),
-            gt_ivecs=Path(cfg.d2_gt_ivecs_path) if cfg.d2_gt_ivecs_path else None,
-            max_vectors=cfg.num_vectors,
-            max_queries=cfg.num_queries,
-            top_k=max(cfg.top_k, 10),
-        )
-        return _to_s1_data_d2(dataset_d2)
+def _resolve_optional_config_value_path(*, value: str | None, config_path: Path) -> Path | None:
+    if value is None or str(value) == "":
+        return None
+    return _resolve_config_value_path(value=str(value), config_path=config_path)
+
+
+def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
+    bundle = str(cfg.dataset_bundle).upper()
+    if bundle != "D1":
+        if bundle == "D2":
+            base_fvecs = _resolve_optional_config_value_path(value=cfg.d2_base_fvecs_path, config_path=config_path)
+            query_fvecs = _resolve_optional_config_value_path(value=cfg.d2_query_fvecs_path, config_path=config_path)
+            gt_ivecs = _resolve_optional_config_value_path(value=cfg.d2_gt_ivecs_path, config_path=config_path)
+            if base_fvecs is None or query_fvecs is None:
+                return None
+            dataset_d2 = load_d2_bigann(
+                base_fvecs=base_fvecs,
+                query_fvecs=query_fvecs,
+                gt_ivecs=gt_ivecs,
+                max_vectors=cfg.num_vectors,
+                max_queries=cfg.num_queries,
+                top_k=max(cfg.top_k, 10),
+            )
+            return _to_s1_data_d2(dataset_d2)
+        if bundle == "D3":
+            resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
+            if resolved_dataset_path is None:
+                return None
+            expected_sha = str(cfg.dataset_path_sha256) if cfg.dataset_path_sha256 else None
+            vectors = load_d3_vectors(
+                resolved_dataset_path,
+                max_vectors=cfg.num_vectors,
+                expected_dim=cfg.vector_dim,
+                expected_sha256=expected_sha,
+            )
+            ids = [f"doc-{idx:07d}" for idx in range(vectors.shape[0])]
+            query_count = min(int(cfg.num_queries), int(vectors.shape[0]))
+            query_idx = np.random.default_rng(cfg.seed).choice(vectors.shape[0], size=query_count, replace=False)
+            queries = np.asarray(vectors[query_idx], dtype=np.float32)
+            return S1Data(
+                ids=ids,
+                vectors=np.asarray(vectors, dtype=np.float32),
+                queries=queries,
+                ground_truth_ids=None,
+            )
+        return None
     if not cfg.dataset_path:
         return None
+    resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
+    if resolved_dataset_path is None:
+        return None
     dataset = load_d1_ann_hdf5(
-        Path(cfg.dataset_path),
+        resolved_dataset_path,
         max_vectors=cfg.num_vectors,
         max_queries=cfg.num_queries,
         top_k=max(cfg.top_k, 10),
@@ -1387,13 +1492,28 @@ def _maybe_load_s1_data(cfg: RunConfig) -> S1Data | None:
     return _to_s1_data(dataset)
 
 
-def _maybe_load_d4_data(cfg: RunConfig) -> D4RetrievalDataset | None:
+def _maybe_load_d3_vectors(cfg: RunConfig, *, config_path: Path) -> np.ndarray | None:
+    if cfg.dataset_bundle != "D3":
+        return None
+    resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
+    if resolved_dataset_path is None:
+        return None
+    expected_sha = str(cfg.dataset_path_sha256) if cfg.dataset_path_sha256 else None
+    return load_d3_vectors(
+        resolved_dataset_path,
+        max_vectors=cfg.num_vectors,
+        expected_dim=cfg.vector_dim,
+        expected_sha256=expected_sha,
+    )
+
+
+def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalDataset | None:
     if cfg.dataset_bundle != "D4":
         return None
     if not cfg.d4_use_real_data:
         return None
-    beir_root = Path(cfg.d4_beir_root) if cfg.d4_beir_root else None
-    crag_path = Path(cfg.d4_crag_path) if cfg.d4_crag_path else None
+    beir_root = _resolve_optional_config_value_path(value=cfg.d4_beir_root, config_path=config_path)
+    crag_path = _resolve_optional_config_value_path(value=cfg.d4_crag_path, config_path=config_path)
     return load_d4_from_local_bundles(
         vector_dim=cfg.vector_dim,
         seed=cfg.seed,

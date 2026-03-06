@@ -5,6 +5,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 import pandas as pd
@@ -51,8 +52,36 @@ def verify_engine_readiness(
     if not {"adapter", "status"}.issubset(frame.columns):
         raise ValueError("Conformance matrix must include `adapter` and `status` columns")
 
+    adapter_series = frame["adapter"].fillna("").astype(str).str.strip()
+    status_series = frame["status"].fillna("").astype(str).str.strip()
+    empty_adapter_rows = int((adapter_series == "").sum())
+    empty_status_rows = int((status_series == "").sum())
+    normalized = frame.copy()
+    normalized["adapter"] = adapter_series
+    normalized["status"] = status_series
+
     behavior_summary = verify_behavior_cards(behavior_dir)
     errors: list[dict[str, Any]] = []
+    if empty_adapter_rows > 0:
+        errors.append(
+            {
+                "source": "conformance_matrix",
+                "field": "adapter",
+                "expected": "non-empty adapter values",
+                "actual": {"empty_rows": empty_adapter_rows},
+                "message": f"conformance matrix contains {empty_adapter_rows} row(s) with empty adapter values",
+            }
+        )
+    if empty_status_rows > 0:
+        errors.append(
+            {
+                "source": "conformance_matrix",
+                "field": "status",
+                "expected": "non-empty status values",
+                "actual": {"empty_rows": empty_status_rows},
+                "message": f"conformance matrix contains {empty_status_rows} row(s) with empty status values",
+            }
+        )
     if not behavior_summary["pass"]:
         for item in behavior_summary["errors"]:
             payload = dict(item)
@@ -64,7 +93,7 @@ def verify_engine_readiness(
         required_adapters = [name for name in required_adapters if name != "faiss-gpu"]
 
     for adapter in required_adapters:
-        matches = frame[frame["adapter"] == adapter]
+        matches = normalized[normalized["adapter"] == adapter]
         if matches.empty:
             errors.append(
                 {
@@ -78,17 +107,32 @@ def verify_engine_readiness(
             )
             continue
         statuses = sorted({str(v) for v in matches["status"].tolist()})
-        if (not allow_nonpass_status) and ("pass" not in statuses):
-            errors.append(
-                {
-                    "source": "conformance_matrix",
-                    "adapter": adapter,
-                    "field": "status",
-                    "expected": "pass",
-                    "actual": statuses,
-                    "message": f"adapter `{adapter}` has no pass status in conformance matrix",
-                }
-            )
+        if not allow_nonpass_status:
+            if "pass" not in statuses:
+                errors.append(
+                    {
+                        "source": "conformance_matrix",
+                        "adapter": adapter,
+                        "field": "status",
+                        "expected": "pass",
+                        "actual": statuses,
+                        "message": f"adapter `{adapter}` has no pass status in conformance matrix",
+                    }
+                )
+            non_pass_statuses = sorted(status for status in statuses if status != "pass")
+            if non_pass_statuses:
+                errors.append(
+                    {
+                        "source": "conformance_matrix",
+                        "adapter": adapter,
+                        "field": "status",
+                        "expected": ["pass"],
+                        "actual": statuses,
+                        "message": (
+                            f"adapter `{adapter}` includes non-pass statuses in strict mode: {non_pass_statuses}"
+                        ),
+                    }
+                )
         expected_card = BEHAVIOR_CARD_BY_ADAPTER.get(adapter)
         if expected_card:
             card_path = behavior_dir.resolve() / expected_card
@@ -104,8 +148,32 @@ def verify_engine_readiness(
                     }
                 )
 
+    if not allow_nonpass_status:
+        strict_frame = normalized
+        if allow_gpu_unavailable:
+            strict_frame = strict_frame[strict_frame["adapter"] != "faiss-gpu"]
+        non_pass = strict_frame[strict_frame["status"] != "pass"]
+        if not non_pass.empty:
+            status_counts: dict[str, int] = {}
+            for value in non_pass["status"].tolist():
+                key = str(value)
+                status_counts[key] = status_counts.get(key, 0) + 1
+            strict_scope = "excluding `faiss-gpu` rows" if allow_gpu_unavailable else "across all rows"
+            errors.append(
+                {
+                    "source": "conformance_matrix",
+                    "field": "status",
+                    "expected": "all strict-scope rows == pass",
+                    "actual": dict(sorted(status_counts.items())),
+                    "message": (
+                        f"strict readiness requires pass-only statuses {strict_scope}; "
+                        f"found non-pass rows: {dict(sorted(status_counts.items()))}"
+                    ),
+                }
+            )
+
     if require_mock_pass:
-        mock_matches = frame[frame["adapter"] == "mock"]
+        mock_matches = normalized[normalized["adapter"] == "mock"]
         if mock_matches.empty:
             errors.append(
                 {
@@ -132,7 +200,7 @@ def verify_engine_readiness(
                 )
 
     status_counts: dict[str, int] = {}
-    for value in frame["status"].tolist():
+    for value in normalized["status"].tolist():
         key = str(value)
         status_counts[key] = status_counts.get(key, 0) + 1
 
@@ -143,7 +211,7 @@ def verify_engine_readiness(
         "allow_nonpass_status": allow_nonpass_status,
         "require_mock_pass": require_mock_pass,
         "required_adapters": required_adapters,
-        "conformance_rows": int(len(frame)),
+        "conformance_rows": int(len(normalized)),
         "conformance_status_counts": dict(sorted(status_counts.items())),
         "behavior_cards_ok": bool(behavior_summary["pass"]),
         "error_count": len(errors),
@@ -174,13 +242,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    summary = verify_engine_readiness(
-        conformance_matrix_path=Path(args.conformance_matrix),
-        behavior_dir=Path(args.behavior_dir),
-        allow_gpu_unavailable=bool(args.allow_gpu_unavailable),
-        allow_nonpass_status=bool(args.allow_nonpass_status),
-        require_mock_pass=bool(args.require_mock_pass),
-    )
+    try:
+        summary = verify_engine_readiness(
+            conformance_matrix_path=Path(args.conformance_matrix),
+            behavior_dir=Path(args.behavior_dir),
+            allow_gpu_unavailable=bool(args.allow_gpu_unavailable),
+            allow_nonpass_status=bool(args.allow_nonpass_status),
+            require_mock_pass=bool(args.require_mock_pass),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"verify-engine-readiness failed: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

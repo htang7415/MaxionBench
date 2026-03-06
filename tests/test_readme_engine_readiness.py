@@ -11,7 +11,11 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "conformance_readiness_gate" in text
     assert "strict_readiness.yml" in text
     assert ".[dev,engines]" in text
+    assert "non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active" in text
     assert "verify-promotion-gate" in text
+    assert "cross-checks both strict summary and downloaded conformance matrix" in text
+    assert "requires a `mock` row with `status=pass` in the matrix artifact" in text
+    assert "non-pass rows are allowed only for `faiss-gpu`" in text
     assert "publish_benchmark_bundle.yml" in text
     assert "include-strict-readiness-check" in text
     assert "include-publish-bundle-check" in text

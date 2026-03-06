@@ -27,6 +27,7 @@ def run(
     rng: np.random.Generator,
     *,
     d3_params: D3Params,
+    vectors: np.ndarray | None = None,
 ) -> S3Result:
     cycle = cfg.on_s + cfg.off_s
 
@@ -42,6 +43,7 @@ def run(
         rng=rng,
         d3_params=d3_params,
         burst_multiplier_fn=burst_multiplier,
+        vectors=vectors,
     )
     info_payload = _parse_info_payload(result.info_json)
     info_payload["mode"] = "s3_bursty"

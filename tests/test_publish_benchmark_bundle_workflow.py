@@ -61,5 +61,6 @@ def test_publish_benchmark_bundle_workflow_enforces_strict_readiness_gate() -> N
     publish_blob = "\n".join(str(step.get("run", "")) for step in publish_steps if isinstance(step, dict))
     assert "maxionbench verify-promotion-gate" in publish_blob
     assert "--strict-readiness-summary artifacts/promotion/engine_readiness_summary.json" in publish_blob
+    assert "--conformance-matrix artifacts/promotion/conformance_matrix.csv" in publish_blob
     assert "tar -czf artifacts/promotion/benchmark_result_bundle.tgz" in publish_blob
     assert "actions/download-artifact@v4" in text

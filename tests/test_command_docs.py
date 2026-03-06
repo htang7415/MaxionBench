@@ -39,6 +39,9 @@ def _assert_common_commands(text: str) -> None:
         "maxionbench verify-engine-readiness --conformance-matrix artifacts/conformance/conformance_matrix.csv "
         "--behavior-dir docs/behavior --allow-gpu-unavailable --allow-nonpass-status --require-mock-pass --json"
     ) in text
+    assert "without `--allow-nonpass-status`, each required adapter must have only `pass` statuses" in text
+    assert "strict mode treats any `fail`/`timeout` row as a hard failure" in text
+    assert "except `faiss-gpu` rows when `--allow-gpu-unavailable` is enabled" in text
     assert (
         "maxionbench pre-run-gate --config configs/scenarios/s1_ann_frontier_qdrant.yaml "
         "--conformance-matrix artifacts/conformance/conformance_matrix.csv --behavior-dir docs/behavior --json"
@@ -57,9 +60,19 @@ def _assert_common_commands(text: str) -> None:
         "maxionbench verify-promotion-gate --strict-readiness-summary "
         "artifacts/conformance_strict/engine_readiness_summary.json --json"
     ) in text
+    assert (
+        "maxionbench verify-promotion-gate --strict-readiness-summary "
+        "artifacts/promotion/engine_readiness_summary.json --conformance-matrix "
+        "artifacts/promotion/conformance_matrix.csv --json"
+    ) in text
     assert "if summary provenance is non-strict" in text
     assert "allow_nonpass_status=true" in text
     assert "require_mock_pass=false" in text
+    assert "coverage mismatches `allow_gpu_unavailable`" in text
+    assert "non-pass statuses outside the `faiss-gpu` exception" in text
+    assert "conformance_rows >= len(required_adapters)" in text
+    assert "matrix cross-check mode also requires a `mock` adapter row with `status=pass`" in text
+    assert "this requires `--conformance-matrix`" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --json" in text
     assert "maxionbench validate --input artifacts/runs --strict-schema --enforce-protocol --json" in text
     assert "`--enforce-protocol` robustness payload checks:" in text

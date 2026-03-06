@@ -82,6 +82,53 @@ def test_runner_s1_with_d2_paths(tmp_path: Path) -> None:
     assert int(metadata["ground_truth_k"]) == 2
 
 
+def test_runner_s1_with_d2_relative_paths(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    base = np.array([[0.0, 0.0], [1.0, 0.0], [5.0, 5.0]], dtype=np.float32)
+    queries = np.array([[0.1, 0.0], [4.9, 5.1]], dtype=np.float32)
+    gt = np.array([[0, 1], [2, 1]], dtype=np.int32)
+
+    _write_fvecs(data_dir / "base.fvecs", base)
+    _write_fvecs(data_dir / "query.fvecs", queries)
+    _write_ivecs(data_dir / "gt.ivecs", gt)
+
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D2",
+        "dataset_hash": "synthetic-d2-relative",
+        "seed": 3,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-relative"),
+        "quality_target": 0.0,
+        "quality_targets": [0.0],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 2,
+        "num_vectors": 3,
+        "num_queries": 2,
+        "top_k": 2,
+        "d2_base_fvecs_path": "data/base.fvecs",
+        "d2_query_fvecs_path": "data/query.fvecs",
+        "d2_gt_ivecs_path": "data/gt.ivecs",
+    }
+    cfg_path = tmp_path / "cfg_relative.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(cfg, handle, sort_keys=True)
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1
+    assert frame.iloc[0]["dataset_bundle"] == "D2"
+
+
 def test_runner_rejects_invalid_checksum_format_in_config(tmp_path: Path) -> None:
     base = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     queries = np.array([[0.1, 0.0]], dtype=np.float32)
