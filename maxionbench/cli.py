@@ -63,6 +63,22 @@ def main(argv: list[str] | None = None) -> int:
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
     verify_pins_parser.add_argument("--json", action="store_true")
 
+    verify_dataset_manifests_parser = subparsers.add_parser(
+        "verify-dataset-manifests",
+        help="Verify dataset manifest coverage and pinned metadata fields",
+    )
+    verify_dataset_manifests_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
+    verify_dataset_manifests_parser.add_argument("--json", action="store_true")
+
+    verify_d3_calibration_parser = subparsers.add_parser(
+        "verify-d3-calibration",
+        help="Verify D3 calibration params file is paper-ready",
+    )
+    verify_d3_calibration_parser.add_argument("--d3-params", default="artifacts/calibration/d3_params.yaml")
+    verify_d3_calibration_parser.add_argument("--min-vectors", type=int, default=10_000_000)
+    verify_d3_calibration_parser.add_argument("--strict", action="store_true")
+    verify_d3_calibration_parser.add_argument("--json", action="store_true")
+
     verify_slurm_plan_parser = subparsers.add_parser(
         "verify-slurm-plan",
         help="Verify Slurm submit-plan consistency with array scenario layout",
@@ -70,6 +86,37 @@ def main(argv: list[str] | None = None) -> int:
     verify_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
     verify_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
     verify_slurm_plan_parser.add_argument("--json", action="store_true")
+
+    validate_slurm_snapshots_parser = subparsers.add_parser(
+        "validate-slurm-snapshots",
+        help="Validate Slurm plan snapshot JSON artifacts",
+    )
+    validate_slurm_snapshots_parser.add_argument("--verify-path", action="append", dest="verify_paths", default=None)
+    validate_slurm_snapshots_parser.add_argument("--submit-path", action="append", dest="submit_paths", default=None)
+    validate_slurm_snapshots_parser.add_argument(
+        "--required-baseline-scenario",
+        default="configs/scenarios/s1_ann_frontier_d3.yaml",
+    )
+    validate_slurm_snapshots_parser.add_argument("--json", action="store_true")
+
+    ci_protocol_audit_parser = subparsers.add_parser(
+        "ci-protocol-audit",
+        help="Run consolidated CI protocol checks",
+    )
+    ci_protocol_audit_parser.add_argument("--config-dir", default="configs/scenarios")
+    ci_protocol_audit_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
+    ci_protocol_audit_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
+    ci_protocol_audit_parser.add_argument("--verify-path", action="append", dest="verify_paths", default=None)
+    ci_protocol_audit_parser.add_argument("--submit-path", action="append", dest="submit_paths", default=None)
+    ci_protocol_audit_parser.add_argument(
+        "--required-baseline-scenario",
+        default="configs/scenarios/s1_ann_frontier_d3.yaml",
+    )
+    ci_protocol_audit_parser.add_argument("--report-input", default=None)
+    ci_protocol_audit_parser.add_argument("--require-report-policy", action="store_true")
+    ci_protocol_audit_parser.add_argument("--output", default="artifacts/ci/ci_protocol_audit.json")
+    ci_protocol_audit_parser.add_argument("--strict", action="store_true")
+    ci_protocol_audit_parser.add_argument("--json", action="store_true")
 
     verify_behavior_cards_parser = subparsers.add_parser(
         "verify-behavior-cards",
@@ -227,6 +274,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
+    if args.command == "verify-dataset-manifests":
+        from maxionbench.tools.verify_dataset_manifests import main as verify_dataset_manifests_main
+
+        verify_argv = ["--manifest-dir", args.manifest_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_dataset_manifests_main(verify_argv)
+    if args.command == "verify-d3-calibration":
+        from maxionbench.tools.verify_d3_calibration import main as verify_d3_calibration_main
+
+        verify_argv = ["--d3-params", args.d3_params, "--min-vectors", str(args.min_vectors)]
+        if args.strict:
+            verify_argv.append("--strict")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_d3_calibration_main(verify_argv)
     if args.command == "verify-slurm-plan":
         from maxionbench.tools.verify_slurm_plan import main as verify_slurm_plan_main
 
@@ -236,6 +299,45 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_slurm_plan_main(verify_argv)
+    if args.command == "validate-slurm-snapshots":
+        from maxionbench.tools.validate_slurm_snapshots import main as validate_slurm_snapshots_main
+
+        validate_argv: list[str] = ["--required-baseline-scenario", args.required_baseline_scenario]
+        for path in args.verify_paths or []:
+            validate_argv.extend(["--verify-path", path])
+        for path in args.submit_paths or []:
+            validate_argv.extend(["--submit-path", path])
+        if args.json:
+            validate_argv.append("--json")
+        return validate_slurm_snapshots_main(validate_argv)
+    if args.command == "ci-protocol-audit":
+        from maxionbench.tools.ci_protocol_audit import main as ci_protocol_audit_main
+
+        audit_argv: list[str] = [
+            "--config-dir",
+            args.config_dir,
+            "--slurm-dir",
+            args.slurm_dir,
+            "--manifest-dir",
+            args.manifest_dir,
+            "--required-baseline-scenario",
+            args.required_baseline_scenario,
+            "--output",
+            args.output,
+        ]
+        for path in args.verify_paths or []:
+            audit_argv.extend(["--verify-path", path])
+        for path in args.submit_paths or []:
+            audit_argv.extend(["--submit-path", path])
+        if args.report_input:
+            audit_argv.extend(["--report-input", args.report_input])
+        if args.require_report_policy:
+            audit_argv.append("--require-report-policy")
+        if args.strict:
+            audit_argv.append("--strict")
+        if args.json:
+            audit_argv.append("--json")
+        return ci_protocol_audit_main(audit_argv)
     if args.command == "verify-behavior-cards":
         from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
 

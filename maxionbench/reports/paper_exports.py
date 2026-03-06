@@ -6,11 +6,14 @@ from pathlib import Path
 import re
 from typing import Any
 
+import pandas as pd
+
 from .plots import generate_figures, load_results
 from .tables import export_tables
 from maxionbench.tools.validate_outputs import validate_path
 
 _MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
+_ROBUSTNESS_SCENARIOS = {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
 
 
 def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict[str, list[Path]]:
@@ -47,12 +50,18 @@ def generate_report_bundle(*, input_dir: Path, out_dir: Path, mode: str) -> dict
                 "Legacy run artifacts detected: hardware/runtime summary metadata is missing or invalid. "
                 "Re-run benchmarks to regenerate artifacts with `hardware_runtime` fields in run_metadata.json."
             ) from exc
+        if "rtt_baseline_request_profile" in message:
+            raise RuntimeError(
+                "Legacy run artifacts detected: pinned RTT baseline request-profile metadata is missing or invalid. "
+                "Re-run benchmarks to regenerate artifacts with `rtt_baseline_request_profile` in run_metadata.json."
+            ) from exc
         raise
     frame = load_results(input_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     output_policy = _report_output_policy(mode=mode, out_dir=out_dir)
     figure_paths = generate_figures(input_dir=input_dir, out_dir=out_dir, mode=mode, output_policy=output_policy)
     table_paths = export_tables(frame=frame, out_dir=out_dir, mode=mode, output_policy=output_policy)
+    _enforce_t3_robustness_computable(table_paths=table_paths)
     return {"figures": figure_paths, "tables": table_paths}
 
 
@@ -107,3 +116,44 @@ def _report_output_policy(*, mode: str, out_dir: Path) -> dict[str, Any]:
 
 def _milestone_root() -> Path:
     return Path("artifacts/figures/milestones").resolve()
+
+
+def _enforce_t3_robustness_computable(*, table_paths: list[Path]) -> None:
+    t3_path = next((path for path in table_paths if path.name == "T3_robustness_summary.csv"), None)
+    if t3_path is None or not t3_path.exists():
+        raise RuntimeError("report export missing T3_robustness_summary.csv; cannot verify robustness inflation computability")
+
+    frame = pd.read_csv(t3_path)
+    if frame.empty:
+        return
+
+    required = {"scenario", "engine", "dataset_bundle", "p99_inflation_status"}
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise RuntimeError(
+            "report export missing required T3 robustness columns: "
+            + ", ".join(missing)
+            + "; cannot verify robustness inflation computability"
+        )
+
+    scenario_series = frame["scenario"].astype(str)
+    status_series = frame["p99_inflation_status"].astype(str)
+    failing_mask = scenario_series.isin(_ROBUSTNESS_SCENARIOS) & (status_series == "not_computable")
+    if not bool(failing_mask.any()):
+        return
+
+    offenders = (
+        frame.loc[failing_mask, ["scenario", "engine", "dataset_bundle"]]
+        .astype(str)
+        .drop_duplicates()
+        .sort_values(["scenario", "engine", "dataset_bundle"])
+    )
+    offender_tokens = [
+        f"{row.scenario}/{row.engine}/{row.dataset_bundle}"
+        for row in offenders.itertuples(index=False)
+    ]
+    raise RuntimeError(
+        "T3 robustness inflation is not computable for one or more robustness scenarios: "
+        + ", ".join(offender_tokens)
+        + ". Ensure S2 includes the 100% selectivity anchor and S3/S3b runs have matched S1 baselines."
+    )

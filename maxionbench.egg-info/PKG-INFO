@@ -1,3 +1,30 @@
+Metadata-Version: 2.4
+Name: maxionbench
+Version: 0.1.0
+Summary: MaxionBench v0.1 benchmark harness for retrieval and RAG infrastructure
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.26
+Requires-Dist: pandas>=2.2
+Requires-Dist: pyarrow>=15.0
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: requests>=2.31
+Requires-Dist: h5py>=3.10
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: engines
+Requires-Dist: faiss-cpu>=1.8.0; extra == "engines"
+Requires-Dist: lancedb>=0.7.0; extra == "engines"
+Requires-Dist: opensearch-py>=2.6.0; extra == "engines"
+Requires-Dist: psycopg[binary]>=3.2.0; extra == "engines"
+Requires-Dist: pymilvus>=2.4.0; extra == "engines"
+Requires-Dist: weaviate-client>=4.6.0; extra == "engines"
+Provides-Extra: reporting
+Requires-Dist: matplotlib>=3.8; extra == "reporting"
+Dynamic: license-file
+
 MaxionBench is an open, reproducible benchmark suite for retrieval backends and RAG pipeline components used in agentic LLM systems.
 
 Implemented v0.1 harness components include:

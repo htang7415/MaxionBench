@@ -13,6 +13,7 @@ PINNED_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
 PINNED_RAG_CRAG_SOURCE = "facebookresearch/CRAG"
 PINNED_RAG_CRAG_PATH = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 PINNED_ANN_QUALITY_TARGETS = [0.80, 0.90, 0.95]
+D3_10M_MIN_VECTORS = 10_000_000
 D3_50M_MIN_VECTORS = 50_000_000
 
 
@@ -67,6 +68,19 @@ def _verify_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
         _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [1])
+        if int(cfg.num_vectors) < D3_10M_MIN_VECTORS:
+            errors.append(
+                {
+                    "file": str(path),
+                    "field": "num_vectors",
+                    "expected": f">= {D3_10M_MIN_VECTORS}",
+                    "actual": int(cfg.num_vectors),
+                    "message": (
+                        f"num_vectors drift in {path.name}: calibration must run at D3-10M+ scale, "
+                        f"expected >= {D3_10M_MIN_VECTORS}, got {int(cfg.num_vectors)}"
+                    ),
+                }
+            )
         return errors
 
     if scenario == "s1_ann_frontier":

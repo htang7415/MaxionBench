@@ -1,4 +1,6 @@
 dataset_bundle: D3
+source_version: v0.1
+source_checksum_sha256: a26a970787647a0b668db6c582092fccfd66e3956da8918eaa4c882284b7f02d
 approx_bytes_dataset: 32212254720
 approx_bytes_engine: 51539607552
 approx_bytes_temp: 12884901888

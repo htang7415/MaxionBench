@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from maxionbench.datasets.loaders.d2_bigann import load_d2_bigann, read_fvecs, read_ivecs
 
@@ -56,3 +58,31 @@ def test_load_d2_bigann_uses_provided_ground_truth(tmp_path: Path) -> None:
     assert ds.ids == ["doc-0000000", "doc-0000001", "doc-0000002"]
     assert ds.ground_truth_ids[0] == ["doc-0000000", "doc-0000001"]
     assert ds.ground_truth_ids[1] == ["doc-0000002", "doc-0000001"]
+
+
+def test_load_d2_bigann_enforces_expected_sha256(tmp_path: Path) -> None:
+    base = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
+    queries = np.array([[0.1, 0.0]], dtype=np.float32)
+    base_path = tmp_path / "base.fvecs"
+    query_path = tmp_path / "query.fvecs"
+    _write_fvecs(base_path, base)
+    _write_fvecs(query_path, queries)
+
+    base_sha = hashlib.sha256(base_path.read_bytes()).hexdigest()
+    query_sha = hashlib.sha256(query_path.read_bytes()).hexdigest()
+    ds = load_d2_bigann(
+        base_fvecs=base_path,
+        query_fvecs=query_path,
+        top_k=1,
+        base_expected_sha256=base_sha,
+        query_expected_sha256=query_sha,
+    )
+    assert ds.vectors.shape == (2, 2)
+
+    with pytest.raises(ValueError, match="sha256 mismatch"):
+        load_d2_bigann(
+            base_fvecs=base_path,
+            query_fvecs=query_path,
+            top_k=1,
+            base_expected_sha256=("0" * 64),
+        )

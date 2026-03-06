@@ -9,6 +9,8 @@ from typing import Iterable
 import h5py
 import numpy as np
 
+from maxionbench.datasets.cache_integrity import verify_file_sha256
+
 
 @dataclass(frozen=True)
 class D1AnnDataset:
@@ -25,9 +27,12 @@ def load_d1_ann_hdf5(
     max_vectors: int | None = None,
     max_queries: int | None = None,
     top_k: int = 10,
+    expected_sha256: str | None = None,
 ) -> D1AnnDataset:
     if not path.exists():
         raise FileNotFoundError(f"D1 HDF5 file not found: {path}")
+    if expected_sha256 is not None:
+        verify_file_sha256(path=path, expected_sha256=expected_sha256, label="D1 dataset_path")
     with h5py.File(path, "r") as handle:
         vectors = _read_first(handle, ["train", "vectors", "embeddings"])
         queries = _read_first(handle, ["test", "queries"])

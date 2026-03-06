@@ -245,6 +245,9 @@ def _table_t3_robustness(frame: pd.DataFrame) -> pd.DataFrame:
         "engine",
         "p99_ms_median",
         "p99_inflation_median",
+        "p99_inflation_valid_rows",
+        "p99_inflation_nan_rows",
+        "p99_inflation_status",
         "sla_violation_rate_mean",
         "errors_sum",
         "rows",
@@ -256,19 +259,25 @@ def _table_t3_robustness(frame: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
 
     working = frame.copy()
-    working["__selectivity"] = working.get("search_params_json", pd.Series(dtype=str)).map(_extract_selectivity)
+    working["__search_payload"] = working.get("search_params_json", pd.Series(dtype=str)).map(_extract_search_payload)
+    working["__selectivity"] = working["__search_payload"].map(_extract_selectivity_from_payload)
     working["__p99_inflation"] = working.apply(lambda row: _row_p99_inflation(row=row, frame=working), axis=1)
+    working["__p99_inflation_valid_flag"] = working["__p99_inflation"].notna().astype(int)
+    working["__p99_inflation_nan_flag"] = working["__p99_inflation"].isna().astype(int)
     grouped = (
         working.groupby(["scenario", "dataset_bundle", "engine"], dropna=False, sort=True)
         .agg(
             p99_ms_median=("p99_ms", "median"),
             p99_inflation_median=("__p99_inflation", "median"),
+            p99_inflation_valid_rows=("__p99_inflation_valid_flag", "sum"),
+            p99_inflation_nan_rows=("__p99_inflation_nan_flag", "sum"),
             sla_violation_rate_mean=("sla_violation_rate", "mean"),
             errors_sum=("errors", "sum"),
             rows=("run_id", "count"),
         )
         .reset_index()
     )
+    grouped["p99_inflation_status"] = grouped.apply(_inflation_status, axis=1)
     return grouped[columns]
 
 
@@ -328,12 +337,23 @@ def _table_t4_decision(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _extract_selectivity(search_params_json: Any) -> float | None:
+    payload = _extract_search_payload(search_params_json)
+    return _extract_selectivity_from_payload(payload)
+
+
+def _extract_search_payload(search_params_json: Any) -> dict[str, Any] | None:
     if not isinstance(search_params_json, str) or not search_params_json:
         return None
     try:
         payload = json.loads(search_params_json)
     except Exception:
         return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _extract_selectivity_from_payload(payload: Any) -> float | None:
     if not isinstance(payload, dict):
         return None
     value = payload.get("selectivity")
@@ -349,11 +369,16 @@ def _row_p99_inflation(*, row: pd.Series, frame: pd.DataFrame) -> float:
     scenario = str(row.get("scenario", ""))
     engine = str(row.get("engine", ""))
     dataset = str(row.get("dataset_bundle", ""))
+    dataset_hash = row.get("dataset_hash")
+    payload = row.get("__search_payload")
     p99 = float(row.get("p99_ms", 0.0))
     if p99 <= 0:
         return float("nan")
     baseline = None
     if scenario == "s2_filtered_ann":
+        recorded = _extract_float_from_payload(payload, "p99_inflation_vs_unfiltered")
+        if recorded is not None and recorded >= 0.0:
+            return recorded
         mask = (
             (frame["scenario"] == "s2_filtered_ann")
             & (frame["engine"] == engine)
@@ -363,6 +388,13 @@ def _row_p99_inflation(*, row: pd.Series, frame: pd.DataFrame) -> float:
         if mask.any():
             baseline = float(frame.loc[mask, "p99_ms"].median())
     elif scenario in {"s3_churn_smooth", "s3b_churn_bursty"}:
+        if isinstance(payload, dict):
+            missing = payload.get("s1_baseline_missing")
+            if isinstance(missing, bool) and missing:
+                return float("nan")
+            recorded = _extract_float_from_payload(payload, "p99_inflation_vs_s1_baseline")
+            if recorded is not None and recorded >= 0.0:
+                return recorded
         clients_read = int(row.get("clients_read", 0))
         mask = (
             (frame["scenario"] == "s1_ann_frontier")
@@ -370,11 +402,34 @@ def _row_p99_inflation(*, row: pd.Series, frame: pd.DataFrame) -> float:
             & (frame["dataset_bundle"] == dataset)
             & (frame.get("clients_read", pd.Series(dtype=int)) == clients_read)
         )
+        if "dataset_hash" in frame.columns and dataset_hash is not None:
+            mask = mask & (frame["dataset_hash"] == dataset_hash)
         if mask.any():
             baseline = float(frame.loc[mask, "p99_ms"].median())
     if baseline is None or baseline <= 0:
         return float("nan")
     return p99 / baseline
+
+
+def _extract_float_from_payload(payload: Any, key: str) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric
+
+
+def _inflation_status(row: pd.Series) -> str:
+    valid = int(row.get("p99_inflation_valid_rows", 0))
+    missing = int(row.get("p99_inflation_nan_rows", 0))
+    if valid <= 0 and missing > 0:
+        return "not_computable"
+    if valid > 0 and missing > 0:
+        return "computed_partial_rows"
+    return "computed_all_rows"
 
 
 def _engine_class(engine: str) -> str:

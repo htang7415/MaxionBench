@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 import yaml
 
 from maxionbench.metrics.cost_rhu import RHUReferences, RHUWeights
 from maxionbench.datasets.loaders.d4_text import DEFAULT_BEIR_SUBSETS
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -21,15 +24,20 @@ class RunConfig:
     dataset_bundle: str = "D1"
     dataset_hash: str = "synthetic-d1-v1"
     dataset_path: str | None = None
+    dataset_path_sha256: str | None = None
     d2_base_fvecs_path: str | None = None
+    d2_base_fvecs_sha256: str | None = None
     d2_query_fvecs_path: str | None = None
+    d2_query_fvecs_sha256: str | None = None
     d2_gt_ivecs_path: str | None = None
+    d2_gt_ivecs_sha256: str | None = None
     d4_use_real_data: bool = False
     d4_beir_root: str | None = None
     d4_beir_subsets: list[str] = field(default_factory=lambda: list(DEFAULT_BEIR_SUBSETS))
     d4_beir_split: str = "test"
     d4_crag_source: str = "facebookresearch/CRAG"
     d4_crag_path: str | None = None
+    d4_crag_sha256: str | None = None
     d4_include_crag: bool = True
     d4_max_docs: int = 200000
     d4_max_queries: int = 5000
@@ -88,6 +96,9 @@ class RunConfig:
     s3b_off_s: float = 90.0
     s3b_on_write_mult: float = 8.0
     s3b_off_write_mult: float = 0.25
+    allow_missing_s3_baseline: bool = False
+    allow_unverified_d3_params: bool = False
+    d3_min_calibration_vectors: int = 10_000_000
     rrf_k: int = 60
     s4_dense_candidates: int = 200
     s4_bm25_candidates: int = 200
@@ -179,6 +190,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("maintenance_interval_s must be positive")
     if cfg.s3_max_events < 1:
         raise ValueError("s3_max_events must be >= 1")
+    if cfg.d3_min_calibration_vectors < 1:
+        raise ValueError("d3_min_calibration_vectors must be >= 1")
     if cfg.rrf_k < 1:
         raise ValueError("rrf_k must be >= 1")
     if cfg.s4_dense_candidates < 1 or cfg.s4_bm25_candidates < 1:
@@ -201,3 +214,16 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("d4_use_real_data requires at least d4_beir_root or d4_crag_path")
     if cfg.d4_use_real_data and cfg.d4_beir_root and not cfg.d4_beir_subsets:
         raise ValueError("d4_beir_subsets must not be empty when d4_beir_root is set")
+    for key in [
+        "dataset_path_sha256",
+        "d2_base_fvecs_sha256",
+        "d2_query_fvecs_sha256",
+        "d2_gt_ivecs_sha256",
+        "d4_crag_sha256",
+    ]:
+        value = getattr(cfg, key)
+        if value is None:
+            continue
+        text = str(value).strip().lower()
+        if not _SHA256_RE.fullmatch(text):
+            raise ValueError(f"{key} must be a 64-character lowercase hex sha256 string when provided")

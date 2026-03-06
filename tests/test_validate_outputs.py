@@ -50,6 +50,80 @@ def _make_run(tmp_path: Path, *, name: str, seed: int, overrides: dict[str, obje
     return run_from_config(cfg_path, cli_overrides=None)
 
 
+def _make_pinned_s3_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 101) -> Path:
+    runs_root = tmp_path / "runs"
+    _make_run(
+        runs_root,
+        name="run-s1-d3-baseline-protocol",
+        seed=seed,
+        overrides={
+            "scenario": "s1_ann_frontier",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 0,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 16,
+        },
+    )
+    return _make_run(
+        runs_root,
+        name="run-s3-with-baseline-protocol",
+        seed=seed + 1,
+        overrides={
+            "scenario": "s3_churn_smooth",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 8,
+            "clients_grid": [32],
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "lambda_req_s": 1000.0,
+            "s3_read_rate": 800.0,
+            "s3_insert_rate": 100.0,
+            "s3_update_rate": 50.0,
+            "s3_delete_rate": 50.0,
+            "maintenance_interval_s": 60.0,
+            "sla_threshold_ms": 120.0,
+            "s3_max_events": 60,
+        },
+    )
+
+
+def _make_pinned_s2_run(tmp_path: Path, *, seed: int = 121) -> Path:
+    runs_root = tmp_path / "runs_s2"
+    return _make_run(
+        runs_root,
+        name="run-s2-protocol",
+        seed=seed,
+        overrides={
+            "scenario": "s2_filtered_ann",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 32,
+            "clients_write": 0,
+            "clients_grid": [32],
+            "s2_selectivities": [0.001, 0.01, 0.1, 0.5],
+            "repeats": 3,
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "sla_threshold_ms": 80.0,
+        },
+    )
+
+
 def test_validate_path_supports_parent_directory(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
     run1 = _make_run(runs_root, name="run-a", seed=17)
@@ -180,6 +254,18 @@ def test_validate_run_directory_rejects_missing_hardware_runtime_metadata(tmp_pa
         validate_run_directory(run_dir)
 
 
+def test_validate_run_directory_rejects_invalid_config_checksum_field(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-bad-config-checksum", seed=49)
+    config_path = run_dir / "config_resolved.yaml"
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["dataset_path_sha256"] = "not-a-sha"
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dataset_path_sha256"):
+        validate_run_directory(run_dir)
+
+
 def test_validate_path_legacy_ok_allows_schema_drift_with_warnings(tmp_path: Path) -> None:
     run_dir = _make_run(tmp_path, name="run-legacy-ok", seed=47)
     results_path = run_dir / "results.parquet"
@@ -291,6 +377,78 @@ def test_validate_run_directory_enforce_protocol_rejects_s1_quality_target_drift
         validate_run_directory(run_dir, enforce_protocol=True)
 
 
+def test_validate_run_directory_enforce_protocol_accepts_s2_robustness_payloads(tmp_path: Path) -> None:
+    s2_run = _make_pinned_s2_run(tmp_path, seed=127)
+    summary = validate_run_directory(s2_run, enforce_protocol=True)
+    assert summary["runtime_protocol_ok"] is True
+
+
+def test_validate_run_directory_enforce_protocol_rejects_missing_s2_robustness_key(tmp_path: Path) -> None:
+    s2_run = _make_pinned_s2_run(tmp_path, seed=131)
+    results_path = s2_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    payload = json.loads(str(frame.iloc[0]["search_params_json"]))
+    assert isinstance(payload, dict)
+    payload.pop("p99_inflation_vs_unfiltered", None)
+    frame.loc[0, "search_params_json"] = json.dumps(payload, sort_keys=True)
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="p99_inflation_vs_unfiltered"):
+        validate_run_directory(s2_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_s2_unfiltered_anchor_mismatch(tmp_path: Path) -> None:
+    s2_run = _make_pinned_s2_run(tmp_path, seed=137)
+    results_path = s2_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    updated: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        if abs(float(payload.get("selectivity", 0.0)) - 1.0) < 1e-9:
+            payload["p99_inflation_vs_unfiltered"] = 0.9
+        updated.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = updated
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="unfiltered anchor"):
+        validate_run_directory(s2_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_non_paper_d3_params_file(tmp_path: Path) -> None:
+    s2_run = _make_pinned_s2_run(tmp_path, seed=139)
+    d3_params_path = tmp_path / "d3_params_bad.yaml"
+    d3_params_payload = {
+        "k_clusters": 4096,
+        "num_tenants": 100,
+        "num_acl_buckets": 16,
+        "num_time_buckets": 52,
+        "beta_tenant": 0.95,
+        "beta_acl": 0.95,
+        "beta_time": 0.90,
+        "seed": 42,
+        "calibration_eval": {
+            "test_a_median_concentration": 0.547,
+            "test_b_cluster_spread": 42.775,
+            "p99_ratio_1pct_to_50pct": 1.19,
+            "recall_gap_50_minus_1": -0.79,
+            "trivial": True,
+        },
+        "calibration_vector_count": 10000,
+        "calibration_source": "synthetic_vectors",
+    }
+    d3_params_path.write_text(yaml.safe_dump(d3_params_payload, sort_keys=True), encoding="utf-8")
+
+    config_path = s2_run / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["d3_params"] = str(d3_params_path)
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not paper-ready"):
+        validate_run_directory(s2_run, enforce_protocol=True)
+
+
 def test_validate_run_directory_enforce_protocol_requires_gpu_tracks_omitted_flag(tmp_path: Path) -> None:
     run_dir = _make_run(
         tmp_path,
@@ -316,6 +474,103 @@ def test_validate_run_directory_enforce_protocol_requires_gpu_tracks_omitted_fla
         validate_run_directory(run_dir, enforce_protocol=True)
 
 
+def test_validate_run_directory_enforce_protocol_requires_pinned_rtt_baseline_request_profile(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-rtt-profile",
+        seed=76,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["rtt_baseline_request_profile"] = "healthcheck_only"
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="rtt_baseline_request_profile"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_requires_dataset_cache_provenance_for_config_checksum(
+    tmp_path: Path,
+) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-missing-cache-provenance",
+        seed=77,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    config_path = run_dir / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["dataset_path"] = "/tmp/synthetic_d1_dataset.hdf5"
+    config_payload["dataset_path_sha256"] = "a" * 64
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing provenance entry for dataset_path"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_accepts_dataset_cache_provenance_for_config_checksum(
+    tmp_path: Path,
+) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-with-cache-provenance",
+        seed=78,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "bounded",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    expected = "b" * 64
+    config_path = run_dir / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["dataset_path"] = "/tmp/synthetic_d1_dataset.hdf5"
+    config_payload["dataset_path_sha256"] = expected
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["dataset_cache_checksums"] = [
+        {
+            "path_key": "dataset_path",
+            "resolved_path": "/tmp/synthetic_d1_dataset.hdf5",
+            "source": "config key dataset_path_sha256",
+            "expected_sha256": expected,
+            "actual_sha256": expected,
+        }
+    ]
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    summary = validate_run_directory(run_dir, enforce_protocol=True)
+    assert summary["runtime_protocol_ok"] is True
+
+
 def test_validate_path_enforce_protocol_flags_missing_s3_s1_baseline(tmp_path: Path) -> None:
     s3_run = _make_run(
         tmp_path,
@@ -330,6 +585,7 @@ def test_validate_path_enforce_protocol_flags_missing_s3_s1_baseline(tmp_path: P
             "clients_grid": [32],
             "sla_threshold_ms": 120.0,
             "s3_max_events": 60,
+            "allow_missing_s3_baseline": True,
         },
     )
     summary = validate_path(s3_run, strict_schema=False, enforce_protocol=True)
@@ -372,3 +628,43 @@ def test_validate_path_enforce_protocol_accepts_s3_with_matching_s1_baseline(tmp
     summary = validate_path(runs_root, strict_schema=False, enforce_protocol=True)
     assert summary["cross_run_protocol_ok"] is True
     assert not any("missing matched S1 baseline" in warning for warning in summary["warnings"])
+
+
+def test_validate_run_directory_enforce_protocol_accepts_s3_baseline_provenance_payloads(tmp_path: Path) -> None:
+    s3_run = _make_pinned_s3_run_with_matched_s1_baseline(tmp_path, seed=107)
+    summary = validate_run_directory(s3_run, enforce_protocol=True)
+    assert summary["runtime_protocol_ok"] is True
+
+
+def test_validate_run_directory_enforce_protocol_rejects_missing_s3_baseline_provenance_keys(tmp_path: Path) -> None:
+    s3_run = _make_pinned_s3_run_with_matched_s1_baseline(tmp_path, seed=113)
+    results_path = s3_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    mutated_payloads: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        payload.pop("s1_baseline_p99_ms", None)
+        mutated_payloads.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = mutated_payloads
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="s1_baseline_p99_ms"):
+        validate_run_directory(s3_run, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_rejects_s3_burst_clock_anchor_drift(tmp_path: Path) -> None:
+    s3_run = _make_pinned_s3_run_with_matched_s1_baseline(tmp_path, seed=149)
+    results_path = s3_run / "results.parquet"
+    frame = pd.read_parquet(results_path)
+    mutated_payloads: list[str] = []
+    for raw in frame["search_params_json"].tolist():
+        payload = json.loads(str(raw))
+        assert isinstance(payload, dict)
+        payload["burst_clock_anchor"] = "arrival_index"
+        mutated_payloads.append(json.dumps(payload, sort_keys=True))
+    frame["search_params_json"] = mutated_payloads
+    frame.to_parquet(results_path, index=False)
+
+    with pytest.raises(ValueError, match="burst_clock_anchor"):
+        validate_run_directory(s3_run, enforce_protocol=True)

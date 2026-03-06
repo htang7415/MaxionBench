@@ -11,6 +11,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from maxionbench.datasets.cache_integrity import verify_file_sha256
+
 from .d4_synthetic import D4RetrievalDataset, compute_idf, tokenize_text
 
 
@@ -34,6 +36,7 @@ def load_d4_from_local_bundles(
     beir_subsets: Sequence[str] | None = None,
     beir_split: str = "test",
     crag_path: Path | None = None,
+    crag_expected_sha256: str | None = None,
     include_crag: bool = True,
     max_docs: int = 200_000,
     max_queries: int = 5_000,
@@ -60,6 +63,8 @@ def load_d4_from_local_bundles(
                 )
             )
     if include_crag and crag_path is not None and crag_path.exists():
+        if crag_expected_sha256 is not None:
+            verify_file_sha256(path=crag_path, expected_sha256=crag_expected_sha256, label="D4 d4_crag_path")
         bundles.append(
             _load_crag_bundle(
                 crag_path=crag_path.resolve(),

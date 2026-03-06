@@ -13,7 +13,7 @@ from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.paper_exports import generate_report_bundle
 
 
-def _make_run(tmp_path: Path) -> Path:
+def _make_run(tmp_path: Path, *, overrides: dict[str, object] | None = None) -> Path:
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
@@ -37,6 +37,8 @@ def _make_run(tmp_path: Path) -> Path:
         "num_queries": 10,
         "top_k": 10,
     }
+    if overrides:
+        cfg.update(overrides)
     cfg_path = tmp_path / "config.yaml"
     with cfg_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(cfg, handle, sort_keys=True)
@@ -98,6 +100,7 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert (out_dir / "T3_robustness_summary.csv").exists()
     assert (out_dir / "T4_decision_table.csv").exists()
     t1 = pd.read_csv(out_dir / "T1_environment_runtime_pinning.csv")
+    t3 = pd.read_csv(out_dir / "T3_robustness_summary.csv")
     assert set(
         [
             "ground_truth_source",
@@ -125,6 +128,10 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert str(t1.loc[0, "ground_truth_engine"]) == "numpy_exact"
     assert float(t1.loc[0, "resource_cpu_vcpu_median"]) >= 1.0
     assert float(t1.loc[0, "rhu_rate_median"]) > 0.0
+    assert set(["p99_inflation_valid_rows", "p99_inflation_nan_rows", "p99_inflation_status"]).issubset(t3.columns)
+    assert set(t3["p99_inflation_status"].dropna().astype(str).tolist()).issubset(
+        {"computed_all_rows", "computed_partial_rows", "not_computable"}
+    )
 
     summary_meta = json.loads((out_dir / "milestones_summary.meta.json").read_text(encoding="utf-8"))
     assert summary_meta["run_ids"]
@@ -315,4 +322,67 @@ def test_report_preflight_legacy_hardware_runtime_metadata_has_hint(tmp_path: Pa
                 "--out",
                 str(tmp_path / "cli_legacy_hardware_runtime"),
             ]
+        )
+
+
+def test_report_preflight_legacy_rtt_baseline_request_profile_has_hint(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path)
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata.pop("rtt_baseline_request_profile", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="RTT baseline request-profile"):
+        generate_report_bundle(input_dir=run_dir.parent, out_dir=tmp_path / "figures_legacy_rtt_profile", mode="milestones")
+
+    with pytest.raises(RuntimeError, match="RTT baseline request-profile"):
+        cli_main(
+            [
+                "report",
+                "--input",
+                str(run_dir.parent),
+                "--mode",
+                "milestones",
+                "--out",
+                str(tmp_path / "cli_legacy_rtt_profile"),
+            ]
+        )
+
+
+def test_report_bundle_rejects_not_computable_robustness_inflation(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        overrides={
+            "scenario": "s3_churn_smooth",
+            "dataset_bundle": "D3",
+            "dataset_hash": "synthetic-d3-v1",
+            "clients_read": 8,
+            "clients_write": 2,
+            "clients_grid": [8],
+            "sla_threshold_ms": 120.0,
+            "num_vectors": 500,
+            "num_queries": 30,
+            "lambda_req_s": 200.0,
+            "s3_read_rate": 160.0,
+            "s3_insert_rate": 20.0,
+            "s3_update_rate": 10.0,
+            "s3_delete_rate": 10.0,
+            "maintenance_interval_s": 15.0,
+            "s3_max_events": 120,
+            "d3_k_clusters": 48,
+            "d3_num_tenants": 20,
+            "d3_num_acl_buckets": 8,
+            "d3_num_time_buckets": 12,
+            "d3_beta_tenant": 0.75,
+            "d3_beta_acl": 0.7,
+            "d3_beta_time": 0.65,
+            "d3_seed": 9,
+            "allow_missing_s3_baseline": True,
+        },
+    )
+    with pytest.raises(RuntimeError, match="robustness inflation is not computable"):
+        generate_report_bundle(
+            input_dir=run_dir.parent,
+            out_dir=tmp_path / "figures_not_computable",
+            mode="milestones",
         )
