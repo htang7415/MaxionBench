@@ -53,6 +53,10 @@ def _assert_common_commands(text: str) -> None:
     assert "S2 (`s2_filtered_ann`) rows must include `search_params_json` keys:" in text
     assert "`p99_inflation_vs_unfiltered`" in text
     assert "S3/S3b rows must include `search_params_json` keys:" in text
+    assert "S5 (`s5_rerank`) rows must include `search_params_json.reranker` with:" in text
+    assert "`backend = hf_cross_encoder`" in text
+    assert "`uses_qrels_supervision = false`" in text
+    assert "`runtime_errors = 0`" in text
     assert "`p99_inflation_vs_s1_baseline`" in text
     assert "S3/S3b rows must set `burst_clock_anchor` to `measurement_start`." in text
     assert "`s1_baseline_error`" in text

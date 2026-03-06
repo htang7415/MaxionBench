@@ -10,6 +10,9 @@ def test_readme_mentions_protocol_payload_requirements() -> None:
     assert "S2 requires `search_params_json` keys `selectivity`, `filter`, `p99_inflation_vs_unfiltered`" in text
     assert "explicit 100% anchor row (`selectivity=1.0`) with inflation `1.0`" in text
     assert "S3/S3b require `search_params_json` keys `s1_baseline_p99_ms`" in text
+    assert "S5 requires `search_params_json.reranker.backend=\"hf_cross_encoder\"`" in text
+    assert "`uses_qrels_supervision=false`" in text
+    assert "`runtime_errors=0`" in text
     assert "`p99_inflation_vs_s1_baseline`" in text
     assert "`burst_clock_anchor`" in text
     assert "`burst_clock_anchor=\"measurement_start\"`" in text
