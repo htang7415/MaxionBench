@@ -113,6 +113,8 @@ REQUIRED_S5_RERANKER_INFO_KEYS = (
     "batch_size",
     "truncation",
     "backend",
+    "device",
+    "local_files_only",
     "uses_qrels_supervision",
     "runtime_errors",
 )
@@ -1426,6 +1428,33 @@ def _validate_s5_reranker_payloads(
             )
             ok = False
 
+        device = str(reranker.get("device", ""))
+        if device != "cuda":
+            _raise_or_warn(
+                f"{row_label} reranker.device must be 'cuda' for enforce-protocol runs",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        local_files_only = reranker.get("local_files_only")
+        if local_files_only is not True:
+            _raise_or_warn(
+                f"{row_label} reranker.local_files_only must be true for enforce-protocol runs",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
+        fallback_reason = reranker.get("fallback_reason")
+        if fallback_reason not in {None, ""}:
+            _raise_or_warn(
+                f"{row_label} reranker.fallback_reason must be empty/null for enforce-protocol runs",
+                strict_schema=strict_schema,
+                warnings=warnings,
+            )
+            ok = False
+
         uses_qrels_supervision = reranker.get("uses_qrels_supervision")
         if uses_qrels_supervision is not False:
             _raise_or_warn(
@@ -1600,6 +1629,7 @@ def _validate_scenario_protocol_pins(
             ("s5_reranker_precision", PINNED_S5_PRECISION),
             ("s5_reranker_batch_size", PINNED_S5_BATCH_SIZE),
             ("s5_reranker_truncation", PINNED_S5_TRUNCATION),
+            ("s5_require_hf_backend", True),
             ("sla_threshold_ms", 300.0),
         ]
     elif scenario == "s6_fusion":

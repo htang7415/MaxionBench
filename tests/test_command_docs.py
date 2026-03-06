@@ -6,6 +6,10 @@ from pathlib import Path
 
 def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-pins --config-dir configs/scenarios --json" in text
+    assert (
+        "MAXIONBENCH_ENABLE_HF_RERANKER=1 maxionbench run --config configs/scenarios/s5_rerank.yaml "
+        "--seed 42 --repeats 3 --no-retry"
+    ) in text
     assert "maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json" in text
     assert "maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json" in text
     assert "maxionbench verify-slurm-plan --json" in text
@@ -55,8 +59,11 @@ def _assert_common_commands(text: str) -> None:
     assert "S3/S3b rows must include `search_params_json` keys:" in text
     assert "S5 (`s5_rerank`) rows must include `search_params_json.reranker` with:" in text
     assert "`backend = hf_cross_encoder`" in text
+    assert "`device = cuda`" in text
+    assert "`local_files_only = true`" in text
     assert "`uses_qrels_supervision = false`" in text
     assert "`runtime_errors = 0`" in text
+    assert "`fallback_reason` empty/null" in text
     assert "`p99_inflation_vs_s1_baseline`" in text
     assert "S3/S3b rows must set `burst_clock_anchor` to `measurement_start`." in text
     assert "`s1_baseline_error`" in text

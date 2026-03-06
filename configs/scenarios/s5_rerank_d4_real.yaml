@@ -26,6 +26,7 @@ s5_reranker_max_seq_len: 512
 s5_reranker_precision: fp16
 s5_reranker_batch_size: 32
 s5_reranker_truncation: right
+s5_require_hf_backend: true
 d4_use_real_data: true
 d4_beir_root: data/beir
 d4_beir_subsets:

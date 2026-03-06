@@ -566,6 +566,7 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str) -> list[ResultRow]:
                 reranker_precision=cfg.s5_reranker_precision,
                 reranker_batch_size=cfg.s5_reranker_batch_size,
                 reranker_truncation=cfg.s5_reranker_truncation,
+                require_hf_backend=cfg.s5_require_hf_backend,
                 search_params=cfg.search_sweep[0] if cfg.search_sweep else None,
             ),
             rng=np.random.default_rng(cfg.seed + repeat_idx),

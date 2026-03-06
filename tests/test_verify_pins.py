@@ -32,6 +32,22 @@ def test_verify_pins_detects_drift_in_temp_config_dir(tmp_path: Path) -> None:
     assert any("s5_reranker_revision_tag" in msg for msg in messages)
 
 
+def test_verify_pins_detects_s5_require_hf_backend_drift(tmp_path: Path) -> None:
+    src = Path("configs/scenarios/s5_rerank.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["s5_require_hf_backend"] = False
+
+    out = tmp_path / "s5_rerank.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path)
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("s5_require_hf_backend" in msg for msg in messages)
+
+
 def test_verify_pins_cli_reports_failure_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     src = Path("configs/scenarios/s4_hybrid.yaml")
     payload = yaml.safe_load(src.read_text(encoding="utf-8"))

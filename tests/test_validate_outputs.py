@@ -144,6 +144,8 @@ def _make_pinned_s5_run(tmp_path: Path, *, seed: int = 151) -> Path:
             "s5_reranker_precision": "fp16",
             "s5_reranker_batch_size": 32,
             "s5_reranker_truncation": "right",
+            # Keep generation runnable in local tests; protocol checks can mutate this to true.
+            "s5_require_hf_backend": False,
             "repeats": 3,
             "warmup_s": 120,
             "steady_state_s": 300,
@@ -447,12 +449,22 @@ def test_validate_run_directory_enforce_protocol_rejects_s2_unfiltered_anchor_mi
 
 def test_validate_run_directory_enforce_protocol_rejects_s5_non_hf_backend(tmp_path: Path) -> None:
     s5_run = _make_pinned_s5_run(tmp_path, seed=157)
+    config_path = s5_run / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["s5_require_hf_backend"] = True
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
     with pytest.raises(ValueError, match="reranker.backend"):
         validate_run_directory(s5_run, enforce_protocol=True)
 
 
 def test_validate_run_directory_enforce_protocol_accepts_s5_hf_backend_payloads(tmp_path: Path) -> None:
     s5_run = _make_pinned_s5_run(tmp_path, seed=163)
+    config_path = s5_run / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["s5_require_hf_backend"] = True
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
     results_path = s5_run / "results.parquet"
     frame = pd.read_parquet(results_path)
     updated: list[str] = []
@@ -462,6 +474,8 @@ def test_validate_run_directory_enforce_protocol_accepts_s5_hf_backend_payloads(
         reranker = payload.get("reranker")
         assert isinstance(reranker, dict)
         reranker["backend"] = "hf_cross_encoder"
+        reranker["device"] = "cuda"
+        reranker["local_files_only"] = True
         reranker["runtime_errors"] = 0
         reranker["fallback_reason"] = None
         updated.append(json.dumps(payload, sort_keys=True))

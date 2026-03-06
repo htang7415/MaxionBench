@@ -42,6 +42,7 @@ class S5Config:
     reranker_precision: str = "fp16"
     reranker_batch_size: int = 32
     reranker_truncation: str = "right"
+    require_hf_backend: bool = False
     search_params: Mapping[str, Any] | None = None
 
 
@@ -82,6 +83,14 @@ def run(
     *,
     dataset: D4SyntheticDataset | None = None,
 ) -> list[S5BudgetResult]:
+    reranker = _build_reranker_runtime(cfg)
+    if cfg.require_hf_backend and reranker.backend != "hf_cross_encoder":
+        reason = reranker.fallback_reason or "unknown fallback reason"
+        raise RuntimeError(
+            "S5 requires hf_cross_encoder backend, "
+            f"but resolved {reranker.backend!r} ({reason})"
+        )
+
     data = dataset or generate_d4_synthetic_dataset(
         num_docs=cfg.num_vectors,
         num_queries=cfg.num_queries,
@@ -96,7 +105,6 @@ def run(
     budgets = sorted({budget for budget in cfg.candidate_budgets if budget > 0})
     if not budgets:
         raise ValueError("candidate_budgets must include at least one positive value")
-    reranker = _build_reranker_runtime(cfg)
 
     results: list[S5BudgetResult] = []
     for budget in budgets:

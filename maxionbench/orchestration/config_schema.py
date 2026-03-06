@@ -109,6 +109,7 @@ class RunConfig:
     s5_reranker_precision: str = "fp16"
     s5_reranker_batch_size: int = 32
     s5_reranker_truncation: str = "right"
+    s5_require_hf_backend: bool = False
     s6_dense_a_candidates: int = 200
     s6_dense_b_candidates: int = 200
     s6_bm25_candidates: int = 200
@@ -206,6 +207,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("s5_reranker_batch_size must be >= 1")
     if cfg.s5_reranker_truncation not in {"left", "right"}:
         raise ValueError("s5_reranker_truncation must be left or right")
+    if not isinstance(cfg.s5_require_hf_backend, bool):
+        raise ValueError("s5_require_hf_backend must be a boolean")
     if cfg.s6_dense_a_candidates < 1 or cfg.s6_dense_b_candidates < 1 or cfg.s6_bm25_candidates < 1:
         raise ValueError("s6 candidate budgets must be >= 1")
     if cfg.d4_max_docs < 1 or cfg.d4_max_queries < 1:
