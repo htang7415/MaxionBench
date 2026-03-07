@@ -26,6 +26,7 @@ class CalibrateD3Config:
     output_params_path: str
     initial_params: D3Params
     dataset_path: str | None = None
+    require_real_data: bool = False
     calibration_source: str = "synthetic_vectors"
     calibration_dataset_hash: str = "synthetic-d3-calibration"
 
@@ -64,6 +65,11 @@ def run(cfg: CalibrateD3Config) -> CalibrationResult:
 
 def _load_vectors_for_calibration(cfg: CalibrateD3Config) -> tuple[np.ndarray, str]:
     if not cfg.dataset_path:
+        if cfg.require_real_data:
+            raise ValueError(
+                "paper-grade calibrate_d3 requires a real D3 dataset_path. "
+                "Provide a concrete dataset_path or set MAXIONBENCH_D3_DATASET_PATH for configs/scenarios_paper/calibrate_d3.yaml."
+            )
         return (
             generate_synthetic_vectors(num_vectors=cfg.num_vectors, dim=cfg.vector_dim, seed=cfg.seed),
             str(cfg.calibration_source),

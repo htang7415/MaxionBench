@@ -90,6 +90,11 @@ def run(
             "S5 requires hf_cross_encoder backend, "
             f"but resolved {reranker.backend!r} ({reason})"
         )
+    if cfg.require_hf_backend and reranker.device != "cuda":
+        raise RuntimeError(
+            "S5 requires CUDA-backed hf_cross_encoder runtime, "
+            f"but resolved device={reranker.device!r}"
+        )
 
     data = dataset or generate_d4_synthetic_dataset(
         num_docs=cfg.num_vectors,

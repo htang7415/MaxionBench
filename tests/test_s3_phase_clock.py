@@ -6,6 +6,7 @@ import pytest
 from maxionbench.adapters.mock import MockAdapter
 from maxionbench.datasets.d3_generator import D3Params
 from maxionbench.scenarios.s3_churn_smooth import S3Config, run as run_s3
+from maxionbench.scenarios.s3b_churn_bursty import S3bConfig, _mean_write_multiplier_normalizer
 
 
 class _CountingAdapter(MockAdapter):
@@ -108,3 +109,35 @@ def test_s3_phase_clock_advances_for_read_events_and_triggers_maintenance() -> N
     # strict mode => measure events = int(lambda * steady_state) = 20, dt = 0.05
     # maintenance fires at sim_t in {0.1, 0.2, ..., 0.9} => 9 times
     assert adapter.optimize_calls == 9
+
+
+def test_s3b_write_multiplier_normalizer_preserves_mean_baseline() -> None:
+    cfg = S3bConfig(
+        base=S3Config(
+            vector_dim=8,
+            num_vectors=200,
+            num_queries=10,
+            top_k=10,
+            sla_threshold_ms=120.0,
+            warmup_s=0.0,
+            steady_state_s=1.0,
+            lambda_req_s=1000.0,
+            read_rate=800.0,
+            insert_rate=100.0,
+            update_rate=50.0,
+            delete_rate=50.0,
+            maintenance_interval_s=60.0,
+            phase_timing_mode="strict",
+            max_events=1000,
+        ),
+        on_s=30.0,
+        off_s=90.0,
+        on_write_mult=8.0,
+        off_write_mult=0.25,
+    )
+    normalizer = _mean_write_multiplier_normalizer(cfg)
+    assert normalizer == pytest.approx(2.1875)
+    weighted_mean = ((cfg.on_s * (cfg.on_write_mult / normalizer)) + (cfg.off_s * (cfg.off_write_mult / normalizer))) / (
+        cfg.on_s + cfg.off_s
+    )
+    assert weighted_mean == pytest.approx(1.0)

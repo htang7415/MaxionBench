@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 
 from maxionbench.adapters.mock import MockAdapter
 from maxionbench.scenarios import s5_rerank as s5_mod
@@ -149,5 +150,48 @@ def test_s5_require_hf_backend_fails_fast_on_proxy_runtime() -> None:
             assert adapter.bulk_upsert_calls == 0
         else:
             raise AssertionError("expected RuntimeError when require_hf_backend is true and backend is heuristic")
+    finally:
+        s5_mod._build_reranker_runtime = original_builder
+
+
+def test_s5_require_hf_backend_fails_fast_on_cpu_device() -> None:
+    runtime = s5_mod._RerankerRuntime(
+        backend="hf_cross_encoder",
+        score_pairs=lambda _query, docs: [float(idx) for idx, _ in enumerate(docs)],
+        uses_qrels_supervision=False,
+        fallback_reason=None,
+        device="cpu",
+        local_files_only=True,
+    )
+    adapter = _CountingMockAdapter()
+    adapter.create(collection="s5-test", dimension=16, metric="ip")
+    cfg = _base_cfg()
+    cfg = s5_mod.S5Config(
+        vector_dim=cfg.vector_dim,
+        num_vectors=cfg.num_vectors,
+        num_queries=cfg.num_queries,
+        top_k=cfg.top_k,
+        clients_read=cfg.clients_read,
+        sla_threshold_ms=cfg.sla_threshold_ms,
+        candidate_budgets=list(cfg.candidate_budgets),
+        warmup_s=cfg.warmup_s,
+        steady_state_s=cfg.steady_state_s,
+        phase_timing_mode=cfg.phase_timing_mode,
+        phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+        reranker_model_id=cfg.reranker_model_id,
+        reranker_revision_tag=cfg.reranker_revision_tag,
+        reranker_max_seq_len=cfg.reranker_max_seq_len,
+        reranker_precision=cfg.reranker_precision,
+        reranker_batch_size=cfg.reranker_batch_size,
+        reranker_truncation=cfg.reranker_truncation,
+        require_hf_backend=True,
+        search_params=cfg.search_params,
+    )
+    original_builder = s5_mod._build_reranker_runtime
+    try:
+        s5_mod._build_reranker_runtime = lambda _cfg: runtime
+        with pytest.raises(RuntimeError, match="requires CUDA-backed hf_cross_encoder runtime"):
+            s5_mod.run(adapter=adapter, cfg=cfg, rng=np.random.default_rng(19))
+        assert adapter.bulk_upsert_calls == 0
     finally:
         s5_mod._build_reranker_runtime = original_builder

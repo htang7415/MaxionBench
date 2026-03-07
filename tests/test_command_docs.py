@@ -13,10 +13,13 @@ def _assert_common_commands(text: str) -> None:
     assert "maxionbench verify-conformance-configs --config-dir configs/conformance --allow-gpu-unavailable --json" in text
     assert (
         "MAXIONBENCH_ENABLE_HF_RERANKER=1 maxionbench run --config configs/scenarios/s5_rerank.yaml "
-        "--seed 42 --repeats 3 --no-retry"
+        "--seed 42 --repeats 3 --no-retry --enforce-readiness"
     ) in text
     assert "maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json" in text
     assert "maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json" in text
+    assert "MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy \\" in text
+    assert "MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex> \\" in text
+    assert "keep it separate so reported S2 runs remain benchmark results rather than tuning runs" in text
     assert "maxionbench verify-slurm-plan --json" in text
     assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
     assert "maxionbench submit-slurm-plan --dry-run --json" in text
@@ -24,6 +27,8 @@ def _assert_common_commands(text: str) -> None:
     assert "maxionbench submit-slurm-plan --skip-s6 --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
+    assert "robustness-accounting support baseline, not a headline S1 D1/D2 result" in text
+    assert "`--skip-gpu` omits the GPU array entirely (`s5_rerank`, Track B, and Track C GPU jobs)." in text
     assert "calibrate_d3 also uses the override when configs/scenarios_paper/calibrate_d3.yaml exists" in text
     assert "unless MAXIONBENCH_CALIBRATE_CONFIG is explicitly set" in text
     assert "CPU_D3_BASELINE_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=1" in text

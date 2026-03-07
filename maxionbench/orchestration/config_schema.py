@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import os
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -13,6 +14,7 @@ from maxionbench.metrics.cost_rhu import RHUReferences, RHUWeights
 from maxionbench.datasets.loaders.d4_text import DEFAULT_BEIR_SUBSETS
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ENV_TOKEN_RE = re.compile(r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$")
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,7 @@ class RunConfig:
     d3_beta_acl: float = 0.70
     d3_beta_time: float = 0.65
     d3_seed: int = 42
+    calibration_require_real_data: bool = False
     s2_selectivities: list[float] = field(default_factory=lambda: [0.001, 0.01, 0.1, 0.5])
     lambda_req_s: float = 1000.0
     s3_read_rate: float = 800.0
@@ -136,7 +139,7 @@ def load_run_config(path: Path, overrides: Mapping[str, Any] | None = None) -> R
         payload = yaml.safe_load(handle) or {}
     if not isinstance(payload, dict):
         raise ValueError("Config root must be a mapping")
-    merged = dict(payload)
+    merged = _expand_env_placeholders(payload)
     if overrides:
         merged.update({k: v for k, v in overrides.items() if v is not None})
     cfg = RunConfig(**merged)
@@ -193,6 +196,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("s3_max_events must be >= 1")
     if cfg.d3_min_calibration_vectors < 1:
         raise ValueError("d3_min_calibration_vectors must be >= 1")
+    if not isinstance(cfg.calibration_require_real_data, bool):
+        raise ValueError("calibration_require_real_data must be a boolean")
     if cfg.rrf_k < 1:
         raise ValueError("rrf_k must be >= 1")
     if cfg.s4_dense_candidates < 1 or cfg.s4_bm25_candidates < 1:
@@ -230,3 +235,22 @@ def _validate(cfg: RunConfig) -> None:
         text = str(value).strip().lower()
         if not _SHA256_RE.fullmatch(text):
             raise ValueError(f"{key} must be a 64-character lowercase hex sha256 string when provided")
+
+
+def _expand_env_placeholders(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _expand_env_placeholders(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_env_placeholders(item) for item in value]
+    if not isinstance(value, str):
+        return value
+
+    token = value.strip()
+    match = _ENV_TOKEN_RE.fullmatch(token)
+    if match is not None:
+        env_name = match.group("braced") or match.group("plain") or ""
+        env_value = os.environ.get(env_name)
+        if env_value in {None, ""}:
+            return None
+        return env_value
+    return os.path.expandvars(value)

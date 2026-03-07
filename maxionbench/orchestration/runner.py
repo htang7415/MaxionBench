@@ -225,7 +225,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     observed_gpu_count = float(hardware_runtime.get("gpu_count", 0.0) or 0.0)
     gpu_tracks_omitted = configured_gpu_omission and observed_gpu_count <= 0.0
     gpu_tracks_omission_reason = (
-        "GPU Track B/C omitted because allow_gpu_unavailable=true and observed gpu_count=0"
+        "GPU-dependent workloads (Track B, Track C, S5) omitted because allow_gpu_unavailable=true and observed gpu_count=0"
         if gpu_tracks_omitted
         else None
     )
@@ -291,6 +291,7 @@ def _run_calibrate_rows(
         output_params_path=cfg.output_d3_params_path,
         initial_params=params,
         dataset_path=str(resolved_dataset_path) if resolved_dataset_path is not None else None,
+        require_real_data=bool(cfg.calibration_require_real_data),
         calibration_source="dataset_path" if cfg.dataset_path else "synthetic_vectors",
         calibration_dataset_hash=cfg.dataset_hash,
     )
@@ -1192,7 +1193,17 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
                     "Re-run `calibrate_d3` on real D3 (LAION subset) scale and provide the regenerated params. "
                     f"Detected issues: {joined}"
                 )
-        return params_from_mapping(payload, seed=cfg.d3_seed)
+        calibrated = params_from_mapping(payload, seed=cfg.d3_seed)
+        return D3Params(
+            k_clusters=cfg.d3_k_clusters,
+            num_tenants=cfg.d3_num_tenants,
+            num_acl_buckets=cfg.d3_num_acl_buckets,
+            num_time_buckets=cfg.d3_num_time_buckets,
+            beta_tenant=calibrated.beta_tenant,
+            beta_acl=calibrated.beta_acl,
+            beta_time=calibrated.beta_time,
+            seed=calibrated.seed,
+        )
     return D3Params(
         k_clusters=cfg.d3_k_clusters,
         num_tenants=cfg.d3_num_tenants,

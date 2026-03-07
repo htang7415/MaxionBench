@@ -30,12 +30,13 @@ def run(
     vectors: np.ndarray | None = None,
 ) -> S3Result:
     cycle = cfg.on_s + cfg.off_s
+    normalizer = _mean_write_multiplier_normalizer(cfg)
 
     def burst_multiplier(sim_t: float) -> float:
         phase = sim_t % cycle
         if phase < cfg.on_s:
-            return cfg.on_write_mult
-        return cfg.off_write_mult
+            return cfg.on_write_mult / normalizer
+        return cfg.off_write_mult / normalizer
 
     result = run_s3(
         adapter=adapter,
@@ -52,6 +53,10 @@ def run(
     info_payload["burst_cycle_s"] = float(cycle)
     info_payload["burst_on_write_mult"] = float(cfg.on_write_mult)
     info_payload["burst_off_write_mult"] = float(cfg.off_write_mult)
+    info_payload["burst_write_multiplier_normalizer"] = float(normalizer)
+    info_payload["burst_effective_on_write_mult"] = float(cfg.on_write_mult / normalizer)
+    info_payload["burst_effective_off_write_mult"] = float(cfg.off_write_mult / normalizer)
+    info_payload["burst_effective_mean_write_mult"] = 1.0
     return S3Result(
         p50_ms=result.p50_ms,
         p95_ms=result.p95_ms,
@@ -78,3 +83,11 @@ def _parse_info_payload(payload_json: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {"raw_info_json": payload}
     return dict(payload)
+
+
+def _mean_write_multiplier_normalizer(cfg: S3bConfig) -> float:
+    cycle = float(cfg.on_s + cfg.off_s)
+    if cycle <= 0.0:
+        return 1.0
+    weighted_mean = ((float(cfg.on_s) * float(cfg.on_write_mult)) + (float(cfg.off_s) * float(cfg.off_write_mult))) / cycle
+    return weighted_mean if weighted_mean > 0.0 else 1.0
