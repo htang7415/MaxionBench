@@ -8,9 +8,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from maxionbench.orchestration.runner import run_from_config
+from maxionbench.orchestration.runner import _gpu_count_for_cfg, _resolve_d3_params, run_from_config
 from maxionbench.orchestration.config_schema import RunConfig
-from maxionbench.orchestration.runner import _gpu_count_for_cfg
 from maxionbench.tools.validate_outputs import validate_run_directory
 
 
@@ -218,6 +217,47 @@ def test_gpu_count_resolution() -> None:
 
     explicit_cfg = RunConfig(engine="mock", adapter_options={"gpu_count": 2}, no_retry=True)
     assert _gpu_count_for_cfg(explicit_cfg) == 2.0
+
+
+def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(tmp_path: Path) -> None:
+    d3_params_path = tmp_path / "d3_params.yaml"
+    payload = {
+        "k_clusters": 4096,
+        "num_tenants": 100,
+        "num_acl_buckets": 16,
+        "num_time_buckets": 52,
+        "beta_tenant": 0.91,
+        "beta_acl": 0.83,
+        "beta_time": 0.79,
+        "seed": 123,
+        "calibration_eval": {
+            "test_a_median_concentration": 0.61,
+            "test_b_cluster_spread": 20.0,
+            "p99_ratio_1pct_to_50pct": 2.3,
+            "recall_gap_50_minus_1": 0.08,
+            "trivial": False,
+        },
+        "calibration_vector_count": 10_000_000,
+        "calibration_source": "real_dataset_path",
+    }
+    d3_params_path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    cfg = RunConfig(
+        engine="mock",
+        scenario="s2_filtered_ann",
+        dataset_bundle="D3",
+        dataset_hash="synthetic-d3-50m",
+        num_vectors=50_000_000,
+        d3_k_clusters=8192,
+        allow_unverified_d3_params=True,
+        no_retry=True,
+    )
+    resolved = _resolve_d3_params(cfg, str(d3_params_path))
+    assert resolved.k_clusters == 8192
+    assert resolved.beta_tenant == pytest.approx(0.91)
+    assert resolved.beta_acl == pytest.approx(0.83)
+    assert resolved.beta_time == pytest.approx(0.79)
+    assert resolved.seed == 123
 
 
 def test_runner_enforce_readiness_allows_mock_without_matrix(tmp_path: Path) -> None:

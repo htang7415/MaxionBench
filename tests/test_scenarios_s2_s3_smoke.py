@@ -150,6 +150,94 @@ def test_calibrate_d3_supports_relative_dataset_path(tmp_path: Path) -> None:
     assert int(payload["calibration_vector_count"]) == 120
 
 
+def test_calibrate_d3_supports_env_placeholder_dataset_path(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    vectors_path = tmp_path / "vectors_env.npy"
+    vectors = np.random.default_rng(23).standard_normal((140, 16), dtype=np.float32)
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-12
+    np.save(vectors_path, vectors)
+    monkeypatch.setenv("MAXIONBENCH_D3_DATASET_PATH", str(vectors_path))
+
+    out_params = tmp_path / "d3_params_real_env.yaml"
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "calibrate_d3",
+        "dataset_bundle": "D3",
+        "dataset_hash": "synthetic-d3-real-env-path",
+        "dataset_path": "${MAXIONBENCH_D3_DATASET_PATH}",
+        "calibration_require_real_data": True,
+        "seed": 23,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "calib-run-real-env"),
+        "output_d3_params_path": str(out_params),
+        "quality_target": 0.8,
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{}],
+        "rpc_baseline_requests": 10,
+        "sla_threshold_ms": 80.0,
+        "vector_dim": 16,
+        "num_vectors": 120,
+        "num_queries": 40,
+        "top_k": 10,
+        "d3_k_clusters": 64,
+        "d3_num_tenants": 20,
+        "d3_num_acl_buckets": 8,
+        "d3_num_time_buckets": 12,
+        "d3_beta_tenant": 0.75,
+        "d3_beta_acl": 0.7,
+        "d3_beta_time": 0.65,
+        "d3_seed": 23,
+    }
+    _run_cfg(tmp_path, cfg)
+    payload = yaml.safe_load(out_params.read_text(encoding="utf-8"))
+    assert payload["calibration_source"] == "real_dataset_path"
+    assert int(payload["calibration_vector_count"]) == 120
+
+
+def test_calibrate_d3_requires_real_dataset_when_flag_enabled(tmp_path: Path) -> None:
+    out_params = tmp_path / "d3_params_missing_real.yaml"
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "calibrate_d3",
+        "dataset_bundle": "D3",
+        "dataset_hash": "synthetic-d3-missing-real-path",
+        "calibration_require_real_data": True,
+        "seed": 29,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "calib-run-missing-real"),
+        "output_d3_params_path": str(out_params),
+        "quality_target": 0.8,
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{}],
+        "rpc_baseline_requests": 10,
+        "sla_threshold_ms": 80.0,
+        "vector_dim": 16,
+        "num_vectors": 120,
+        "num_queries": 40,
+        "top_k": 10,
+        "d3_k_clusters": 64,
+        "d3_num_tenants": 20,
+        "d3_num_acl_buckets": 8,
+        "d3_num_time_buckets": 12,
+        "d3_beta_tenant": 0.75,
+        "d3_beta_acl": 0.7,
+        "d3_beta_time": 0.65,
+        "d3_seed": 29,
+    }
+    with pytest.raises(ValueError, match="requires a real D3 dataset_path"):
+        _run_cfg(tmp_path, cfg)
+
+
 def test_s2_filtered_ann_scenario_smoke(tmp_path: Path) -> None:
     cfg = {
         "engine": "mock",
@@ -455,6 +543,8 @@ def test_s3_and_s3b_smoke(tmp_path: Path) -> None:
     assert float(s3b_payload["burst_cycle_s"]) == 30.0
     assert float(s3b_payload["burst_on_write_mult"]) == 8.0
     assert float(s3b_payload["burst_off_write_mult"]) == 0.25
+    assert float(s3b_payload["burst_write_multiplier_normalizer"]) == pytest.approx(85.0 / 30.0)
+    assert float(s3b_payload["burst_effective_mean_write_mult"]) == pytest.approx(1.0)
 
 
 def test_s3_rejects_dataset_path_with_too_few_vectors(tmp_path: Path) -> None:

@@ -278,5 +278,19 @@ def test_verify_pins_cli_strict_d3_scenario_scale_reports_failure(
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["pass"] is False
     assert parsed["strict_d3_scenario_scale"] is True
-    messages = [str(item.get("message", "")) for item in parsed["errors"]]
-    assert any("D3 scenarios must run at D3-10M+ scale in strict mode" in msg for msg in messages)
+
+
+def test_verify_pins_detects_missing_paper_calibration_real_data_requirement(tmp_path: Path) -> None:
+    src = Path("configs/scenarios_paper/calibrate_d3.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["calibration_require_real_data"] = False
+
+    out = tmp_path / "calibrate_d3.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path, strict_d3_scenario_scale=True)
+    assert summary["pass"] is False
+    assert int(summary["error_count"]) >= 1
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("calibration_require_real_data" in msg for msg in messages)

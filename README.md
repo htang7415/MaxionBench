@@ -18,7 +18,7 @@ Implemented v0.1 harness components include:
 - engine readiness gate from conformance matrix + behavior cards (`maxionbench verify-engine-readiness`)
 - pre-run benchmark gate to block real-engine runs when readiness fails (`maxionbench pre-run-gate`)
 - promotion gate from strict readiness summary artifacts (`maxionbench verify-promotion-gate`)
-- S5 reranker runtime supports `hf_cross_encoder` when `MAXIONBENCH_ENABLE_HF_RERANKER=1` and local model/runtime deps are available, with explicit `heuristic_proxy` fallback provenance in `search_params_json` (pinned S5 configs set `s5_require_hf_backend: true` to fail fast if fallback occurs)
+- S5 reranker runtime supports `hf_cross_encoder` when `MAXIONBENCH_ENABLE_HF_RERANKER=1` and local model/runtime deps are available, with explicit `heuristic_proxy` fallback provenance in `search_params_json` (pinned S5 configs set `s5_require_hf_backend: true` to fail fast if fallback occurs, and now also require `device="cuda"`)
 
 Artifact preflight before report generation:
 1. Validate artifacts: `maxionbench validate --input artifacts/runs --strict-schema --json`
@@ -32,6 +32,7 @@ Artifact preflight before report generation:
      - run metadata must include `dataset_cache_checksums` provenance entries (`path_key`, `resolved_path`, `source`, `expected_sha256`, `actual_sha256`) when dataset checksum pins are provided
 2. Verify D3 calibration params before D3 robustness runs: `maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json`
    - paper-ready calibration requires non-trivial eval metrics and calibration on real large-scale vectors (default minimum `10,000,000`)
+   - `configs/scenarios_paper/calibrate_d3.yaml` resolves `dataset_path` from `MAXIONBENCH_D3_DATASET_PATH` and optionally `dataset_path_sha256` from `MAXIONBENCH_D3_DATASET_SHA256`; paper-grade calibration fails fast if that real dataset path is missing
 3. If validation reports missing stage timing columns, backfill legacy runs:
    - dry run: `maxionbench migrate-stage-timing --input artifacts/runs --dry-run`
    - apply: `maxionbench migrate-stage-timing --input artifacts/runs`
@@ -78,6 +79,11 @@ Pre-merge automation:
 - Optional strict readiness workflow for provisioned environments: `.github/workflows/strict_readiness.yml` (runs readiness without `--allow-nonpass-status`, so non-pass rows fail readiness except `faiss-gpu` when `--allow-gpu-unavailable` is active, installs `.[dev,engines]`, and accepts `scenario_config_dir` + optional `strict_d3_scenario_scale=true` for paper-scale D3 pin enforcement; optional `require_paper_d3_calibration=true` checks `d3_params_path` with strict calibration rules).
 - Optional publish workflow with strict-readiness artifact gate: `.github/workflows/publish_benchmark_bundle.yml` (same `scenario_config_dir` / `strict_d3_scenario_scale` inputs for pin policy and optional strict D3 calibration gate via `require_paper_d3_calibration` + `d3_params_path`).
 - Dedicated paper-scale D3 scenario configs live under `configs/scenarios_paper/` (S1-D3/S2/S3/S3b + calibrate_d3 at 10M).
+- For the checked-in paper `calibrate_d3.yaml`, export `MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy` before running workstation or direct paper-lane calibration commands; `MAXIONBENCH_D3_DATASET_SHA256` is optional but recommended.
+- `calibrate_d3` remains a dedicated calibration artifact step so reported S2 runs stay benchmark results rather than tuning runs.
+- D3-50M runs reuse the frozen D3 calibration affinities from the 10M paper calibration, but the scenario-level structural pins still apply, so `k_clusters` remains `8192` for 50M configs.
+- The D3-matched `s1_ann_frontier_d3` run required by the Slurm/control topology is a robustness-accounting support baseline, not a headline S1 D1/D2 result.
+- GPU-omitted mode (`--skip-gpu` / `allow_gpu_unavailable`) omits the GPU array entirely, which covers `s5_rerank` plus Track B and Track C GPU workloads.
 - Publish workflow promotion gate cross-checks both strict summary and downloaded conformance matrix (`--strict-readiness-summary` + `--conformance-matrix`).
 - In that cross-check mode, `require_mock_pass=true` also requires a `mock` row with `status=pass` in the matrix artifact.
 - In `allow_gpu_unavailable` mode, promotion-gate non-pass rows are allowed only for `faiss-gpu`, and only when matrix cross-check is provided.

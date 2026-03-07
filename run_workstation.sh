@@ -39,6 +39,13 @@ Options:
   --skip-pytest                Skip pytest -q
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
   -h, --help                   Show this help
+
+Paper D3 calibration:
+  - if ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml sets `calibration_require_real_data: true`
+    and does not already contain a concrete `dataset_path`, export:
+      MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy
+  - optional checksum pin:
+      MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex>
 EOF
 }
 
@@ -97,6 +104,8 @@ if [[ ! -f "${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml" ]]; then
   echo "error: missing ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml" >&2
   exit 2
 fi
+
+CALIBRATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
 
 SLURM_PROFILE_ARGS=()
 if [[ -n "${SLURM_PROFILE}" ]]; then
@@ -278,8 +287,43 @@ maxionbench verify-conformance-configs --config-dir configs/conformance --json
 
 echo "==> Step 2: D3 calibration gate"
 if [[ "${SKIP_CALIBRATION}" -eq 0 ]]; then
+  CALIBRATION_PATH_CHECK="$(python - <<'PY' "${CALIBRATE_CONFIG_PATH}"
+import os
+import pathlib
+import re
+import sys
+import yaml
+
+path = pathlib.Path(sys.argv[1])
+payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+if not isinstance(payload, dict):
+    raise SystemExit("invalid calibrate_d3 config")
+
+required = bool(payload.get("calibration_require_real_data", False))
+raw = payload.get("dataset_path")
+resolved = ""
+if isinstance(raw, str):
+    token = raw.strip()
+    match = re.fullmatch(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))", token)
+    if match is not None:
+        env_name = match.group(1) or match.group(2) or ""
+        resolved = str(os.environ.get(env_name, "")).strip()
+    else:
+        resolved = os.path.expandvars(raw).strip()
+elif raw is not None:
+    resolved = str(raw).strip()
+
+print("missing_real_dataset_path" if required and not resolved else "ok")
+PY
+)"
+  if [[ "${CALIBRATION_PATH_CHECK}" == "missing_real_dataset_path" ]]; then
+    echo "error: ${CALIBRATE_CONFIG_PATH} requires real D3 vectors. Set MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy" >&2
+    echo "error: optional checksum pin: MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex>" >&2
+    echo "error: alternatively, point --scenario-config-dir at a calibrate_d3.yaml with a concrete dataset_path" >&2
+    exit 2
+  fi
   maxionbench run \
-    --config "${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml" \
+    --config "${CALIBRATE_CONFIG_PATH}" \
     --seed "${SEED}" \
     --repeats 1 \
     --no-retry \

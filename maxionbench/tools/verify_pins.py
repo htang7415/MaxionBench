@@ -88,6 +88,8 @@ def _verify_scenario_pins(
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
         _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
         _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [1])
+        if strict_d3_scenario_scale and int(cfg.num_vectors) >= D3_10M_MIN_VECTORS:
+            _expect_equal(errors, path, "calibration_require_real_data", cfg.calibration_require_real_data, True)
         if (not allow_dev_calibrate_d3_scale) and int(cfg.num_vectors) < D3_10M_MIN_VECTORS:
             errors.append(
                 {
