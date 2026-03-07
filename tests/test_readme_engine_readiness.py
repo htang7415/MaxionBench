@@ -38,6 +38,12 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "MAXIONBENCH_D3_DATASET_PATH" in text
     assert "MAXIONBENCH_D3_DATASET_SHA256" in text
     assert "reported S2 runs stay benchmark results rather than tuning runs" in text
+    assert "Dockerfile" in text
+    assert "submit-slurm-plan --container-runtime apptainer --container-image <path>" in text
+    assert "--container-bind" in text
+    assert "--hf-cache-dir" in text
+    assert "profiles_local.yaml" in text
+    assert "profiles_local.example.yaml" in text
     assert "submit-slurm-plan --dry-run --json" in text
     assert "submit-slurm-plan --skip-gpu --dry-run --json" in text
     assert "submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text

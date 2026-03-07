@@ -12,7 +12,7 @@ __pycache__/
 .pytest_cache/
 
 *.sh
-!run_workstation.sh
+run_workstation.sh
 
 # Local generated benchmark outputs
 artifacts/ci/
@@ -20,3 +20,4 @@ artifacts/conformance/
 artifacts/figures/
 artifacts/runs/
 ci_s1_smoke_local.yaml
+maxionbench/orchestration/slurm/profiles_local.yaml

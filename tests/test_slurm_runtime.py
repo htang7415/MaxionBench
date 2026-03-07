@@ -154,6 +154,12 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_ALLOW_GPU_UNAVAILABLE" in text
     assert "MAXIONBENCH_CONFORMANCE_MATRIX" in text
     assert "MAXIONBENCH_OUTPUT_ROOT" in text
+    assert "MAXIONBENCH_CONTAINER_RUNTIME" in text
+    assert "MAXIONBENCH_CONTAINER_IMAGE" in text
+    assert "MAXIONBENCH_CONTAINER_BIND" in text
+    assert "MAXIONBENCH_HF_CACHE_DIR" in text
+    assert "apptainer exec" in text
+    assert "mb_python()" in text
     gate_marker = "pre-run-gate"
     runner_marker = "python -m maxionbench.orchestration.runner"
     assert gate_marker in text

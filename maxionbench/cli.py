@@ -163,9 +163,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     submit_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
     submit_slurm_plan_parser.add_argument("--seed", type=int, default=42)
-    submit_slurm_plan_parser.add_argument("--slurm-profile", default=None, choices=["your_cluster", "your_cluster"])
+    submit_slurm_plan_parser.add_argument("--slurm-profile", default=None)
     submit_slurm_plan_parser.add_argument("--scenario-config-dir", default=None)
     submit_slurm_plan_parser.add_argument("--output-root", default=None)
+    submit_slurm_plan_parser.add_argument("--container-runtime", default=None, choices=["apptainer"])
+    submit_slurm_plan_parser.add_argument("--container-image", default=None)
+    submit_slurm_plan_parser.add_argument("--container-bind", action="append", dest="container_bind", default=None)
+    submit_slurm_plan_parser.add_argument("--hf-cache-dir", default=None)
     submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
     submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
     submit_slurm_plan_parser.add_argument("--json", action="store_true")
@@ -420,6 +424,14 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.extend(["--scenario-config-dir", args.scenario_config_dir])
         if args.output_root:
             submit_argv.extend(["--output-root", args.output_root])
+        if args.container_runtime:
+            submit_argv.extend(["--container-runtime", args.container_runtime])
+        if args.container_image:
+            submit_argv.extend(["--container-image", args.container_image])
+        for bind in args.container_bind or []:
+            submit_argv.extend(["--container-bind", bind])
+        if args.hf_cache_dir:
+            submit_argv.extend(["--hf-cache-dir", args.hf_cache_dir])
         if args.skip_gpu:
             submit_argv.append("--skip-gpu")
         if args.dry_run:

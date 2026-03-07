@@ -67,15 +67,69 @@ def test_submit_steps_exports_scenario_config_dir_when_provided(tmp_path: Path) 
         assert "MAXIONBENCH_SCENARIO_CONFIG_DIR=configs/scenarios_paper" in export_value
 
 
-def test_submit_steps_applies_named_slurm_profile_flags(tmp_path: Path) -> None:
+def test_submit_steps_rejects_unknown_local_slurm_profile(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
+
+    try:
+        submit_steps(
+            slurm_dir=slurm_dir,
+            steps=build_submit_steps(include_gpu=False),
+            seed=42,
+            slurm_profile="missing_cluster",
+            dry_run=True,
+        )
+    except ValueError as exc:
+        assert "unknown slurm profile" in str(exc)
+        assert "profiles_local.yaml" in str(exc)
+    else:
+        raise AssertionError("expected submit_steps to reject an undefined local slurm profile")
+
+
+def test_submit_steps_applies_local_profile_override_flags(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
     for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
+    overrides_path = tmp_path / "profiles_local.yaml"
+    overrides_path.write_text(
+        """
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+    - ["--account", "private-account"]
+    - ["--partition", "private-partition"]
+  step_overrides:
+    calibrate:
+      - ["--gres", "gpu:1"]
+    gpu_all:
+      - ["--gres", "gpu:1"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(overrides_path))
+
     summary = submit_steps(
         slurm_dir=slurm_dir,
-        steps=build_submit_steps(include_gpu=False),
+        steps=build_submit_steps(include_gpu=True),
         seed=42,
         slurm_profile="your_cluster",
         dry_run=True,
@@ -84,14 +138,16 @@ def test_submit_steps_applies_named_slurm_profile_flags(tmp_path: Path) -> None:
     assert "--job-name" in first_cmd
     assert first_cmd[first_cmd.index("--job-name") + 1] == "maxion"
     assert "--partition" in first_cmd
-    assert first_cmd[first_cmd.index("--partition") + 1] == "pdelab"
+    assert first_cmd[first_cmd.index("--partition") + 1] == "private-partition"
+    assert "--account" in first_cmd
+    assert first_cmd[first_cmd.index("--account") + 1] == "private-account"
     assert "--gres" in first_cmd
     assert first_cmd[first_cmd.index("--gres") + 1] == "gpu:1"
     assert summary["slurm_profile"] == "your_cluster"
 
     cpu_cmd = [str(item) for item in summary["steps"][1]["command"]]
     assert "--partition" in cpu_cmd
-    assert cpu_cmd[cpu_cmd.index("--partition") + 1] == "pdelab"
+    assert "--account" in cpu_cmd
     assert "--gres" not in cpu_cmd
 
 
@@ -113,3 +169,53 @@ def test_submit_steps_exports_output_root_when_provided(tmp_path: Path) -> None:
         assert "--export" in cmd
         export_value = cmd[cmd.index("--export") + 1]
         assert "MAXIONBENCH_OUTPUT_ROOT=artifacts/workstation_runs/example/results/slurm" in export_value
+
+
+def test_submit_steps_exports_container_runtime_settings_when_provided(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=False),
+        seed=42,
+        container_runtime="apptainer",
+        container_image="/shared/containers/maxionbench.sif",
+        container_bind=["/shared/datasets", "/shared/models/hf:/shared/models/hf"],
+        hf_cache_dir="/shared/models/hf",
+        dry_run=True,
+    )
+    assert summary["container_runtime"] == "apptainer"
+    assert summary["container_image"] == "/shared/containers/maxionbench.sif"
+    assert summary["container_bind"] == ["/shared/datasets", "/shared/models/hf:/shared/models/hf"]
+    assert summary["hf_cache_dir"] == "/shared/models/hf"
+    for step in summary["steps"]:
+        cmd = [str(item) for item in step["command"]]
+        assert "--export" in cmd
+        export_value = cmd[cmd.index("--export") + 1]
+        assert "MAXIONBENCH_CONTAINER_RUNTIME=apptainer" in export_value
+        assert "MAXIONBENCH_CONTAINER_IMAGE=/shared/containers/maxionbench.sif" in export_value
+        assert "MAXIONBENCH_CONTAINER_BIND=/shared/datasets|/shared/models/hf:/shared/models/hf" in export_value
+        assert "MAXIONBENCH_HF_CACHE_DIR=/shared/models/hf" in export_value
+
+
+def test_submit_steps_requires_container_image_when_runtime_enabled(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    try:
+        submit_steps(
+            slurm_dir=slurm_dir,
+            steps=build_submit_steps(include_gpu=False),
+            seed=42,
+            container_runtime="apptainer",
+            dry_run=True,
+        )
+    except ValueError as exc:
+        assert "container_image is required" in str(exc)
+    else:
+        raise AssertionError("expected submit_steps to reject missing container_image")

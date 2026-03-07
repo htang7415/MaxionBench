@@ -12,6 +12,10 @@ SKIP_S6=0
 LAUNCH=0
 SKIP_PYTEST=0
 SKIP_CALIBRATION=0
+CONTAINER_RUNTIME=""
+CONTAINER_IMAGE=""
+HF_CACHE_DIR=""
+CONTAINER_BINDS=()
 ORIGINAL_ARGS=("$@")
 
 usage() {
@@ -31,14 +35,23 @@ Bundle layout:
 
 Options:
   --scenario-config-dir <dir>  Scenario config directory for paper lane (default: configs/scenarios_paper)
-  --slurm-profile <name>       Slurm profile preset (your_cluster|your_cluster)
+  --slurm-profile <name>       Local Slurm profile key from profiles_local.yaml
   --seed <int>                 Seed forwarded to submit-slurm-plan (default: 42)
   --cpu-only                   Use skip-gpu mode when submitting Slurm jobs
   --skip-s6                    Defer S6 by forwarding --skip-s6 to submit-slurm-plan
   --launch                     Submit Slurm jobs after checks pass
   --skip-pytest                Skip pytest -q
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
+  --container-runtime <name>   Container runtime for Slurm jobs (currently: apptainer)
+  --container-image <path>     Container image for Slurm jobs (for example /shared/maxionbench.sif)
+  --container-bind <spec>      Extra container bind spec for Slurm jobs; repeatable host[:container[:opts]]
+  --hf-cache-dir <path>        HF cache dir to bind/export inside containerized Slurm jobs
   -h, --help                   Show this help
+
+Private Slurm profile overrides:
+  - tracked docs/code do not ship named cluster presets
+  - copy maxionbench/orchestration/slurm/profiles_local.example.yaml to
+    maxionbench/orchestration/slurm/profiles_local.yaml and edit your local values there
 
 Paper D3 calibration:
   - if ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml sets `calibration_require_real_data: true`
@@ -83,6 +96,22 @@ while [[ $# -gt 0 ]]; do
       SKIP_CALIBRATION=1
       shift
       ;;
+    --container-runtime)
+      CONTAINER_RUNTIME="${2:-}"
+      shift 2
+      ;;
+    --container-image)
+      CONTAINER_IMAGE="${2:-}"
+      shift 2
+      ;;
+    --container-bind)
+      CONTAINER_BINDS+=("${2:-}")
+      shift 2
+      ;;
+    --hf-cache-dir)
+      HF_CACHE_DIR="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -109,19 +138,41 @@ CALIBRATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
 
 SLURM_PROFILE_ARGS=()
 if [[ -n "${SLURM_PROFILE}" ]]; then
-  case "${SLURM_PROFILE}" in
-    your_cluster|your_cluster)
-      SLURM_PROFILE_ARGS=(--slurm-profile "${SLURM_PROFILE}")
-      ;;
-    *)
-      echo "error: --slurm-profile must be one of: your_cluster, your_cluster" >&2
-      exit 2
-      ;;
-  esac
+  SLURM_PROFILE_ARGS=(--slurm-profile "${SLURM_PROFILE}")
 fi
 SLURM_S6_ARGS=()
 if [[ "${SKIP_S6}" -eq 1 ]]; then
   SLURM_S6_ARGS=(--skip-s6)
+fi
+SLURM_CONTAINER_ARGS=()
+if [[ -n "${CONTAINER_RUNTIME}" ]]; then
+  case "${CONTAINER_RUNTIME}" in
+    apptainer)
+      ;;
+    *)
+      echo "error: --container-runtime must be: apptainer" >&2
+      exit 2
+      ;;
+  esac
+  if [[ -z "${CONTAINER_IMAGE}" ]]; then
+    echo "error: --container-image is required when --container-runtime is set" >&2
+    exit 2
+  fi
+  SLURM_CONTAINER_ARGS+=(--container-runtime "${CONTAINER_RUNTIME}" --container-image "${CONTAINER_IMAGE}")
+fi
+if [[ -n "${CONTAINER_IMAGE}" && -z "${CONTAINER_RUNTIME}" ]]; then
+  echo "error: --container-runtime is required when --container-image is set" >&2
+  exit 2
+fi
+if [[ -n "${HF_CACHE_DIR}" ]]; then
+  SLURM_CONTAINER_ARGS+=(--hf-cache-dir "${HF_CACHE_DIR}")
+fi
+if [[ "${#CONTAINER_BINDS[@]}" -gt 0 ]]; then
+  for bind_spec in "${CONTAINER_BINDS[@]}"; do
+    if [[ -n "${bind_spec}" ]]; then
+      SLURM_CONTAINER_ARGS+=(--container-bind "${bind_spec}")
+    fi
+  done
 fi
 
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -339,12 +390,14 @@ maxionbench verify-slurm-plan --skip-gpu --json | tee "${SLURM_PLAN_VERIFY_SKIP_
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
   "${SLURM_S6_ARGS[@]}" \
+  "${SLURM_CONTAINER_ARGS[@]}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --dry-run \
   --json | tee "${SLURM_SUBMIT_DRY_RUN_JSON}"
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
   "${SLURM_S6_ARGS[@]}" \
+  "${SLURM_CONTAINER_ARGS[@]}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
   --dry-run \
@@ -352,6 +405,7 @@ maxionbench submit-slurm-plan \
 maxionbench submit-slurm-plan \
   "${SLURM_PROFILE_ARGS[@]}" \
   "${SLURM_S6_ARGS[@]}" \
+  "${SLURM_CONTAINER_ARGS[@]}" \
   --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
@@ -399,6 +453,7 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
     maxionbench submit-slurm-plan \
       "${SLURM_PROFILE_ARGS[@]}" \
       "${SLURM_S6_ARGS[@]}" \
+      "${SLURM_CONTAINER_ARGS[@]}" \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --skip-gpu \
@@ -407,6 +462,7 @@ if [[ "${LAUNCH}" -eq 1 ]]; then
     maxionbench submit-slurm-plan \
       "${SLURM_PROFILE_ARGS[@]}" \
       "${SLURM_S6_ARGS[@]}" \
+      "${SLURM_CONTAINER_ARGS[@]}" \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --seed "${SEED}"

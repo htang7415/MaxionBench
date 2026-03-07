@@ -33,6 +33,13 @@ def test_workstation_script_exists_and_references_paper_lane_checks() -> None:
     assert "Run report saved:" in text
     assert "trap finalize_report EXIT" in text
     assert "--launch" in text
+    assert "--container-runtime <name>" in text
+    assert "--container-image <path>" in text
+    assert "--container-bind <spec>" in text
+    assert "--hf-cache-dir <path>" in text
+    assert "\"${SLURM_CONTAINER_ARGS[@]}\"" in text
+    assert "profiles_local.example.yaml" in text
+    assert "profiles_local.yaml" in text
     assert "MAXIONBENCH_D3_DATASET_PATH" in text
     assert "MAXIONBENCH_D3_DATASET_SHA256" in text
     assert "requires real D3 vectors" in text
@@ -45,6 +52,7 @@ def test_command_md_mentions_workstation_script() -> None:
     assert "./run_workstation.sh --skip-s6 --launch" in text
     assert "./run_workstation.sh --launch --cpu-only" in text
     assert "MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy ./run_workstation.sh" in text
+    assert "--container-runtime apptainer --container-image /shared/containers/maxionbench.sif" in text
     assert "artifacts/workstation_runs/<run_id>/" in text
     assert "helpers/render_figures.sh" in text
     assert "--output-root artifacts/workstation_runs/<run_id>/results/slurm" in text

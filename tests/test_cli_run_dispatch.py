@@ -274,6 +274,56 @@ def test_cli_submit_slurm_plan_dispatches_output_root(monkeypatch) -> None:  # t
     ]
 
 
+def test_cli_submit_slurm_plan_dispatches_container_runtime_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 243
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--container-runtime",
+            "apptainer",
+            "--container-image",
+            "/shared/containers/maxionbench.sif",
+            "--container-bind",
+            "/shared/datasets",
+            "--container-bind",
+            "/shared/models/hf:/shared/models/hf",
+            "--hf-cache-dir",
+            "/shared/models/hf",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 243
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--container-runtime",
+        "apptainer",
+        "--container-image",
+        "/shared/containers/maxionbench.sif",
+        "--container-bind",
+        "/shared/datasets",
+        "--container-bind",
+        "/shared/models/hf:/shared/models/hf",
+        "--hf-cache-dir",
+        "/shared/models/hf",
+        "--dry-run",
+        "--json",
+    ]
+
+
 def test_cli_verify_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
