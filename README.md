@@ -81,6 +81,10 @@ Pre-merge automation:
 - Dedicated paper-scale D3 scenario configs live under `configs/scenarios_paper/` (S1-D3/S2/S3/S3b + calibrate_d3 at 10M).
 - For the checked-in paper `calibrate_d3.yaml`, export `MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy` before running workstation or direct paper-lane calibration commands; `MAXIONBENCH_D3_DATASET_SHA256` is optional but recommended.
 - `calibrate_d3` remains a dedicated calibration artifact step so reported S2 runs stay benchmark results rather than tuning runs.
+- A benchmark runtime `Dockerfile` is checked in for local OCI builds.
+- Slurm execution can opt into Apptainer with `submit-slurm-plan --container-runtime apptainer --container-image <path>` or the corresponding `run_workstation.sh` flags.
+- Containerized Slurm jobs auto-bind the repo root, `$SLURM_TMPDIR`, and output root; use `--container-bind` for external dataset/model roots and `--hf-cache-dir` for local HF cache mounts.
+- Slurm profile names and cluster-specific `sbatch` flags stay local. Define them in the git-ignored `maxionbench/orchestration/slurm/profiles_local.yaml` file (example template: `profiles_local.example.yaml`) and pass the local key with `submit-slurm-plan --slurm-profile <name>` or `run_workstation.sh --slurm-profile <name>`.
 - D3-50M runs reuse the frozen D3 calibration affinities from the 10M paper calibration, but the scenario-level structural pins still apply, so `k_clusters` remains `8192` for 50M configs.
 - The D3-matched `s1_ann_frontier_d3` run required by the Slurm/control topology is a robustness-accounting support baseline, not a headline S1 D1/D2 result.
 - GPU-omitted mode (`--skip-gpu` / `allow_gpu_unavailable`) omits the GPU array entirely, which covers `s5_rerank` plus Track B and Track C GPU workloads.

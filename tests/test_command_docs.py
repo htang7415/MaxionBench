@@ -20,6 +20,14 @@ def _assert_common_commands(text: str) -> None:
     assert "MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy \\" in text
     assert "MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex> \\" in text
     assert "keep it separate so reported S2 runs remain benchmark results rather than tuning runs" in text
+    assert "docker build -t maxionbench:0.1.0 ." in text
+    assert "--container-runtime apptainer" in text
+    assert "--container-image /shared/containers/maxionbench.sif" in text
+    assert "--container-bind /shared/datasets" in text
+    assert "--hf-cache-dir /shared/models/hf" in text
+    assert "host execution remains the default when `--container-runtime` is omitted" in text
+    assert "profiles_local.yaml" in text
+    assert "profiles_local.example.yaml" in text
     assert "maxionbench verify-slurm-plan --json" in text
     assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
     assert "maxionbench submit-slurm-plan --dry-run --json" in text

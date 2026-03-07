@@ -1,0 +1,17 @@
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+    - ["--account", "YOUR_PRIVATE_ACCOUNT"]
+    - ["--partition", "YOUR_PRIVATE_PARTITION"]
+  step_overrides:
+    calibrate:
+      - ["--gres", "gpu:1"]
+    gpu_all:
+      - ["--gres", "gpu:1"]

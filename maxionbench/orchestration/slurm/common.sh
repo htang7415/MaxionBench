@@ -10,6 +10,10 @@ export MAXIONBENCH_SKIP_PRE_RUN_GATE="${MAXIONBENCH_SKIP_PRE_RUN_GATE:-0}"
 export MAXIONBENCH_ALLOW_GPU_UNAVAILABLE="${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}"
 export MAXIONBENCH_CONFORMANCE_MATRIX="${MAXIONBENCH_CONFORMANCE_MATRIX:-${ROOT_DIR}/artifacts/conformance/conformance_matrix.csv}"
 export MAXIONBENCH_OUTPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/slurm}"
+export MAXIONBENCH_CONTAINER_RUNTIME="${MAXIONBENCH_CONTAINER_RUNTIME:-}"
+export MAXIONBENCH_CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE:-}"
+export MAXIONBENCH_CONTAINER_BIND="${MAXIONBENCH_CONTAINER_BIND:-}"
+export MAXIONBENCH_HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -37,6 +41,121 @@ mb_resolve_config() {
   fi
 }
 
+mb_resolve_host_path() {
+  local raw_path="$1"
+  if [[ -z "${raw_path}" ]]; then
+    echo ""
+  elif [[ "${raw_path}" = /* ]]; then
+    echo "${raw_path}"
+  else
+    echo "${ROOT_DIR}/${raw_path}"
+  fi
+}
+
+mb_apptainer_use_nv() {
+  if [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != "NoDevFiles" ]]; then
+    return 0
+  fi
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+mb_container_bind_specs() {
+  printf '%s\n' "${ROOT_DIR}:${ROOT_DIR}"
+  if [[ -n "${SLURM_TMPDIR:-}" ]]; then
+    printf '%s\n' "${SLURM_TMPDIR}:${SLURM_TMPDIR}"
+  fi
+
+  local resolved_matrix
+  resolved_matrix="$(mb_resolve_host_path "${MAXIONBENCH_CONFORMANCE_MATRIX:-}")"
+  if [[ -n "${resolved_matrix}" ]]; then
+    local matrix_dir
+    matrix_dir="$(dirname "${resolved_matrix}")"
+    if [[ -d "${matrix_dir}" ]]; then
+      printf '%s\n' "${matrix_dir}:${matrix_dir}"
+    fi
+  fi
+
+  local resolved_output_root
+  resolved_output_root="$(mb_resolve_host_path "${MAXIONBENCH_OUTPUT_ROOT:-}")"
+  if [[ -n "${resolved_output_root}" ]]; then
+    local output_parent
+    output_parent="$(dirname "${resolved_output_root}")"
+    mkdir -p "${output_parent}"
+    printf '%s\n' "${output_parent}:${output_parent}"
+  fi
+
+  if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
+    local resolved_hf_cache
+    resolved_hf_cache="$(mb_resolve_host_path "${MAXIONBENCH_HF_CACHE_DIR}")"
+    mkdir -p "${resolved_hf_cache}" "${resolved_hf_cache}/hub" "${resolved_hf_cache}/transformers"
+    printf '%s\n' "${resolved_hf_cache}:${resolved_hf_cache}"
+  fi
+
+  if [[ -n "${MAXIONBENCH_CONTAINER_BIND:-}" ]]; then
+    local -a extra_binds=()
+    local bind_spec=""
+    IFS='|' read -r -a extra_binds <<< "${MAXIONBENCH_CONTAINER_BIND}"
+    for bind_spec in "${extra_binds[@]}"; do
+      if [[ -n "${bind_spec}" ]]; then
+        printf '%s\n' "${bind_spec}"
+      fi
+    done
+  fi
+}
+
+mb_python() {
+  if [[ -z "${MAXIONBENCH_CONTAINER_RUNTIME:-}" ]]; then
+    python "$@"
+    return
+  fi
+
+  case "${MAXIONBENCH_CONTAINER_RUNTIME}" in
+    apptainer)
+      if ! command -v apptainer >/dev/null 2>&1; then
+        mb_die "MAXIONBENCH_CONTAINER_RUNTIME=apptainer requires `apptainer` in PATH"
+      fi
+      if [[ -z "${MAXIONBENCH_CONTAINER_IMAGE:-}" ]]; then
+        mb_die "MAXIONBENCH_CONTAINER_IMAGE must be set when MAXIONBENCH_CONTAINER_RUNTIME=apptainer"
+      fi
+      local resolved_image
+      resolved_image="$(mb_resolve_host_path "${MAXIONBENCH_CONTAINER_IMAGE}")"
+      if [[ ! -f "${resolved_image}" ]]; then
+        mb_die "apptainer image not found: ${resolved_image}"
+      fi
+
+      local -a container_cmd=(apptainer exec)
+      if mb_apptainer_use_nv; then
+        container_cmd+=(--nv)
+      fi
+      local bind_spec=""
+      while IFS= read -r bind_spec; do
+        if [[ -n "${bind_spec}" ]]; then
+          container_cmd+=(--bind "${bind_spec}")
+        fi
+      done < <(mb_container_bind_specs)
+      container_cmd+=("${resolved_image}" env "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}")
+
+      if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
+        local resolved_hf_cache
+        resolved_hf_cache="$(mb_resolve_host_path "${MAXIONBENCH_HF_CACHE_DIR}")"
+        container_cmd+=(
+          "HF_HOME=${resolved_hf_cache}"
+          "HUGGINGFACE_HUB_CACHE=${resolved_hf_cache}/hub"
+          "TRANSFORMERS_CACHE=${resolved_hf_cache}/transformers"
+        )
+      fi
+      container_cmd+=(python "$@")
+      "${container_cmd[@]}"
+      ;;
+    *)
+      mb_die "unsupported MAXIONBENCH_CONTAINER_RUNTIME=${MAXIONBENCH_CONTAINER_RUNTIME}; supported: apptainer"
+      ;;
+  esac
+}
+
 mb_scratch_preflight() {
   local config_path="$1"
   local resolved
@@ -45,7 +164,7 @@ mb_scratch_preflight() {
   local status
 
   set +e
-  summary="$(python -m maxionbench.orchestration.slurm.preflight \
+  summary="$(mb_python -m maxionbench.orchestration.slurm.preflight \
     --config "${resolved}" \
     --tmpdir "${SLURM_TMPDIR}" \
     --safety-factor "${MAXIONBENCH_SCRATCH_SAFETY_FACTOR}")"
@@ -83,7 +202,7 @@ PY
 
 mb_allocate_ports() {
   local payload
-  payload="$(python - <<'PY'
+  payload="$(mb_python - <<'PY'
 from maxionbench.runtime.ports import allocate_named_ports
 ports = allocate_named_ports(["qdrant", "weaviate", "opensearch", "lancedb", "milvus"], base=20000, span=20000)
 for name, port in sorted(ports.items()):
@@ -103,7 +222,7 @@ mb_stage_config_to_tmp() {
   local resolved
   resolved="$(mb_resolve_config "${config_path}")"
   local staged="${SLURM_TMPDIR}/maxionbench_config_${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}.yaml"
-  python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}"
+  mb_python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}"
 import os
 import pathlib
 import shutil
@@ -199,12 +318,12 @@ mb_run_benchmark() {
       gate_args+=(--allow-gpu-unavailable)
     fi
     mb_log "running pre-run readiness gate for config=${resolved_config}"
-    python -m maxionbench.cli "${gate_args[@]}"
+    mb_python -m maxionbench.cli "${gate_args[@]}"
   else
     mb_log "skipping pre-run readiness gate (MAXIONBENCH_SKIP_PRE_RUN_GATE=1)"
   fi
   mb_log "running scenario config=${resolved_config}"
-  python -m maxionbench.orchestration.runner \
+  mb_python -m maxionbench.orchestration.runner \
     --config "${resolved_config}" \
     --no-retry \
     --repeats "${MAXIONBENCH_REPEATS:-3}" \
