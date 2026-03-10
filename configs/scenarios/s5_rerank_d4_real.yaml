@@ -38,6 +38,7 @@ d4_beir_subsets:
 d4_beir_split: test
 d4_crag_source: facebookresearch/CRAG
 d4_crag_path: data/crag_task_1_and_2_dev_v4.jsonl.bz2
+d4_crag_sha256: ${MAXIONBENCH_D4_CRAG_SHA256}
 d4_include_crag: true
 d4_max_docs: 200000
 d4_max_queries: 5000

@@ -139,7 +139,7 @@ def load_run_config(path: Path, overrides: Mapping[str, Any] | None = None) -> R
         payload = yaml.safe_load(handle) or {}
     if not isinstance(payload, dict):
         raise ValueError("Config root must be a mapping")
-    merged = _expand_env_placeholders(payload)
+    merged = expand_env_placeholders(payload)
     if overrides:
         merged.update({k: v for k, v in overrides.items() if v is not None})
     cfg = RunConfig(**merged)
@@ -237,11 +237,11 @@ def _validate(cfg: RunConfig) -> None:
             raise ValueError(f"{key} must be a 64-character lowercase hex sha256 string when provided")
 
 
-def _expand_env_placeholders(value: Any) -> Any:
+def expand_env_placeholders(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: _expand_env_placeholders(item) for key, item in value.items()}
+        return {key: expand_env_placeholders(item) for key, item in value.items()}
     if isinstance(value, list):
-        return [_expand_env_placeholders(item) for item in value]
+        return [expand_env_placeholders(item) for item in value]
     if not isinstance(value, str):
         return value
 

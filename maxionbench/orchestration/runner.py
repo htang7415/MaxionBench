@@ -1440,7 +1440,14 @@ def _resolve_config_value_path(*, value: str, config_path: Path) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
         return candidate.resolve()
-    return (config_path.parent / candidate).resolve()
+    config_relative = (config_path.parent / candidate).resolve()
+    if config_relative.exists():
+        return config_relative
+    repo_root = Path(__file__).resolve().parents[2]
+    repo_relative = (repo_root / candidate).resolve()
+    if repo_relative.exists():
+        return repo_relative
+    return config_relative
 
 
 def _resolve_optional_config_value_path(*, value: str | None, config_path: Path) -> Path | None:

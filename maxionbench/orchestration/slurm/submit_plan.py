@@ -25,32 +25,49 @@ SLURM_PROFILE_OVERRIDES_ENV = "MAXIONBENCH_SLURM_PROFILE_OVERRIDES"
 DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH = Path(__file__).resolve().with_name("profiles_local.yaml")
 
 
-def build_submit_steps(*, include_gpu: bool = True, skip_s6: bool = False) -> list[SubmitStep]:
+def build_submit_steps(
+    *,
+    include_gpu: bool = True,
+    skip_s6: bool = False,
+    prefetch_datasets: bool = False,
+) -> list[SubmitStep]:
     cpu_non_d3_array = "0,5" if skip_s6 else "0,5-6"
-    steps: list[SubmitStep] = [
-        SubmitStep(
-            key="calibrate",
-            script_name="calibrate_d3.sh",
-        ),
-        SubmitStep(
-            key="cpu_d3_baseline",
-            script_name="cpu_array.sh",
-            array="1",
-            depends_on=("calibrate",),
-        ),
-        SubmitStep(
-            key="cpu_d3_workloads",
-            script_name="cpu_array.sh",
-            array="2-4",
-            depends_on=("calibrate", "cpu_d3_baseline"),
-        ),
-        SubmitStep(
-            key="cpu_non_d3",
-            script_name="cpu_array.sh",
-            array=cpu_non_d3_array,
-            depends_on=("calibrate",),
-        ),
-    ]
+    calibrate_depends_on: tuple[str, ...] = ("prefetch_datasets",) if prefetch_datasets else ()
+    steps: list[SubmitStep] = []
+    if prefetch_datasets:
+        steps.append(
+            SubmitStep(
+                key="prefetch_datasets",
+                script_name="prefetch_datasets.sh",
+            )
+        )
+    steps.extend(
+        [
+            SubmitStep(
+                key="calibrate",
+                script_name="calibrate_d3.sh",
+                depends_on=calibrate_depends_on,
+            ),
+            SubmitStep(
+                key="cpu_d3_baseline",
+                script_name="cpu_array.sh",
+                array="1",
+                depends_on=("calibrate",),
+            ),
+            SubmitStep(
+                key="cpu_d3_workloads",
+                script_name="cpu_array.sh",
+                array="2-4",
+                depends_on=("calibrate", "cpu_d3_baseline"),
+            ),
+            SubmitStep(
+                key="cpu_non_d3",
+                script_name="cpu_array.sh",
+                array=cpu_non_d3_array,
+                depends_on=("calibrate",),
+            ),
+        ]
+    )
     if include_gpu:
         steps.append(
             SubmitStep(
@@ -75,6 +92,7 @@ def submit_steps(
     container_image: str | None = None,
     container_bind: list[str] | None = None,
     hf_cache_dir: str | None = None,
+    prefetch_datasets: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     normalized_container_runtime = str(container_runtime).strip().lower() if container_runtime else None
@@ -136,6 +154,7 @@ def submit_steps(
         "container_image": normalized_container_image,
         "container_bind": normalized_container_bind,
         "hf_cache_dir": normalized_hf_cache_dir,
+        "prefetch_datasets": bool(prefetch_datasets),
         "steps": submitted,
         "job_ids": job_ids,
     }
@@ -329,6 +348,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--skip-gpu", action="store_true")
     parser.add_argument(
+        "--prefetch-datasets",
+        action="store_true",
+        help="Submit a dataset prefetch/cache job before calibration and benchmark arrays.",
+    )
+    parser.add_argument(
         "--skip-s6",
         action="store_true",
         help="Defer S6 by removing index 6 from cpu_non_d3 array submissions.",
@@ -340,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     steps = build_submit_steps(
         include_gpu=not bool(args.skip_gpu),
         skip_s6=bool(args.skip_s6),
+        prefetch_datasets=bool(args.prefetch_datasets),
     )
     summary = submit_steps(
         slurm_dir=Path(args.slurm_dir),
@@ -352,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         container_image=str(args.container_image) if args.container_image else None,
         container_bind=[str(item) for item in (args.container_bind or [])],
         hf_cache_dir=str(args.hf_cache_dir) if args.hf_cache_dir else None,
+        prefetch_datasets=bool(args.prefetch_datasets),
         dry_run=bool(args.dry_run),
     )
 

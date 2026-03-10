@@ -9,6 +9,8 @@ def test_gitignore_blocks_python_cache_artifacts() -> None:
     assert "__pycache__/" in payload
     assert "*.py[cod]" in payload
     assert ".pytest_cache/" in payload
+    assert "artifacts/containers/" in payload
+    assert "artifacts/workstation_runs/" in payload
 
 
 def test_repository_has_no_tracked_python_cache_artifacts() -> None:

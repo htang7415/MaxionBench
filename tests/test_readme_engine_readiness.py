@@ -39,15 +39,22 @@ def test_readme_mentions_behavior_and_engine_readiness_gates() -> None:
     assert "MAXIONBENCH_D3_DATASET_SHA256" in text
     assert "reported S2 runs stay benchmark results rather than tuning runs" in text
     assert "Dockerfile" in text
+    assert "apptainer build ... docker-daemon://maxionbench:0.1.0" in text
+    assert "docker save" in text
+    assert "docker-archive://..." in text
     assert "submit-slurm-plan --container-runtime apptainer --container-image <path>" in text
     assert "--container-bind" in text
     assert "--hf-cache-dir" in text
     assert "profiles_local.yaml" in text
     assert "profiles_local.example.yaml" in text
     assert "submit-slurm-plan --dry-run --json" in text
+    assert "submit-slurm-plan --prefetch-datasets --dry-run --json" in text
     assert "submit-slurm-plan --skip-gpu --dry-run --json" in text
     assert "submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
     assert "submit-slurm-plan --scenario-config-dir <dir>" in text
+    assert "prefetch_datasets.sh" in text
+    assert "MAXIONBENCH_PREFETCH_D3_SOURCE" in text
+    assert "MAXIONBENCH_PREFETCH_D4_BEIR_SOURCE" in text
     assert "uses the override file when present and otherwise falls back to its default scenario config" in text
     assert "same override also applies to `calibrate_d3`" in text
     assert "`MAXIONBENCH_CALIBRATE_CONFIG` is explicitly set" in text

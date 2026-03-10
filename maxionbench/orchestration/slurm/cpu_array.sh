@@ -45,6 +45,7 @@ fi
 SCENARIO_NAME="$(basename "${CONFIG_PATH}" .yaml)"
 
 mb_require_tmpdir
+mb_source_dataset_env
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "${SCENARIO_NAME}"

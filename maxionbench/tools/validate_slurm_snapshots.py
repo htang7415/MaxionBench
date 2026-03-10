@@ -65,6 +65,7 @@ def validate_slurm_snapshots(
         if missing:
             _err(errors, path, "required_step_keys", list(DEFAULT_REQUIRED_STEP_KEYS), sorted(keys))
 
+        has_prefetch = "prefetch_datasets" in keys
         is_skip_gpu = "skip_gpu" in path.name
         is_paper_snapshot = "paper" in path.name
         if is_skip_gpu and "gpu_all" in keys:
@@ -73,6 +74,9 @@ def validate_slurm_snapshots(
             _err(errors, path, "gpu_all", "present in default mode", "absent")
 
         expected_depends = dict(DEFAULT_REQUIRED_DEPENDS)
+        if has_prefetch:
+            expected_depends["prefetch_datasets"] = []
+            expected_depends["calibrate"] = ["prefetch_datasets"]
         if is_skip_gpu:
             expected_depends.pop("gpu_all", None)
         for step_key, expected in expected_depends.items():

@@ -17,17 +17,35 @@ def _valid_submit_steps(
     include_gpu: bool,
     seed: int = 42,
     scenario_config_dir: str | None = None,
+    prefetch_datasets: bool = False,
 ) -> list[dict[str, Any]]:
     export_parts = ["ALL", f"MAXIONBENCH_SEED={int(seed)}"]
     if scenario_config_dir:
         export_parts.append(f"MAXIONBENCH_SCENARIO_CONFIG_DIR={scenario_config_dir}")
     export_value = ",".join(export_parts)
-    steps: list[dict[str, Any]] = [
+    steps: list[dict[str, Any]] = []
+    if prefetch_datasets:
+        steps.append(
+            {
+                "key": "prefetch_datasets",
+                "depends_on": [],
+                "dependencies_resolved": [],
+                "command": ["sbatch", "--parsable", "--export", export_value, "prefetch_datasets.sh"],
+            }
+        )
+    calibrate_depends = ["prefetch_datasets"] if prefetch_datasets else []
+    calibrate_resolved = ["<PREFETCH_DATASETS_JOB_ID>"] if prefetch_datasets else []
+    calibrate_command = ["sbatch", "--parsable"]
+    if prefetch_datasets:
+        calibrate_command.extend(["--dependency", "afterok:<PREFETCH_DATASETS_JOB_ID>"])
+    calibrate_command.extend(["--export", export_value, "calibrate_d3.sh"])
+    steps.extend(
+        [
         {
             "key": "calibrate",
-            "depends_on": [],
-            "dependencies_resolved": [],
-            "command": ["sbatch", "--parsable", "--export", export_value, "calibrate_d3.sh"],
+            "depends_on": calibrate_depends,
+            "dependencies_resolved": calibrate_resolved,
+            "command": calibrate_command,
         },
         {
             "key": "cpu_d3_baseline",
@@ -71,7 +89,8 @@ def _valid_submit_steps(
                 "cpu_array.sh",
             ],
         },
-    ]
+        ]
+    )
     if include_gpu:
         steps.append(
             {
@@ -122,6 +141,35 @@ def test_validate_slurm_snapshots_passes_for_valid_payloads(tmp_path: Path) -> N
     summary = validate_slurm_snapshots(
         verify_paths=[verify_a, verify_b],
         submit_paths=[submit_a, submit_b, submit_c],
+    )
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+
+
+def test_validate_slurm_snapshots_accepts_optional_prefetch_step(tmp_path: Path) -> None:
+    verify = tmp_path / "slurm_plan_verify.json"
+    submit = tmp_path / "slurm_submit_plan_dry_run.json"
+    _write_json(
+        verify,
+        {
+            "pass": True,
+            "error_count": 0,
+            "cpu_scenarios": [
+                "configs/scenarios/s1_ann_frontier.yaml",
+                "configs/scenarios/s1_ann_frontier_d3.yaml",
+            ],
+        },
+    )
+    _write_json(
+        submit,
+        {
+            "steps": _valid_submit_steps(include_gpu=True, prefetch_datasets=True),
+        },
+    )
+
+    summary = validate_slurm_snapshots(
+        verify_paths=[verify],
+        submit_paths=[submit],
     )
     assert summary["pass"] is True
     assert int(summary["error_count"]) == 0

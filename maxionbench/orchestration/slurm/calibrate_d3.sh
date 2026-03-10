@@ -17,6 +17,7 @@ if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then
 fi
 
 mb_require_tmpdir
+mb_source_dataset_env
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "calibrate_d3"

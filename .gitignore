@@ -16,8 +16,10 @@ run_workstation.sh
 
 # Local generated benchmark outputs
 artifacts/ci/
+artifacts/containers/
 artifacts/conformance/
 artifacts/figures/
 artifacts/runs/
+artifacts/workstation_runs/
 ci_s1_smoke_local.yaml
 maxionbench/orchestration/slurm/profiles_local.yaml

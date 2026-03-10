@@ -158,6 +158,8 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_CONTAINER_IMAGE" in text
     assert "MAXIONBENCH_CONTAINER_BIND" in text
     assert "MAXIONBENCH_HF_CACHE_DIR" in text
+    assert "MAXIONBENCH_DATASET_ENV_SH" in text
+    assert "mb_source_dataset_env()" in text
     assert "apptainer exec" in text
     assert "mb_python()" in text
     gate_marker = "pre-run-gate"
@@ -208,3 +210,11 @@ def test_calibrate_d3_supports_scenario_dir_override_with_explicit_override_prec
     assert 'SCENARIO_CONFIG_DIR="${MAXIONBENCH_SCENARIO_CONFIG_DIR:-}"' in text
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"' in text
     assert 'if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then' in text
+    assert "mb_source_dataset_env" in text
+
+
+def test_prefetch_datasets_script_exists_and_uses_prefetch_helper() -> None:
+    text = Path("maxionbench/orchestration/slurm/prefetch_datasets.sh").read_text(encoding="utf-8")
+    assert "dataset_prefetch" in text
+    assert "MAXIONBENCH_DATASET_ENV_SH" in text
+    assert "mb_source_dataset_env" in text
