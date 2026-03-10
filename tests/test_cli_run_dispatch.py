@@ -324,6 +324,38 @@ def test_cli_submit_slurm_plan_dispatches_container_runtime_flags(monkeypatch) -
     ]
 
 
+def test_cli_submit_slurm_plan_dispatches_prefetch_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 244
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--prefetch-datasets",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 244
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--prefetch-datasets",
+        "--dry-run",
+        "--json",
+    ]
+
+
 def test_cli_verify_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 

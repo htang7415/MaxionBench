@@ -21,24 +21,34 @@ def _assert_common_commands(text: str) -> None:
     assert "MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex> \\" in text
     assert "keep it separate so reported S2 runs remain benchmark results rather than tuning runs" in text
     assert "docker build -t maxionbench:0.1.0 ." in text
+    assert "apptainer build /shared/containers/maxionbench.sif docker-daemon://maxionbench:0.1.0" in text
+    assert "docker save maxionbench:0.1.0 -o artifacts/containers/maxionbench_0.1.0.tar" in text
+    assert "apptainer build /shared/containers/maxionbench.sif docker-archive://$(pwd)/artifacts/containers/maxionbench_0.1.0.tar" in text
     assert "--container-runtime apptainer" in text
     assert "--container-image /shared/containers/maxionbench.sif" in text
     assert "--container-bind /shared/datasets" in text
     assert "--hf-cache-dir /shared/models/hf" in text
     assert "host execution remains the default when `--container-runtime` is omitted" in text
+    assert "`--container-image` must point at the resulting `.sif`" in text
+    assert "`--fakeroot` or a privileged build host" in text
     assert "profiles_local.yaml" in text
     assert "profiles_local.example.yaml" in text
     assert "maxionbench verify-slurm-plan --json" in text
     assert "maxionbench verify-slurm-plan --skip-gpu --json" in text
     assert "maxionbench submit-slurm-plan --dry-run --json" in text
+    assert "maxionbench submit-slurm-plan --prefetch-datasets --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --skip-gpu --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --skip-s6 --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --dry-run --json" in text
     assert "maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json" in text
+    assert "MAXIONBENCH_PREFETCH_D3_SOURCE=/shared/datasets/laion_d3_vectors.npy \\" in text
+    assert "MAXIONBENCH_PREFETCH_D4_BEIR_SOURCE=/shared/datasets/beir_pinned_bundle \\" in text
+    assert "`--prefetch-datasets` adds a separate `prefetch_datasets.sh` job" in text
     assert "robustness-accounting support baseline, not a headline S1 D1/D2 result" in text
     assert "`--skip-gpu` omits the GPU array entirely (`s5_rerank`, Track B, and Track C GPU jobs)." in text
     assert "calibrate_d3 also uses the override when configs/scenarios_paper/calibrate_d3.yaml exists" in text
     assert "unless MAXIONBENCH_CALIBRATE_CONFIG is explicitly set" in text
+    assert "PREFETCH_JOB_ID=$(sbatch --parsable maxionbench/orchestration/slurm/prefetch_datasets.sh)" in text
     assert "CPU_D3_BASELINE_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=1" in text
     assert "CPU_D3_WORKLOADS_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID}:${CPU_D3_BASELINE_JOB_ID} --array=2-4" in text
     assert "CPU_NON_D3_JOB_ID=$(sbatch --parsable --dependency=afterok:${CALIB_JOB_ID} --array=0,5-6" in text

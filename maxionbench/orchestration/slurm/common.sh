@@ -14,6 +14,7 @@ export MAXIONBENCH_CONTAINER_RUNTIME="${MAXIONBENCH_CONTAINER_RUNTIME:-}"
 export MAXIONBENCH_CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE:-}"
 export MAXIONBENCH_CONTAINER_BIND="${MAXIONBENCH_CONTAINER_BIND:-}"
 export MAXIONBENCH_HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
+export MAXIONBENCH_DATASET_ENV_SH="${MAXIONBENCH_DATASET_ENV_SH:-${ROOT_DIR}/artifacts/prefetch/dataset_env.sh}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -49,6 +50,20 @@ mb_resolve_host_path() {
     echo "${raw_path}"
   else
     echo "${ROOT_DIR}/${raw_path}"
+  fi
+}
+
+mb_source_dataset_env() {
+  local dataset_env="${MAXIONBENCH_DATASET_ENV_SH:-}"
+  if [[ -z "${dataset_env}" ]]; then
+    return
+  fi
+  local resolved_env
+  resolved_env="$(mb_resolve_host_path "${dataset_env}")"
+  if [[ -f "${resolved_env}" ]]; then
+    # shellcheck disable=SC1090
+    source "${resolved_env}"
+    mb_log "loaded dataset env: ${resolved_env}"
   fi
 }
 
@@ -222,9 +237,10 @@ mb_stage_config_to_tmp() {
   local resolved
   resolved="$(mb_resolve_config "${config_path}")"
   local staged="${SLURM_TMPDIR}/maxionbench_config_${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}.yaml"
-  mb_python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}"
+  mb_python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}" "${ROOT_DIR}"
 import os
 import pathlib
+import re
 import shutil
 import sys
 import yaml
@@ -233,17 +249,52 @@ src = pathlib.Path(sys.argv[1]).resolve()
 dst = pathlib.Path(sys.argv[2]).resolve()
 tmpdir = pathlib.Path(sys.argv[3]).resolve()
 out_tmp = pathlib.Path(sys.argv[4]).resolve() if sys.argv[4] else None
+repo_root = pathlib.Path(sys.argv[5]).resolve()
 
 with src.open("r", encoding="utf-8") as handle:
     payload = yaml.safe_load(handle) or {}
 if not isinstance(payload, dict):
     raise ValueError(f"Expected mapping config: {src}")
 
+env_token_re = re.compile(r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$")
+
+
+def expand_env(value):
+    if isinstance(value, dict):
+        return {key: expand_env(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [expand_env(item) for item in value]
+    if not isinstance(value, str):
+        return value
+    token = value.strip()
+    match = env_token_re.fullmatch(token)
+    if match is not None:
+        env_name = match.group("braced") or match.group("plain") or ""
+        env_value = os.environ.get(env_name)
+        if env_value in {None, ""}:
+            return None
+        return env_value
+    return os.path.expandvars(value)
+
+
+payload = expand_env(payload)
+
+
+def resolve_source(raw_value: str) -> pathlib.Path:
+    source = pathlib.Path(str(raw_value))
+    if source.is_absolute():
+        return source.resolve()
+    config_relative = (src.parent / source).resolve()
+    if config_relative.exists():
+        return config_relative
+    repo_relative = (repo_root / source).resolve()
+    return repo_relative
+
 def stage_any_path(key: str, bucket: str) -> None:
     value = payload.get(key)
     if not value:
         return
-    source = pathlib.Path(str(value))
+    source = resolve_source(str(value))
     if not source.exists():
         return
     bucket_dir = tmpdir / "datasets" / bucket

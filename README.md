@@ -82,6 +82,7 @@ Pre-merge automation:
 - For the checked-in paper `calibrate_d3.yaml`, export `MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy` before running workstation or direct paper-lane calibration commands; `MAXIONBENCH_D3_DATASET_SHA256` is optional but recommended.
 - `calibrate_d3` remains a dedicated calibration artifact step so reported S2 runs stay benchmark results rather than tuning runs.
 - A benchmark runtime `Dockerfile` is checked in for local OCI builds.
+- To bridge that OCI image into the pinned Slurm runtime, build `maxionbench:0.1.0` locally and then create `/shared/containers/maxionbench.sif` with `apptainer build ... docker-daemon://maxionbench:0.1.0` or `docker save` + `docker-archive://...` when Docker and Apptainer run on different hosts.
 - Slurm execution can opt into Apptainer with `submit-slurm-plan --container-runtime apptainer --container-image <path>` or the corresponding `run_workstation.sh` flags.
 - Containerized Slurm jobs auto-bind the repo root, `$SLURM_TMPDIR`, and output root; use `--container-bind` for external dataset/model roots and `--hf-cache-dir` for local HF cache mounts.
 - Slurm profile names and cluster-specific `sbatch` flags stay local. Define them in the git-ignored `maxionbench/orchestration/slurm/profiles_local.yaml` file (example template: `profiles_local.example.yaml`) and pass the local key with `submit-slurm-plan --slurm-profile <name>` or `run_workstation.sh --slurm-profile <name>`.
@@ -109,10 +110,16 @@ Pre-merge automation:
 - The workflow also verifies Slurm plan consistency with `maxionbench verify-slurm-plan --json`.
 - The workflow also verifies Slurm plan consistency for GPU-omitted mode with `maxionbench verify-slurm-plan --skip-gpu --json`.
 - The workflow also verifies Slurm dependency planning with `maxionbench submit-slurm-plan --dry-run --json`.
+- Optional dataset prefetch chain: `maxionbench submit-slurm-plan --prefetch-datasets --dry-run --json`.
 - The workflow also verifies Slurm dependency planning for GPU-omitted mode with `maxionbench submit-slurm-plan --skip-gpu --dry-run --json`.
 - The workflow also verifies Slurm dependency planning for paper override mode with `maxionbench submit-slurm-plan --scenario-config-dir configs/scenarios_paper --skip-gpu --dry-run --json`.
 - `maxionbench submit-slurm-plan --scenario-config-dir <dir>` is supported for runtime scenario overrides; each array task uses the override file when present and otherwise falls back to its default scenario config.
 - The same override also applies to `calibrate_d3` when `<dir>/calibrate_d3.yaml` exists (unless `MAXIONBENCH_CALIBRATE_CONFIG` is explicitly set).
+- `--prefetch-datasets` keeps benchmark jobs in staged-from-cache mode by inserting a separate `prefetch_datasets.sh` dependency job that populates the shared repo cache first and writes `artifacts/prefetch/dataset_env.sh` for downstream jobs.
+- Prefetch source inputs are explicit environment variables:
+  - `MAXIONBENCH_PREFETCH_D3_SOURCE` for real D3 vectors (`.npy` or `.npz`)
+  - `MAXIONBENCH_PREFETCH_D4_BEIR_SOURCE` for the pinned BEIR bundle root/archive
+  - optional `MAXIONBENCH_PREFETCH_D4_CRAG_SOURCE`; when omitted, CRAG defaults to the pinned manifest URL
 - The workflow also captures Slurm plan diagnostics under `artifacts/ci/` (`slurm_plan_verify*.json`, `slurm_submit_plan*_dry_run.json`).
 - The workflow validates these Slurm diagnostic snapshots with `maxionbench validate-slurm-snapshots --json` before proceeding.
 - The workflow writes `artifacts/ci/slurm_snapshot_validation.json` as the consolidated Slurm snapshot validation result.

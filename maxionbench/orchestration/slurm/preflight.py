@@ -11,6 +11,7 @@ from typing import Any, Mapping
 import yaml
 
 from maxionbench.datasets.cache_integrity import resolve_expected_sha256_with_source, verify_file_sha256
+from maxionbench.orchestration.config_schema import expand_env_placeholders
 
 SAFETY_FACTOR_DEFAULT = 1.8
 KNOWN_DATASET_BUNDLES = {"D1", "D2", "D3", "D4"}
@@ -87,7 +88,7 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
         payload = yaml.safe_load(handle) or {}
     if not isinstance(payload, dict):
         raise ValueError(f"Expected YAML mapping at {path}")
-    return dict(payload)
+    return dict(expand_env_placeholders(payload))
 
 
 def _load_manifest(dataset_bundle: str) -> dict[str, Any] | None:
@@ -185,7 +186,11 @@ def _resolve_path(*, value: str, config_path: Path) -> Path:
     path = Path(value)
     if path.is_absolute():
         return path
-    return (config_path.parent / path).resolve()
+    config_relative = (config_path.parent / path).resolve()
+    if config_relative.exists():
+        return config_relative
+    repo_root = Path(__file__).resolve().parents[3]
+    return (repo_root / path).resolve()
 
 
 def parse_args(argv: list[str] | None = None) -> ArgumentParser:

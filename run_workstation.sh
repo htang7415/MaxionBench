@@ -12,6 +12,7 @@ SKIP_S6=0
 LAUNCH=0
 SKIP_PYTEST=0
 SKIP_CALIBRATION=0
+PREFETCH_DATASETS=0
 CONTAINER_RUNTIME=""
 CONTAINER_IMAGE=""
 HF_CACHE_DIR=""
@@ -42,6 +43,7 @@ Options:
   --launch                     Submit Slurm jobs after checks pass
   --skip-pytest                Skip pytest -q
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
+  --prefetch-datasets         Prefetch required paper-lane datasets into the shared repo cache before checks
   --container-runtime <name>   Container runtime for Slurm jobs (currently: apptainer)
   --container-image <path>     Container image for Slurm jobs (for example /shared/maxionbench.sif)
   --container-bind <spec>      Extra container bind spec for Slurm jobs; repeatable host[:container[:opts]]
@@ -96,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_CALIBRATION=1
       shift
       ;;
+    --prefetch-datasets)
+      PREFETCH_DATASETS=1
+      shift
+      ;;
     --container-runtime)
       CONTAINER_RUNTIME="${2:-}"
       shift 2
@@ -144,6 +150,10 @@ SLURM_S6_ARGS=()
 if [[ "${SKIP_S6}" -eq 1 ]]; then
   SLURM_S6_ARGS=(--skip-s6)
 fi
+SLURM_PREFETCH_ARGS=()
+if [[ "${PREFETCH_DATASETS}" -eq 1 ]]; then
+  SLURM_PREFETCH_ARGS=(--prefetch-datasets)
+fi
 SLURM_CONTAINER_ARGS=()
 if [[ -n "${CONTAINER_RUNTIME}" ]]; then
   case "${CONTAINER_RUNTIME}" in
@@ -175,6 +185,24 @@ if [[ "${#CONTAINER_BINDS[@]}" -gt 0 ]]; then
   done
 fi
 
+run_submit_slurm_plan() {
+  local -a cmd=("maxionbench" "submit-slurm-plan")
+  if [[ "${#SLURM_PROFILE_ARGS[@]}" -gt 0 ]]; then
+    cmd+=("${SLURM_PROFILE_ARGS[@]}")
+  fi
+  if [[ "${#SLURM_S6_ARGS[@]}" -gt 0 ]]; then
+    cmd+=("${SLURM_S6_ARGS[@]}")
+  fi
+  if [[ "${#SLURM_PREFETCH_ARGS[@]}" -gt 0 ]]; then
+    cmd+=("${SLURM_PREFETCH_ARGS[@]}")
+  fi
+  if [[ "${#SLURM_CONTAINER_ARGS[@]}" -gt 0 ]]; then
+    cmd+=("${SLURM_CONTAINER_ARGS[@]}")
+  fi
+  cmd+=("$@")
+  "${cmd[@]}"
+}
+
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_ID="workstation_${RUN_TS}"
 RUN_BUNDLE_ROOT="artifacts/workstation_runs/${RUN_ID}"
@@ -203,6 +231,7 @@ REPORT_SUMMARY_MD="${RUN_REPORT_DIR}/summary.md"
 RENDER_FIGURES_HELPER="${RUN_HELPERS_DIR}/render_figures.sh"
 START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 START_EPOCH="$(date +%s)"
+LOG_PIPE="${RUN_REPORT_DIR}/run.pipe"
 
 SLURM_PLAN_VERIFY_JSON="${RUN_CHECKS_DIR}/slurm_plan_verify.json"
 SLURM_PLAN_VERIFY_SKIP_GPU_JSON="${RUN_CHECKS_DIR}/slurm_plan_verify_skip_gpu.json"
@@ -230,7 +259,12 @@ echo "- final: \${FINAL_OUT}"
 EOF
 chmod +x "${RENDER_FIGURES_HELPER}"
 
-exec > >(tee -a "${REPORT_LOG}") 2>&1
+rm -f "${LOG_PIPE}"
+mkfifo "${LOG_PIPE}"
+exec 3>&1 4>&2
+tee -a "${REPORT_LOG}" < "${LOG_PIPE}" >&3 &
+TEE_PID="$!"
+exec > "${LOG_PIPE}" 2>&1
 
 finalize_report() {
   local exit_code="$?"
@@ -271,6 +305,7 @@ cpu_only=${CPU_ONLY}
 launch=${LAUNCH}
 skip_pytest=${SKIP_PYTEST}
 skip_calibration=${SKIP_CALIBRATION}
+prefetch_datasets=${PREFETCH_DATASETS}
 skip_s6=${SKIP_S6}
 args=${args_rendered}
 bundle_root=${RUN_BUNDLE_ROOT}
@@ -290,6 +325,7 @@ EOF
 - slurm_profile: \`${SLURM_PROFILE:-none}\`
 - launch: \`${LAUNCH}\`
 - cpu_only: \`${CPU_ONLY}\`
+- prefetch_datasets: \`${PREFETCH_DATASETS}\`
 - skip_s6: \`${SKIP_S6}\`
 - args: \`${args_rendered}\`
 
@@ -318,6 +354,11 @@ EOF
 
   ln -sfn "${RUN_ID}" "artifacts/workstation_runs/latest"
   echo "Run report saved: ${RUN_BUNDLE_ROOT}"
+
+  exec 1>&3 2>&4
+  wait "${TEE_PID}" 2>/dev/null || true
+  rm -f "${LOG_PIPE}"
+  exec 3>&- 4>&-
 }
 
 trap finalize_report EXIT
@@ -338,6 +379,17 @@ maxionbench verify-conformance-configs --config-dir configs/conformance --json
 
 echo "==> Step 2: D3 calibration gate"
 if [[ "${SKIP_CALIBRATION}" -eq 0 ]]; then
+  if [[ "${PREFETCH_DATASETS}" -eq 1 ]]; then
+    python -m maxionbench.orchestration.slurm.dataset_prefetch \
+      --repo-root "${ROOT_DIR}" \
+      --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
+      --env-sh artifacts/prefetch/dataset_env.sh \
+      --json
+    if [[ -f "${ROOT_DIR}/artifacts/prefetch/dataset_env.sh" ]]; then
+      # shellcheck disable=SC1091
+      source "${ROOT_DIR}/artifacts/prefetch/dataset_env.sh"
+    fi
+  fi
   CALIBRATION_PATH_CHECK="$(python - <<'PY' "${CALIBRATE_CONFIG_PATH}"
 import os
 import pathlib
@@ -387,25 +439,16 @@ fi
 echo "==> Step 3: Slurm plan and protocol audit"
 maxionbench verify-slurm-plan --json | tee "${SLURM_PLAN_VERIFY_JSON}"
 maxionbench verify-slurm-plan --skip-gpu --json | tee "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}"
-maxionbench submit-slurm-plan \
-  "${SLURM_PROFILE_ARGS[@]}" \
-  "${SLURM_S6_ARGS[@]}" \
-  "${SLURM_CONTAINER_ARGS[@]}" \
+run_submit_slurm_plan \
   --output-root "${RUN_RESULTS_SLURM}" \
   --dry-run \
   --json | tee "${SLURM_SUBMIT_DRY_RUN_JSON}"
-maxionbench submit-slurm-plan \
-  "${SLURM_PROFILE_ARGS[@]}" \
-  "${SLURM_S6_ARGS[@]}" \
-  "${SLURM_CONTAINER_ARGS[@]}" \
+run_submit_slurm_plan \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
   --dry-run \
   --json | tee "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}"
-maxionbench submit-slurm-plan \
-  "${SLURM_PROFILE_ARGS[@]}" \
-  "${SLURM_S6_ARGS[@]}" \
-  "${SLURM_CONTAINER_ARGS[@]}" \
+run_submit_slurm_plan \
   --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
   --output-root "${RUN_RESULTS_SLURM}" \
   --skip-gpu \
@@ -450,19 +493,13 @@ maxionbench ci-protocol-audit \
 echo "==> Step 4: Slurm submit"
 if [[ "${LAUNCH}" -eq 1 ]]; then
   if [[ "${CPU_ONLY}" -eq 1 ]]; then
-    maxionbench submit-slurm-plan \
-      "${SLURM_PROFILE_ARGS[@]}" \
-      "${SLURM_S6_ARGS[@]}" \
-      "${SLURM_CONTAINER_ARGS[@]}" \
+    run_submit_slurm_plan \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --skip-gpu \
       --seed "${SEED}"
   else
-    maxionbench submit-slurm-plan \
-      "${SLURM_PROFILE_ARGS[@]}" \
-      "${SLURM_S6_ARGS[@]}" \
-      "${SLURM_CONTAINER_ARGS[@]}" \
+    run_submit_slurm_plan \
       --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
       --output-root "${RUN_RESULTS_SLURM}" \
       --seed "${SEED}"
