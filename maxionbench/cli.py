@@ -72,6 +72,51 @@ def main(argv: list[str] | None = None) -> int:
     verify_dataset_manifests_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
     verify_dataset_manifests_parser.add_argument("--json", action="store_true")
 
+    download_d1_parser = subparsers.add_parser(
+        "download-d1",
+        help="Download a D1 ann-benchmarks HDF5 bundle into the local data cache",
+    )
+    download_d1_parser.add_argument("--dataset-name", required=True)
+    download_d1_parser.add_argument("--output", default=None)
+    download_d1_parser.add_argument("--force", action="store_true")
+    download_d1_parser.add_argument("--timeout-s", type=float, default=60.0)
+    download_d1_parser.add_argument("--json", action="store_true")
+
+    download_datasets_parser = subparsers.add_parser(
+        "download-datasets",
+        help="Download the requested local/community dataset tree under dataset/",
+    )
+    download_datasets_parser.add_argument("--root", default="dataset")
+    download_datasets_parser.add_argument("--cache-dir", default=".cache")
+    download_datasets_parser.add_argument("--crag-examples", type=int, default=500)
+    download_datasets_parser.add_argument("--skip-d1d2", action="store_true")
+    download_datasets_parser.add_argument("--skip-d3", action="store_true")
+    download_datasets_parser.add_argument("--skip-d4", action="store_true")
+    download_datasets_parser.add_argument("--force", action="store_true")
+    download_datasets_parser.add_argument("--timeout-s", type=float, default=60.0)
+    download_datasets_parser.add_argument("--json", action="store_true")
+
+    preprocess_datasets_parser = subparsers.add_parser(
+        "preprocess-datasets",
+        help="Normalize raw datasets into the canonical processed layout",
+    )
+    preprocess_datasets_parser.add_argument("mode", choices=["ann-hdf5", "d3-explicit", "beir", "crag"])
+    preprocess_datasets_parser.add_argument("--input", default=None)
+    preprocess_datasets_parser.add_argument("--out", required=True)
+    preprocess_datasets_parser.add_argument("--family", default=None)
+    preprocess_datasets_parser.add_argument("--name", default=None)
+    preprocess_datasets_parser.add_argument("--metric", default=None)
+    preprocess_datasets_parser.add_argument("--base", default=None)
+    preprocess_datasets_parser.add_argument("--queries", default=None)
+    preprocess_datasets_parser.add_argument("--gt", default=None)
+    preprocess_datasets_parser.add_argument("--filters", default=None)
+    preprocess_datasets_parser.add_argument("--payloads", default=None)
+    preprocess_datasets_parser.add_argument("--split", default=None)
+    preprocess_datasets_parser.add_argument("--max-examples", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--chunk-chars", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--overlap", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--json", action="store_true")
+
     verify_conformance_configs_parser = subparsers.add_parser(
         "verify-conformance-configs",
         help="Verify conformance config catalog shape and required adapter coverage",
@@ -306,6 +351,99 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_dataset_manifests_main(verify_argv)
+    if args.command == "download-d1":
+        from maxionbench.tools.download_d1 import main as download_d1_main
+
+        download_argv = ["--dataset-name", args.dataset_name, "--timeout-s", str(args.timeout_s)]
+        if args.output:
+            download_argv.extend(["--output", args.output])
+        if args.force:
+            download_argv.append("--force")
+        if args.json:
+            download_argv.append("--json")
+        return download_d1_main(download_argv)
+    if args.command == "download-datasets":
+        from maxionbench.tools.download_datasets import main as download_datasets_main
+
+        download_argv: list[str] = [
+            "--root",
+            args.root,
+            "--cache-dir",
+            args.cache_dir,
+            "--crag-examples",
+            str(args.crag_examples),
+            "--timeout-s",
+            str(args.timeout_s),
+        ]
+        if args.skip_d1d2:
+            download_argv.append("--skip-d1d2")
+        if args.skip_d3:
+            download_argv.append("--skip-d3")
+        if args.skip_d4:
+            download_argv.append("--skip-d4")
+        if args.force:
+            download_argv.append("--force")
+        if args.json:
+            download_argv.append("--json")
+        return download_datasets_main(download_argv)
+    if args.command == "preprocess-datasets":
+        from maxionbench.tools.preprocess_datasets import main as preprocess_datasets_main
+
+        required_by_mode = {
+            "ann-hdf5": {
+                "--input": args.input,
+                "--family": args.family,
+                "--name": args.name,
+                "--metric": args.metric,
+            },
+            "d3-explicit": {
+                "--base": args.base,
+                "--queries": args.queries,
+                "--gt": args.gt,
+                "--filters": args.filters,
+            },
+            "beir": {
+                "--input": args.input,
+                "--name": args.name,
+            },
+            "crag": {
+                "--input": args.input,
+            },
+        }
+        missing = [flag for flag, value in required_by_mode.get(args.mode, {}).items() if value in {None, ""}]
+        if missing:
+            parser.error(f"preprocess-datasets {args.mode} requires {' '.join(missing)}")
+
+        preprocess_argv: list[str] = [args.mode, "--out", args.out]
+        if args.input is not None:
+            preprocess_argv.extend(["--input", args.input])
+        if args.family is not None:
+            preprocess_argv.extend(["--family", args.family])
+        if args.name is not None:
+            preprocess_argv.extend(["--name", args.name])
+        if args.metric is not None:
+            preprocess_argv.extend(["--metric", args.metric])
+        if args.base is not None:
+            preprocess_argv.extend(["--base", args.base])
+        if args.queries is not None:
+            preprocess_argv.extend(["--queries", args.queries])
+        if args.gt is not None:
+            preprocess_argv.extend(["--gt", args.gt])
+        if args.filters is not None:
+            preprocess_argv.extend(["--filters", args.filters])
+        if args.payloads is not None:
+            preprocess_argv.extend(["--payloads", args.payloads])
+        if args.split is not None:
+            preprocess_argv.extend(["--split", args.split])
+        if args.max_examples is not None:
+            preprocess_argv.extend(["--max-examples", str(args.max_examples)])
+        if args.chunk_chars is not None:
+            preprocess_argv.extend(["--chunk-chars", str(args.chunk_chars)])
+        if args.overlap is not None:
+            preprocess_argv.extend(["--overlap", str(args.overlap)])
+        if args.json:
+            preprocess_argv.append("--json")
+        return preprocess_datasets_main(preprocess_argv)
     if args.command == "verify-conformance-configs":
         from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
 

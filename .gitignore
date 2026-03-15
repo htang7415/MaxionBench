@@ -5,6 +5,7 @@ document.md
 AGENTS.md
 CLAUDE.md
 command-mac.md
+dataset
 
 # Python bytecode/test caches
 __pycache__/

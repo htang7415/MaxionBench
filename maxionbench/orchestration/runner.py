@@ -26,6 +26,11 @@ from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_biga
 from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
+from maxionbench.datasets.loaders.processed import (
+    load_processed_ann_dataset,
+    load_processed_d4_bundle,
+    load_processed_filtered_ann_dataset,
+)
 from maxionbench.metrics.cost_rhu import rhu_hours
 from maxionbench.metrics.robustness import p99_inflation
 from maxionbench.metrics.resources import ResourceProfile, profile_from_adapter_stats, rhu_rate_for_profile
@@ -283,7 +288,13 @@ def _run_calibrate_rows(
     config_path: Path,
 ) -> list[ResultRow]:
     params = _resolve_d3_params(cfg, d3_params_path)
-    resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
+    processed_dataset_path = _resolve_optional_config_value_path(value=cfg.processed_dataset_path, config_path=config_path)
+    if processed_dataset_path is not None and str(cfg.dataset_bundle).upper() == "D3":
+        resolved_dataset_path = (processed_dataset_path / "base.npy").resolve()
+        calibration_source = "processed_dataset_path"
+    else:
+        resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
+        calibration_source = "dataset_path" if cfg.dataset_path else "synthetic_vectors"
     calibrate_cfg = CalibrateD3Config(
         vector_dim=cfg.vector_dim,
         num_vectors=cfg.num_vectors,
@@ -292,7 +303,7 @@ def _run_calibrate_rows(
         initial_params=params,
         dataset_path=str(resolved_dataset_path) if resolved_dataset_path is not None else None,
         require_real_data=bool(cfg.calibration_require_real_data),
-        calibration_source="dataset_path" if cfg.dataset_path else "synthetic_vectors",
+        calibration_source=calibration_source,
         calibration_dataset_hash=cfg.dataset_hash,
     )
     calibration = run_calibrate_d3(calibrate_cfg)
@@ -1471,6 +1482,37 @@ def _resolve_optional_config_value_path(*, value: str | None, config_path: Path)
 
 def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
     bundle = str(cfg.dataset_bundle).upper()
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is not None:
+        if bundle in {"D1", "D2"}:
+            processed = load_processed_ann_dataset(
+                processed_dataset_path,
+                max_vectors=cfg.num_vectors,
+                max_queries=cfg.num_queries,
+                top_k=max(cfg.top_k, 10),
+            )
+            return S1Data(
+                ids=list(processed.ids),
+                vectors=np.asarray(processed.vectors, dtype=np.float32),
+                queries=np.asarray(processed.queries, dtype=np.float32),
+                ground_truth_ids=list(processed.ground_truth_ids),
+            )
+        if bundle == "D3":
+            processed = load_processed_filtered_ann_dataset(
+                processed_dataset_path,
+                max_vectors=cfg.num_vectors,
+                max_queries=cfg.num_queries,
+                top_k=max(cfg.top_k, 10),
+            )
+            return S1Data(
+                ids=list(processed.ids),
+                vectors=np.asarray(processed.vectors, dtype=np.float32),
+                queries=np.asarray(processed.queries, dtype=np.float32),
+                ground_truth_ids=list(processed.ground_truth_ids),
+            )
     if bundle != "D1":
         if bundle == "D2":
             base_fvecs = _resolve_optional_config_value_path(value=cfg.d2_base_fvecs_path, config_path=config_path)
@@ -1526,6 +1568,16 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
 def _maybe_load_d3_vectors(cfg: RunConfig, *, config_path: Path) -> np.ndarray | None:
     if cfg.dataset_bundle != "D3":
         return None
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is not None:
+        raise ValueError(
+            "processed D3 datasets are not yet supported for S2/S3 scenario execution: "
+            "the current workload code still expects generated correlated metadata rather than explicit per-query filters. "
+            "Use dataset_path for the legacy path or complete the D3 scenario migration first."
+        )
     resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
     if resolved_dataset_path is None:
         return None
@@ -1541,6 +1593,20 @@ def _maybe_load_d3_vectors(cfg: RunConfig, *, config_path: Path) -> np.ndarray |
 def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalDataset | None:
     if cfg.dataset_bundle != "D4":
         return None
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is not None:
+        return load_processed_d4_bundle(
+            processed_dataset_path,
+            vector_dim=cfg.vector_dim,
+            seed=cfg.seed,
+            beir_subsets=list(cfg.d4_beir_subsets),
+            include_crag=cfg.d4_include_crag,
+            max_docs=cfg.d4_max_docs,
+            max_queries=cfg.d4_max_queries,
+        )
     if not cfg.d4_use_real_data:
         return None
     beir_root = _resolve_optional_config_value_path(value=cfg.d4_beir_root, config_path=config_path)

@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from maxionbench.orchestration.runner import _gpu_count_for_cfg, _resolve_d3_params, run_from_config
-from maxionbench.orchestration.config_schema import RunConfig
+from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 from maxionbench.tools.validate_outputs import validate_run_directory
 
 
@@ -217,6 +217,30 @@ def test_gpu_count_resolution() -> None:
 
     explicit_cfg = RunConfig(engine="mock", adapter_options={"gpu_count": 2}, no_retry=True)
     assert _gpu_count_for_cfg(explicit_cfg) == 2.0
+
+
+def test_config_rejects_d4_real_data_without_any_source_path(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "cfg_d4_invalid.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "mock",
+                "scenario": "s4_hybrid",
+                "dataset_bundle": "D4",
+                "dataset_hash": "invalid-d4",
+                "no_retry": True,
+                "d4_use_real_data": True,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="requires at least one of processed_dataset_path, d4_beir_root, or d4_crag_path",
+    ):
+        load_run_config(cfg_path)
 
 
 def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(tmp_path: Path) -> None:
