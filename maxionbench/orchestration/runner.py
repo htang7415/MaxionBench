@@ -885,6 +885,8 @@ def _run_s3_like_rows(
             update_rate=cfg.s3_update_rate,
             delete_rate=cfg.s3_delete_rate,
             maintenance_interval_s=cfg.maintenance_interval_s,
+            clients_read=cfg.clients_read,
+            clients_write=cfg.clients_write,
             max_events=cfg.s3_max_events,
         )
         if bursty:
@@ -1177,6 +1179,12 @@ def _select_matched_quality_rows(
 
 
 def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
+    requires_verified = _requires_verified_d3_params(cfg)
+    if not d3_params_path and requires_verified:
+        raise ValueError(
+            "d3 params are required for strict D3 robustness scenarios. "
+            "Run `calibrate_d3` first and pass the resulting d3_params.yaml via `--d3-params`."
+        )
     if d3_params_path:
         with Path(d3_params_path).open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle) or {}
@@ -1185,7 +1193,8 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
         if _requires_paper_d3_calibration_check(cfg):
             min_vectors = max(1, int(getattr(cfg, "d3_min_calibration_vectors", PAPER_MIN_CALIBRATION_VECTORS)))
             issues = paper_calibration_issues(payload=payload, min_vectors=min_vectors)
-            if issues and not bool(getattr(cfg, "allow_unverified_d3_params", False)):
+            allow_unverified = bool(getattr(cfg, "allow_unverified_d3_params", False)) and not requires_verified
+            if issues and not allow_unverified:
                 joined = "; ".join(issues[:4])
                 raise ValueError(
                     "d3 params are not paper-ready for D3 robustness scenarios. "
@@ -1221,6 +1230,10 @@ def _requires_paper_d3_calibration_check(cfg: RunConfig) -> bool:
         str(cfg.dataset_bundle).upper() == "D3"
         and str(cfg.scenario) in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
     )
+
+
+def _requires_verified_d3_params(cfg: RunConfig) -> bool:
+    return _requires_paper_d3_calibration_check(cfg) and str(cfg.phase_timing_mode).strip().lower() == "strict"
 
 
 def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:
@@ -1532,6 +1545,7 @@ def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalData
         return None
     beir_root = _resolve_optional_config_value_path(value=cfg.d4_beir_root, config_path=config_path)
     crag_path = _resolve_optional_config_value_path(value=cfg.d4_crag_path, config_path=config_path)
+    crag_expected_sha256 = str(cfg.d4_crag_sha256) if cfg.d4_crag_sha256 else None
     return load_d4_from_local_bundles(
         vector_dim=cfg.vector_dim,
         seed=cfg.seed,
@@ -1539,6 +1553,7 @@ def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalData
         beir_subsets=list(cfg.d4_beir_subsets),
         beir_split=cfg.d4_beir_split,
         crag_path=crag_path,
+        crag_expected_sha256=crag_expected_sha256,
         include_crag=cfg.d4_include_crag,
         max_docs=cfg.d4_max_docs,
         max_queries=cfg.d4_max_queries,

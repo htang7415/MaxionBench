@@ -18,12 +18,18 @@ from maxionbench.schemas.adapter_contract import (
     Vector,
 )
 
-from ._exact import StoredPoint, normalize_metric, topk_exact
+from ._exact import StoredPoint, normalize_metric
 from .base import BaseAdapter
+
+_FILTERABLE_FIELDS: dict[str, str] = {
+    "tenant_id": "valueText",
+    "acl_bucket": "valueInt",
+    "time_bucket": "valueInt",
+}
 
 
 class WeaviateAdapter(BaseAdapter):
-    """Weaviate adapter with deterministic exact local query path."""
+    """Weaviate adapter using remote vector search and pinned equality filters."""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8080, scheme: str = "http", timeout_s: float = 30.0) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
@@ -84,13 +90,40 @@ class WeaviateAdapter(BaseAdapter):
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
-        return topk_exact(
-            records=self._records,
-            query=self._to_vector(request.vector),
-            top_k=request.top_k,
-            metric=self._metric,
-            filters=request.filters,
+        if not self._class_name:
+            return []
+        query_vec = self._to_vector(request.vector)
+        fields = "\n      ".join(["doc_id", "payload_json", "_additional { id distance }"])
+        where_clause = self._graphql_where(request.filters)
+        args = [f"limit: {int(request.top_k)}", f"nearVector: {{vector: {json.dumps(query_vec.tolist())}}}"]
+        if where_clause:
+            args.append(f"where: {where_clause}")
+        graphql = (
+            "{\n"
+            "  Get {\n"
+            f"    {self._class_name}({', '.join(args)}) {{\n"
+            f"      {fields}\n"
+            "    }\n"
+            "  }\n"
+            "}"
         )
+        response = self._request("POST", "/v1/graphql", json={"query": graphql})
+        rows = (((response.get("data") or {}).get("Get") or {}).get(self._class_name)) or []
+        out: list[QueryResult] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            payload = self._decode_payload(row.get("payload_json"))
+            additional = row.get("_additional") or {}
+            distance = float(additional.get("distance", 0.0) or 0.0)
+            out.append(
+                QueryResult(
+                    id=str(row.get("doc_id") or additional.get("id") or ""),
+                    score=-distance,
+                    payload=payload,
+                )
+            )
+        return out
 
     def batch_query(self, requests: Sequence[QueryRequest]) -> list[list[QueryResult]]:
         return [self.query(request) for request in requests]
@@ -176,6 +209,9 @@ class WeaviateAdapter(BaseAdapter):
             "properties": [
                 {"name": "doc_id", "dataType": ["text"]},
                 {"name": "payload_json", "dataType": ["text"]},
+                {"name": "tenant_id", "dataType": ["text"]},
+                {"name": "acl_bucket", "dataType": ["int"]},
+                {"name": "time_bucket", "dataType": ["int"]},
             ],
         }
         self._request("POST", "/v1/schema", json=body)
@@ -186,15 +222,19 @@ class WeaviateAdapter(BaseAdapter):
             return
         objects = []
         for doc_id, point in sorted(self._records.items(), key=lambda item: item[0]):
+            properties = {
+                "doc_id": doc_id,
+                "payload_json": json.dumps(point.payload, sort_keys=True),
+            }
+            for key in _FILTERABLE_FIELDS:
+                if key in point.payload:
+                    properties[key] = point.payload[key]
             objects.append(
                 {
                     "class": self._class_name,
                     "id": str(uuid.uuid5(uuid.NAMESPACE_URL, doc_id)),
                     "vector": point.vector.tolist(),
-                    "properties": {
-                        "doc_id": doc_id,
-                        "payload_json": json.dumps(point.payload, sort_keys=True),
-                    },
+                    "properties": properties,
                 }
             )
         self._request("POST", "/v1/batch/objects", json={"objects": objects})
@@ -237,3 +277,35 @@ class WeaviateAdapter(BaseAdapter):
         if not cleaned:
             return "MaxionbenchCollection"
         return cleaned[0].upper() + cleaned[1:]
+
+    @staticmethod
+    def _decode_payload(payload_raw: Any) -> dict[str, Any]:
+        if isinstance(payload_raw, dict):
+            return dict(payload_raw)
+        try:
+            payload = json.loads(str(payload_raw))
+        except Exception:
+            return {}
+        return dict(payload) if isinstance(payload, dict) else {}
+
+    def _graphql_where(self, filters: Mapping[str, Any] | None) -> str:
+        if not filters:
+            return ""
+        operands = [self._graphql_filter_operand(key, value) for key, value in sorted(filters.items())]
+        if len(operands) == 1:
+            return operands[0]
+        return "{operator: And, operands: [" + ", ".join(operands) + "]}"
+
+    def _graphql_filter_operand(self, key: str, value: Any) -> str:
+        value_field = _FILTERABLE_FIELDS.get(str(key))
+        if value_field is None:
+            raise ValueError(
+                f"WeaviateAdapter only supports equality filters on {sorted(_FILTERABLE_FIELDS)}; got {key!r}"
+            )
+        return (
+            "{path: "
+            + json.dumps([str(key)])
+            + ", operator: Equal, "
+            + f"{value_field}: {json.dumps(value)}"
+            + "}"
+        )

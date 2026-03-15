@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench -type f \\\\\\(-name *.yaml -o -name *.yml -o -name *.sh -o -name Dockerfile* -o -name *.def -o -name *.sif -o -name *.md -o -name requirements.txt -o -name pyproject.toml -o -name setup.py -o -name *.json \\\\\\))",
+      "Bash(grep -r \"clients_read\\\\|clients_grid\" /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/configs/scenarios/*.yaml)",
+      "Bash(done)"
+    ]
+  }
+}

@@ -260,6 +260,19 @@ def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(
     assert resolved.seed == 123
 
 
+def test_resolve_d3_params_requires_calibration_file_for_strict_d3_runs() -> None:
+    cfg = RunConfig(
+        engine="mock",
+        scenario="s2_filtered_ann",
+        dataset_bundle="D3",
+        dataset_hash="synthetic-d3-10m",
+        phase_timing_mode="strict",
+        no_retry=True,
+    )
+    with pytest.raises(ValueError, match="d3 params are required for strict D3 robustness scenarios"):
+        _resolve_d3_params(cfg, None)
+
+
 def test_runner_enforce_readiness_allows_mock_without_matrix(tmp_path: Path) -> None:
     config = {
         "engine": "mock",
