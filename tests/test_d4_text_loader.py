@@ -199,6 +199,53 @@ def test_runner_s4_with_real_d4_bundle(tmp_path: Path) -> None:
     assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
 
 
+def test_runner_s4_enforces_crag_sha256_for_real_bundle(tmp_path: Path) -> None:
+    beir_root = tmp_path / "beir"
+    _make_beir_subset(beir_root, "fiqa")
+    crag_path = _make_crag_file(tmp_path / "crag.jsonl.bz2")
+
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s4_hybrid",
+        "dataset_bundle": "D4",
+        "dataset_hash": "local-beir-crag",
+        "seed": 4,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "s4-real-crag"),
+        "quality_target": 0.35,
+        "clients_read": 2,
+        "clients_write": 0,
+        "clients_grid": [2],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 150.0,
+        "vector_dim": 16,
+        "num_vectors": 50,
+        "num_queries": 10,
+        "top_k": 10,
+        "rrf_k": 60,
+        "s4_dense_candidates": 20,
+        "s4_bm25_candidates": 20,
+        "d4_use_real_data": True,
+        "d4_beir_root": str(beir_root),
+        "d4_beir_subsets": ["fiqa"],
+        "d4_beir_split": "test",
+        "d4_crag_path": str(crag_path),
+        "d4_crag_sha256": "0" * 64,
+        "d4_include_crag": True,
+        "d4_max_docs": 50,
+        "d4_max_queries": 10,
+    }
+    cfg_path = tmp_path / "cfg_crag_sha.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(cfg, handle, sort_keys=True)
+
+    with pytest.raises(ValueError, match="sha256 mismatch"):
+        run_from_config(cfg_path, cli_overrides=None)
+
+
 def test_runner_s4_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     beir_root = data_root / "beir"

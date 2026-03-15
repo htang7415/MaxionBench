@@ -18,6 +18,7 @@ search_sweep:
   - {hnsw_ef: 128}
 warmup_s: 120
 steady_state_s: 300
+phase_timing_mode: strict
 rpc_baseline_requests: 1000
 sla_threshold_ms: 80.0
 vector_dim: 64

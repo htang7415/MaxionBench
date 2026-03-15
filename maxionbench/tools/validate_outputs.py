@@ -709,6 +709,32 @@ def _validate_runtime_protocol(
         warnings=warnings,
         label="config_resolved rpc_baseline_requests",
     ) and ok
+    ok = _validate_config_constant(
+        config_payload=config_payload,
+        key="phase_timing_mode",
+        expected="strict",
+        strict_schema=strict_schema,
+        warnings=warnings,
+        label="config_resolved phase_timing_mode",
+    ) and ok
+    ok = _validate_frame_elapsed_window(
+        frame=frame,
+        column="warmup_elapsed_s",
+        minimum=PINNED_WARMUP_S,
+        maximum=PINNED_WARMUP_S + 5.0,
+        strict_schema=strict_schema,
+        warnings=warnings,
+        label="results.parquet warmup elapsed",
+    ) and ok
+    ok = _validate_frame_elapsed_window(
+        frame=frame,
+        column="measure_elapsed_s",
+        minimum=PINNED_STEADY_STATE_S,
+        maximum=PINNED_STEADY_STATE_S + 5.0,
+        strict_schema=strict_schema,
+        warnings=warnings,
+        label="results.parquet steady-state elapsed",
+    ) and ok
     ok = _validate_scenario_protocol_pins(
         scenario=scenario,
         config_payload=config_payload,
@@ -833,7 +859,19 @@ def _validate_d3_params_paper_readiness(
 
     raw_path = config_payload.get("d3_params")
     if raw_path in {None, ""}:
-        return True
+        _raise_or_warn(
+            "config_resolved.yaml `d3_params` is required for D3 robustness scenarios under enforce-protocol",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    if bool(config_payload.get("allow_unverified_d3_params", False)):
+        _raise_or_warn(
+            "config_resolved.yaml `allow_unverified_d3_params` must be false for enforce-protocol D3 runs",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
     d3_params_path = Path(str(raw_path)).expanduser()
     if not d3_params_path.exists():
         _raise_or_warn(
@@ -991,6 +1029,44 @@ def _validate_dataset_cache_checksum_provenance(
             )
             ok = False
     return ok
+
+
+def _validate_frame_elapsed_window(
+    *,
+    frame: pd.DataFrame,
+    column: str,
+    minimum: float,
+    maximum: float,
+    strict_schema: bool,
+    warnings: list[str],
+    label: str,
+) -> bool:
+    if column not in frame.columns:
+        _raise_or_warn(
+            f"{label} missing column `{column}`",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    values = pd.to_numeric(frame[column], errors="coerce")
+    if values.isna().any():
+        _raise_or_warn(
+            f"{label} column `{column}` must be numeric",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    observed_min = float(values.min())
+    observed_max = float(values.max())
+    if observed_min < float(minimum) or observed_max > float(maximum):
+        _raise_or_warn(
+            f"{label} column `{column}` must stay within [{minimum}, {maximum}] "
+            f"(observed min={observed_min}, max={observed_max})",
+            strict_schema=strict_schema,
+            warnings=warnings,
+        )
+        return False
+    return True
 
 
 def _checksum_mappings_for_bundle(

@@ -13,7 +13,55 @@ from maxionbench.tools.migrate_stage_timing import backfill_path
 from maxionbench.tools.validate_outputs import validate_path, validate_run_directory
 
 
-def _make_run(tmp_path: Path, *, name: str, seed: int, overrides: dict[str, object] | None = None) -> Path:
+def _write_paper_ready_d3_params(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "k_clusters": 4096,
+        "num_tenants": 100,
+        "num_acl_buckets": 16,
+        "num_time_buckets": 52,
+        "beta_tenant": 0.91,
+        "beta_acl": 0.83,
+        "beta_time": 0.79,
+        "seed": 42,
+        "calibration_eval": {
+            "test_a_median_concentration": 0.61,
+            "test_b_cluster_spread": 20.0,
+            "p99_ratio_1pct_to_50pct": 2.3,
+            "recall_gap_50_minus_1": 0.08,
+            "trivial": False,
+        },
+        "calibration_vector_count": 10_000_000,
+        "calibration_source": "real_dataset_path",
+        "calibration_paper_ready": True,
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _materialize_phase_elapsed(run_dir: Path) -> None:
+    config_path = run_dir / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    warmup_s = float(config_payload.get("warmup_s", 0.0))
+    steady_state_s = float(config_payload.get("steady_state_s", 0.0))
+    frame = pd.read_parquet(run_dir / "results.parquet")
+    frame.loc[:, "warmup_target_s"] = warmup_s
+    frame.loc[:, "measure_target_s"] = steady_state_s
+    frame.loc[:, "warmup_elapsed_s"] = warmup_s
+    frame.loc[:, "measure_elapsed_s"] = steady_state_s
+    frame.to_parquet(run_dir / "results.parquet", index=False)
+
+
+def _make_run(
+    tmp_path: Path,
+    *,
+    name: str,
+    seed: int,
+    overrides: dict[str, object] | None = None,
+    cli_overrides: dict[str, object] | None = None,
+    resolved_phase_timing_mode: str | None = None,
+) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     config = {
         "engine": "mock",
@@ -47,11 +95,20 @@ def _make_run(tmp_path: Path, *, name: str, seed: int, overrides: dict[str, obje
     cfg_path = tmp_path / f"{name}.yaml"
     with cfg_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(config, handle, sort_keys=True)
-    return run_from_config(cfg_path, cli_overrides=None)
+    run_dir = run_from_config(cfg_path, cli_overrides=cli_overrides)
+    if resolved_phase_timing_mode is not None:
+        config_path = run_dir / "config_resolved.yaml"
+        config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert isinstance(config_payload, dict)
+        config_payload["phase_timing_mode"] = resolved_phase_timing_mode
+        config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+    _materialize_phase_elapsed(run_dir)
+    return run_dir
 
 
 def _make_pinned_s3_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 101) -> Path:
     runs_root = tmp_path / "runs"
+    d3_params_path = _write_paper_ready_d3_params(runs_root / "paper_ready_d3_params.yaml")
     _make_run(
         runs_root,
         name="run-s1-d3-baseline-protocol",
@@ -71,6 +128,7 @@ def _make_pinned_s3_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 
             "phase_timing_mode": "bounded",
             "phase_max_requests_per_phase": 16,
         },
+        resolved_phase_timing_mode="strict",
     )
     return _make_run(
         runs_root,
@@ -97,11 +155,14 @@ def _make_pinned_s3_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 
             "sla_threshold_ms": 120.0,
             "s3_max_events": 60,
         },
+        cli_overrides={"d3_params": str(d3_params_path)},
+        resolved_phase_timing_mode="strict",
     )
 
 
 def _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int = 201) -> Path:
     runs_root = tmp_path / "runs_s3b"
+    d3_params_path = _write_paper_ready_d3_params(runs_root / "paper_ready_d3_params.yaml")
     _make_run(
         runs_root,
         name="run-s1-d3-baseline-protocol-s3b",
@@ -121,6 +182,7 @@ def _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int =
             "phase_timing_mode": "bounded",
             "phase_max_requests_per_phase": 16,
         },
+        resolved_phase_timing_mode="strict",
     )
     return _make_run(
         runs_root,
@@ -151,11 +213,14 @@ def _make_pinned_s3b_run_with_matched_s1_baseline(tmp_path: Path, *, seed: int =
             "sla_threshold_ms": 120.0,
             "s3_max_events": 60,
         },
+        cli_overrides={"d3_params": str(d3_params_path)},
+        resolved_phase_timing_mode="strict",
     )
 
 
 def _make_pinned_s2_run(tmp_path: Path, *, seed: int = 121) -> Path:
     runs_root = tmp_path / "runs_s2"
+    d3_params_path = _write_paper_ready_d3_params(runs_root / "paper_ready_d3_params.yaml")
     return _make_run(
         runs_root,
         name="run-s2-protocol",
@@ -175,6 +240,8 @@ def _make_pinned_s2_run(tmp_path: Path, *, seed: int = 121) -> Path:
             "phase_timing_mode": "bounded",
             "sla_threshold_ms": 80.0,
         },
+        cli_overrides={"d3_params": str(d3_params_path)},
+        resolved_phase_timing_mode="strict",
     )
 
 
@@ -207,6 +274,7 @@ def _make_pinned_s5_run(tmp_path: Path, *, seed: int = 151) -> Path:
             "phase_timing_mode": "bounded",
             "sla_threshold_ms": 300.0,
         },
+        resolved_phase_timing_mode="strict",
     )
 
 
@@ -435,7 +503,7 @@ def test_validate_run_directory_enforce_protocol_rejects_scenario_pin_drift(tmp_
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -455,7 +523,7 @@ def test_validate_run_directory_enforce_protocol_rejects_s1_quality_target_drift
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -574,6 +642,18 @@ def test_validate_run_directory_enforce_protocol_rejects_non_paper_d3_params_fil
         validate_run_directory(s2_run, enforce_protocol=True)
 
 
+def test_validate_run_directory_enforce_protocol_requires_d3_params_path(tmp_path: Path) -> None:
+    s2_run = _make_pinned_s2_run(tmp_path, seed=141)
+    config_path = s2_run / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["d3_params"] = None
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="d3_params"):
+        validate_run_directory(s2_run, enforce_protocol=True)
+
+
 def test_validate_run_directory_enforce_protocol_requires_gpu_tracks_omitted_flag(tmp_path: Path) -> None:
     run_dir = _make_run(
         tmp_path,
@@ -586,7 +666,7 @@ def test_validate_run_directory_enforce_protocol_requires_gpu_tracks_omitted_fla
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -611,7 +691,7 @@ def test_validate_run_directory_enforce_protocol_requires_pinned_rtt_baseline_re
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -638,7 +718,7 @@ def test_validate_run_directory_enforce_protocol_requires_dataset_cache_provenan
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -667,7 +747,7 @@ def test_validate_run_directory_enforce_protocol_accepts_dataset_cache_provenanc
             "warmup_s": 120,
             "steady_state_s": 300,
             "rpc_baseline_requests": 1000,
-            "phase_timing_mode": "bounded",
+            "phase_timing_mode": "strict",
             "phase_max_requests_per_phase": 8,
         },
     )
@@ -696,6 +776,56 @@ def test_validate_run_directory_enforce_protocol_accepts_dataset_cache_provenanc
     assert summary["runtime_protocol_ok"] is True
 
 
+def test_validate_run_directory_enforce_protocol_requires_strict_timing_mode(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-phase-mode",
+        seed=781,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "strict",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    config_path = run_dir / "config_resolved.yaml"
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert isinstance(config_payload, dict)
+    config_payload["phase_timing_mode"] = "bounded"
+    config_path.write_text(yaml.safe_dump(config_payload, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="phase_timing_mode"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
+def test_validate_run_directory_enforce_protocol_requires_actual_elapsed_windows(tmp_path: Path) -> None:
+    run_dir = _make_run(
+        tmp_path,
+        name="run-protocol-phase-elapsed",
+        seed=782,
+        overrides={
+            "repeats": 3,
+            "clients_grid": [1, 8, 32, 64],
+            "quality_targets": [0.8, 0.9, 0.95],
+            "warmup_s": 120,
+            "steady_state_s": 300,
+            "rpc_baseline_requests": 1000,
+            "phase_timing_mode": "strict",
+            "phase_max_requests_per_phase": 8,
+        },
+    )
+    frame = pd.read_parquet(run_dir / "results.parquet")
+    frame.loc[:, "warmup_elapsed_s"] = 5.0
+    frame.to_parquet(run_dir / "results.parquet", index=False)
+
+    with pytest.raises(ValueError, match="warmup elapsed"):
+        validate_run_directory(run_dir, enforce_protocol=True)
+
+
 def test_validate_path_enforce_protocol_flags_missing_s3_s1_baseline(tmp_path: Path) -> None:
     s3_run = _make_run(
         tmp_path,
@@ -709,6 +839,7 @@ def test_validate_path_enforce_protocol_flags_missing_s3_s1_baseline(tmp_path: P
             "clients_write": 8,
             "clients_grid": [32],
             "sla_threshold_ms": 120.0,
+            "phase_timing_mode": "bounded",
             "s3_max_events": 60,
             "allow_missing_s3_baseline": True,
         },
@@ -733,6 +864,7 @@ def test_validate_path_enforce_protocol_accepts_s3_with_matching_s1_baseline(tmp
             "clients_grid": [32],
             "quality_targets": [0.8],
             "sla_threshold_ms": 50.0,
+            "phase_timing_mode": "bounded",
         },
     )
     _make_run(
@@ -747,6 +879,7 @@ def test_validate_path_enforce_protocol_accepts_s3_with_matching_s1_baseline(tmp
             "clients_write": 8,
             "clients_grid": [32],
             "sla_threshold_ms": 120.0,
+            "phase_timing_mode": "bounded",
             "s3_max_events": 60,
         },
     )

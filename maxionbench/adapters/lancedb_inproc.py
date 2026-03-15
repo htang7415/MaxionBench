@@ -163,13 +163,14 @@ class LanceDbInprocAdapter(BaseAdapter):
 
     def stats(self) -> AdapterStats:
         vector_count = len(self._records)
-        size = vector_count * self._dimension * 4 + (vector_count * 80)
+        disk_size = self._disk_usage_bytes()
+        ram_size = vector_count * self._dimension * 4
         return AdapterStats(
             vector_count=vector_count,
             deleted_count=self._deleted_total,
-            index_size_bytes=size,
-            ram_usage_bytes=size,
-            disk_usage_bytes=size,
+            index_size_bytes=disk_size,
+            ram_usage_bytes=ram_size,
+            disk_usage_bytes=disk_size,
             engine_uptime_s=time.monotonic() - self._created_at,
         )
 
@@ -203,3 +204,9 @@ class LanceDbInprocAdapter(BaseAdapter):
         if self._dimension and arr.shape[0] != self._dimension:
             raise ValueError(f"vector dimension mismatch: expected {self._dimension}, got {arr.shape[0]}")
         return arr
+
+    def _disk_usage_bytes(self) -> int:
+        root = Path(self._uri)
+        if not root.exists():
+            return 0
+        return int(sum(path.stat().st_size for path in root.rglob("*") if path.is_file()))

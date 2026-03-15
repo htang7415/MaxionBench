@@ -133,26 +133,28 @@ class PgVectorAdapter(BaseAdapter):
         if not records:
             return 0
         table_ident = self._table_ident(self._collection)
+        values_sql = ", ".join(["(%s, %s::vector, %s::jsonb)"] * len(records))
         stmt = self._sql(
             (
                 "INSERT INTO {schema}.{table} (id, embedding, payload) "
-                "VALUES (%s, %s::vector, %s::jsonb) "
+                f"VALUES {values_sql} "
                 "ON CONFLICT (id) DO UPDATE SET "
                 "embedding = EXCLUDED.embedding, payload = EXCLUDED.payload"
             ),
             schema=self._cfg.schema,
             table=table_ident,
         )
+        params: list[Any] = []
+        for record in records:
+            params.extend(
+                [
+                    str(record.id),
+                    self._vector_literal(record.vector),
+                    json.dumps(dict(record.payload), sort_keys=True),
+                ]
+            )
         with self._writer.cursor() as cur:
-            for record in records:
-                cur.execute(
-                    stmt,
-                    (
-                        str(record.id),
-                        self._vector_literal(record.vector),
-                        json.dumps(dict(record.payload), sort_keys=True),
-                    ),
-                )
+            cur.execute(stmt, params)
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:

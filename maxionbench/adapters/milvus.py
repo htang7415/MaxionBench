@@ -17,12 +17,14 @@ from maxionbench.schemas.adapter_contract import (
     Vector,
 )
 
-from ._exact import StoredPoint, normalize_metric, topk_exact
+from ._exact import StoredPoint, normalize_metric
 from .base import BaseAdapter
+
+_FILTERABLE_FIELDS = {"tenant_id", "acl_bucket", "time_bucket"}
 
 
 class MilvusAdapter(BaseAdapter):
-    """Milvus adapter with exact local fallback for complex filter paths."""
+    """Milvus adapter using remote vector search with pinned equality filters."""
 
     def __init__(
         self,
@@ -115,40 +117,27 @@ class MilvusAdapter(BaseAdapter):
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
         query_vec = self._to_vector(request.vector)
-        if request.filters:
-            return topk_exact(
-                records=self._records,
-                query=query_vec,
-                top_k=request.top_k,
-                metric=self._metric,
-                filters=request.filters,
-            )
         if self._obj is None:
             return []
-        try:
-            params = self._milvus_search_params()
-            res = self._obj.search(
-                data=[query_vec.tolist()],
-                anns_field="vector",
-                param=params,
-                limit=int(request.top_k),
-                output_fields=["payload_json"],
-            )
-            hits = res[0] if res else []
-            out: list[QueryResult] = []
-            for hit in hits:
-                payload_raw = hit.entity.get("payload_json") if hasattr(hit, "entity") else None
-                payload = self._decode_payload(payload_raw)
-                out.append(QueryResult(id=str(hit.id), score=float(hit.score), payload=payload))
-            return out
-        except Exception:
-            return topk_exact(
-                records=self._records,
-                query=query_vec,
-                top_k=request.top_k,
-                metric=self._metric,
-                filters=None,
-            )
+        params = self._milvus_search_params()
+        search_kwargs: dict[str, Any] = {
+            "data": [query_vec.tolist()],
+            "anns_field": "vector",
+            "param": params,
+            "limit": int(request.top_k),
+            "output_fields": ["payload_json"],
+        }
+        expr = self._milvus_expr(request.filters)
+        if expr:
+            search_kwargs["expr"] = expr
+        res = self._obj.search(**search_kwargs)
+        hits = res[0] if res else []
+        out: list[QueryResult] = []
+        for hit in hits:
+            payload_raw = hit.entity.get("payload_json") if hasattr(hit, "entity") else None
+            payload = self._decode_payload(payload_raw)
+            out.append(QueryResult(id=str(hit.id), score=float(hit.score), payload=payload))
+        return out
 
     def batch_query(self, requests: Sequence[QueryRequest]) -> list[list[QueryResult]]:
         return [self.query(request) for request in requests]
@@ -279,9 +268,12 @@ class MilvusAdapter(BaseAdapter):
         ids = sorted(snapshot.keys())
         vectors = [snapshot[doc_id].vector.tolist() for doc_id in ids]
         payloads = [json.dumps(snapshot[doc_id].payload, sort_keys=True) for doc_id in ids]
+        tenants = [str(snapshot[doc_id].payload.get("tenant_id", "")) for doc_id in ids]
+        acl_buckets = [int(snapshot[doc_id].payload.get("acl_bucket", 0)) for doc_id in ids]
+        time_buckets = [int(snapshot[doc_id].payload.get("time_bucket", 0)) for doc_id in ids]
         if self._obj is None:
             return
-        self._obj.insert([ids, vectors, payloads])
+        self._obj.insert([ids, vectors, payloads, tenants, acl_buckets, time_buckets])
         self._obj.flush()
         self._obj.load()
 
@@ -292,6 +284,9 @@ class MilvusAdapter(BaseAdapter):
             self._FieldSchema(name="id", dtype=self._DataType.VARCHAR, is_primary=True, max_length=256),
             self._FieldSchema(name="vector", dtype=self._DataType.FLOAT_VECTOR, dim=self._dimension),
             self._FieldSchema(name="payload_json", dtype=self._DataType.VARCHAR, max_length=65535),
+            self._FieldSchema(name="tenant_id", dtype=self._DataType.VARCHAR, max_length=256),
+            self._FieldSchema(name="acl_bucket", dtype=self._DataType.INT64),
+            self._FieldSchema(name="time_bucket", dtype=self._DataType.INT64),
         ]
         schema = self._CollectionSchema(fields=fields, description="maxionbench milvus collection")
         self._obj = self._Collection(name=self._collection, schema=schema, using=self._alias)
@@ -324,3 +319,16 @@ class MilvusAdapter(BaseAdapter):
             self._connections.disconnect(alias=self._alias)
         except Exception:
             pass
+
+    def _milvus_expr(self, filters: Mapping[str, Any] | None) -> str:
+        if not filters:
+            return ""
+        clauses: list[str] = []
+        for key, value in sorted(filters.items()):
+            key_text = str(key)
+            if key_text not in _FILTERABLE_FIELDS:
+                raise ValueError(
+                    f"MilvusAdapter only supports equality filters on {sorted(_FILTERABLE_FIELDS)}; got {key_text!r}"
+                )
+            clauses.append(f"{key_text} == {json.dumps(value)}")
+        return " and ".join(clauses)

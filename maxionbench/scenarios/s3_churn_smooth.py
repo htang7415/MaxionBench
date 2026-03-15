@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from queue import Empty, Full, Queue
+import threading
 import time
 from typing import Any, Callable
 
@@ -32,7 +34,10 @@ class S3Config:
     delete_rate: float
     maintenance_interval_s: float
     phase_timing_mode: str = "bounded"
+    clients_read: int = 1
+    clients_write: int = 0
     max_events: int = 5000
+    max_pending_ops: int | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,62 @@ class S3Result:
     warmup_elapsed_s: float
 
 
+@dataclass(frozen=True)
+class _ReadTask:
+    scheduled_at: float
+    phase: str
+    vector: np.ndarray
+    top_k: int
+    expected_ids: list[str] | None
+    relevance: dict[str, float] | None
+
+
+@dataclass(frozen=True)
+class _WriteTask:
+    scheduled_at: float
+    phase: str
+    op: str
+    record: UpsertRecord | None = None
+    ids: list[str] | None = None
+    vectors: list[list[float]] | None = None
+
+
+@dataclass(frozen=True)
+class _ReadOutcome:
+    phase: str
+    latency_ms: float
+    error: bool
+    got_ids: list[str]
+    expected_ids: list[str] | None
+    relevance: dict[str, float] | None
+
+
+@dataclass(frozen=True)
+class _WriteOutcome:
+    phase: str
+    error: bool
+
+
+@dataclass(frozen=True)
+class _PhaseSummary:
+    total_events: int
+    read_arrivals: int
+    completed_reads: int
+    errors: int
+    overflows: int
+    elapsed_s: float
+    latencies_ms: list[float]
+    recalls: list[float]
+    ndcgs: list[float]
+    mrrs: list[float]
+    maintenance_calls: int
+    maintenance_elapsed_s: float
+    audit_sample_size: int
+
+
+_STOP = object()
+
+
 def run(
     adapter: Any,
     cfg: S3Config,
@@ -69,94 +130,92 @@ def run(
             seed=int(rng.integers(1, 1_000_000)),
         )
     dataset = generate_d3_dataset(vectors, d3_params)
-    state = _ChurnState.from_dataset(dataset)
+    state = _OracleState.from_dataset(dataset)
     _ingest_state(adapter, state)
 
-    warmup_events = _phase_event_count(cfg, phase_s=cfg.warmup_s)
-    measure_events = _phase_event_count(cfg, phase_s=cfg.steady_state_s)
-    total_rate = max(cfg.lambda_req_s, 1.0)
-    next_maintenance_s = cfg.maintenance_interval_s
-
-    def run_phase(
-        *,
-        event_count: int,
-        collect_metrics: bool,
-    ) -> tuple[list[float], list[float], list[float], list[float], int, int, float]:
-        nonlocal next_maintenance_s
-        latencies_ms: list[float] = []
-        recalls: list[float] = []
-        ndcgs: list[float] = []
-        mrrs: list[float] = []
-        errors = 0
-        reads = 0
-        phase_clock_s = 0.0
-        dt_s = 1.0 / total_rate
-        started = time.perf_counter()
-        for _ in range(event_count):
-            sim_t = phase_clock_s
-            if collect_metrics:
-                while sim_t >= next_maintenance_s:
-                    adapter.optimize_or_compact()
-                    next_maintenance_s += cfg.maintenance_interval_s
-
-            multiplier = burst_multiplier_fn(sim_t) if burst_multiplier_fn else 1.0
-            op = _sample_operation(cfg, rng, write_multiplier=multiplier)
-            phase_clock_s += dt_s
-            if op == "read":
-                reads += 1
-                q_idx = int(rng.integers(0, max(1, state.vectors.shape[0])))
-                qvec = state.vectors[q_idx]
-                exact = state.exact_topk(qvec, cfg.top_k)
-                t0 = time.perf_counter()
-                try:
-                    rows = adapter.query(QueryRequest(vector=qvec.tolist(), top_k=cfg.top_k))
-                    got = [row.id for row in rows]
-                except Exception:
-                    got = []
-                    errors += 1
-                if collect_metrics:
-                    k_eval = min(10, cfg.top_k)
-                    relevance = _ann_relevance_from_exact(exact_ids=exact, k=k_eval)
-                    latencies_ms.append((time.perf_counter() - t0) * 1000.0)
-                    recalls.append(recall_at_k(got, exact, k=k_eval))
-                    ndcgs.append(ndcg_at_10(got, relevance))
-                    mrrs.append(mrr_at_k(got, exact, k=k_eval))
-                continue
-
-            if op == "insert":
-                state.insert_one(rng)
-                record = state.latest_record()
-                adapter.insert(record)
-                adapter.flush_or_commit()
-            elif op == "update":
-                target = state.sample_id(rng)
-                if target is not None:
-                    new_vec = _random_unit_vector(cfg.vector_dim, rng)
-                    state.update_vector(target, new_vec)
-                    adapter.update_vectors([target], [new_vec.tolist()])
-                    adapter.flush_or_commit()
-            elif op == "delete":
-                target = state.sample_id(rng)
-                if target is not None:
-                    state.delete_id(target)
-                    adapter.delete([target])
-                    adapter.flush_or_commit()
-        elapsed_s = time.perf_counter() - started
-        return latencies_ms, recalls, ndcgs, mrrs, errors, reads, elapsed_s
-
-    _, _, _, _, _, _, warmup_elapsed = run_phase(event_count=warmup_events, collect_metrics=False)
-    latencies_ms, recalls, ndcgs, mrrs, errors, reads, measure_elapsed = run_phase(
-        event_count=measure_events,
-        collect_metrics=True,
+    write_workers = max(
+        0,
+        int(cfg.clients_write) if (cfg.insert_rate + cfg.update_rate + cfg.delete_rate) <= 0.0 else max(1, int(cfg.clients_write)),
     )
+    queue_capacity = cfg.max_pending_ops or max(1, (cfg.clients_read + write_workers) * 10)
+    read_queue: Queue[object] = Queue(maxsize=queue_capacity)
+    write_queue: Queue[object] = Queue(maxsize=queue_capacity)
+    read_outcomes: list[_ReadOutcome] = []
+    write_outcomes: list[_WriteOutcome] = []
+    read_outcomes_lock = threading.Lock()
+    write_outcomes_lock = threading.Lock()
 
-    elapsed = max(measure_elapsed, 1e-9)
-    summary = latency_summary(latencies_ms)
-    over_sla = sum(1 for x in latencies_ms if x > cfg.sla_threshold_ms)
+    read_threads = [
+        threading.Thread(
+            target=_read_worker,
+            args=(adapter, read_queue, read_outcomes, read_outcomes_lock),
+            daemon=True,
+        )
+        for _ in range(max(1, int(cfg.clients_read)))
+    ]
+    write_threads = [
+        threading.Thread(
+            target=_write_worker,
+            args=(adapter, write_queue, write_outcomes, write_outcomes_lock),
+            daemon=True,
+        )
+        for _ in range(write_workers)
+    ]
+    for thread in [*read_threads, *write_threads]:
+        thread.start()
+
+    try:
+        warmup = _run_phase(
+            adapter=adapter,
+            cfg=cfg,
+            rng=rng,
+            state=state,
+            phase="warmup",
+            phase_s=float(cfg.warmup_s),
+            collect_metrics=False,
+            burst_multiplier_fn=burst_multiplier_fn,
+            read_queue=read_queue,
+            write_queue=write_queue,
+            read_outcomes=read_outcomes,
+            write_outcomes=write_outcomes,
+        )
+        measure = _run_phase(
+            adapter=adapter,
+            cfg=cfg,
+            rng=rng,
+            state=state,
+            phase="measurement",
+            phase_s=float(cfg.steady_state_s),
+            collect_metrics=True,
+            burst_multiplier_fn=burst_multiplier_fn,
+            read_queue=read_queue,
+            write_queue=write_queue,
+            read_outcomes=read_outcomes,
+            write_outcomes=write_outcomes,
+        )
+    finally:
+        for _ in read_threads:
+            read_queue.put(_STOP)
+        for _ in write_threads:
+            write_queue.put(_STOP)
+        for thread in [*read_threads, *write_threads]:
+            thread.join(timeout=5.0)
+
+    elapsed = max(measure.elapsed_s, 1e-9)
+    summary = latency_summary(measure.latencies_ms)
+    over_sla = sum(1 for x in measure.latencies_ms if x > cfg.sla_threshold_ms)
+    mean_recall = float(np.mean(np.asarray(measure.recalls, dtype=np.float64))) if measure.recalls else 0.0
+    mean_ndcg = float(np.mean(np.asarray(measure.ndcgs, dtype=np.float64))) if measure.ndcgs else 0.0
+    mean_mrr = float(np.mean(np.asarray(measure.mrrs, dtype=np.float64))) if measure.mrrs else 0.0
     info = {
         "mode": "s3_smooth",
-        "events": measure_events,
-        "reads": reads,
+        "events": measure.total_events,
+        "reads": measure.read_arrivals,
+        "queue_capacity": queue_capacity,
+        "queue_overflow_errors": measure.overflows,
+        "audit_sample_size": measure.audit_sample_size,
+        "maintenance_calls": measure.maintenance_calls,
+        "maintenance_elapsed_s": measure.maintenance_elapsed_s,
         "lambda_req_s": cfg.lambda_req_s,
         "read_rate": cfg.read_rate,
         "insert_rate": cfg.insert_rate,
@@ -164,118 +223,464 @@ def run(
         "delete_rate": cfg.delete_rate,
         "burst_clock_anchor": "measurement_start",
         "phase": {
-            "warmup_events": warmup_events,
-            "warmup_elapsed_s": warmup_elapsed,
-            "measure_events": measure_events,
-            "measure_elapsed_s": measure_elapsed,
+            "warmup_events": warmup.total_events,
+            "warmup_elapsed_s": warmup.elapsed_s,
+            "measure_events": measure.total_events,
+            "measure_elapsed_s": measure.elapsed_s,
         },
     }
-    mean_recall = float(np.mean(np.asarray(recalls, dtype=np.float64))) if recalls else 0.0
-    mean_ndcg = float(np.mean(np.asarray(ndcgs, dtype=np.float64))) if ndcgs else 0.0
-    mean_mrr = float(np.mean(np.asarray(mrrs, dtype=np.float64))) if mrrs else 0.0
     return S3Result(
         p50_ms=summary["p50_ms"],
         p95_ms=summary["p95_ms"],
         p99_ms=summary["p99_ms"],
-        qps=float(reads) / elapsed,
+        qps=float(measure.completed_reads) / elapsed,
         recall_at_10=mean_recall,
         ndcg_at_10=mean_ndcg,
         mrr_at_10=mean_mrr,
-        sla_violation_rate=sla_violation_rate(total_requests=max(1, reads), over_sla=over_sla, errors=errors),
-        errors=errors,
+        sla_violation_rate=sla_violation_rate(
+            total_requests=max(1, measure.read_arrivals),
+            over_sla=over_sla,
+            errors=measure.errors,
+        ),
+        errors=measure.errors,
         info_json=json.dumps(info, sort_keys=True),
-        measured_requests=reads,
-        measured_elapsed_s=measure_elapsed,
-        warmup_requests=warmup_events,
-        warmup_elapsed_s=warmup_elapsed,
+        measured_requests=measure.read_arrivals,
+        measured_elapsed_s=measure.elapsed_s,
+        warmup_requests=warmup.read_arrivals,
+        warmup_elapsed_s=warmup.elapsed_s,
     )
 
 
-def _phase_event_count(cfg: S3Config, *, phase_s: float) -> int:
-    if phase_s <= 0:
-        base = max(1, cfg.num_queries)
-    elif cfg.phase_timing_mode == "strict":
-        base = max(1, int(cfg.lambda_req_s * phase_s))
-    else:
-        base = max(cfg.num_queries, int(cfg.lambda_req_s * phase_s))
-    return int(min(cfg.max_events, max(1, base)))
+def _run_phase(
+    *,
+    adapter: Any,
+    cfg: S3Config,
+    rng: np.random.Generator,
+    state: "_OracleState",
+    phase: str,
+    phase_s: float,
+    collect_metrics: bool,
+    burst_multiplier_fn: Callable[[float], float] | None,
+    read_queue: Queue[object],
+    write_queue: Queue[object],
+    read_outcomes: list[_ReadOutcome],
+    write_outcomes: list[_WriteOutcome],
+) -> _PhaseSummary:
+    start_read_idx = len(read_outcomes)
+    start_write_idx = len(write_outcomes)
+    phase_start = time.perf_counter()
+    phase_deadline = phase_start + max(0.0, phase_s)
+    strict_timing = str(cfg.phase_timing_mode).strip().lower() == "strict"
+    total_events = 0
+    read_arrivals = 0
+    overflows = 0
+    next_scheduled_at = phase_start
+    audit_every = _audit_interval(cfg=cfg, phase_s=phase_s) if collect_metrics else 0
+    audited_reads = 0
+    maintenance_state = _MaintenanceState()
+    maintenance_stop = threading.Event()
+    maintenance_thread: threading.Thread | None = None
+    if collect_metrics and phase_s > 0.0:
+        maintenance_thread = threading.Thread(
+            target=_maintenance_loop,
+            args=(adapter, cfg.maintenance_interval_s, phase_start, phase_deadline, maintenance_stop, maintenance_state),
+            daemon=True,
+        )
+        maintenance_thread.start()
+
+    try:
+        while True:
+            if not strict_timing and total_events >= int(cfg.max_events):
+                break
+            phase_clock_s = max(0.0, next_scheduled_at - phase_start)
+            write_multiplier = burst_multiplier_fn(phase_clock_s) if burst_multiplier_fn else 1.0
+            total_rate = _effective_total_rate(cfg, write_multiplier=write_multiplier)
+            if total_rate <= 0.0:
+                break
+            next_scheduled_at += float(rng.exponential(1.0 / total_rate))
+            if phase_s > 0.0 and next_scheduled_at > phase_deadline:
+                break
+            if phase_s <= 0.0 and total_events > 0:
+                break
+            _sleep_until(next_scheduled_at)
+            total_events += 1
+            op = _sample_operation(cfg, rng, write_multiplier=write_multiplier)
+            if op == "read":
+                query_vec = state.sample_query_vector(rng)
+                if query_vec is None:
+                    continue
+                read_arrivals += 1
+                expected_ids: list[str] | None = None
+                relevance: dict[str, float] | None = None
+                should_audit = collect_metrics and audit_every > 0 and ((read_arrivals - 1) % audit_every == 0)
+                if should_audit:
+                    expected_ids = state.exact_topk(query_vec, cfg.top_k)
+                    relevance = _ann_relevance_from_exact(exact_ids=expected_ids, k=min(10, cfg.top_k))
+                task = _ReadTask(
+                    scheduled_at=next_scheduled_at,
+                    phase=phase,
+                    vector=query_vec,
+                    top_k=cfg.top_k,
+                    expected_ids=expected_ids,
+                    relevance=relevance,
+                )
+                try:
+                    read_queue.put_nowait(task)
+                    if should_audit:
+                        audited_reads += 1
+                except Full:
+                    overflows += 1
+                    if should_audit:
+                        audited_reads += 1
+                continue
+
+            task, apply_state = _prepare_write_task(state=state, cfg=cfg, rng=rng, op=op, scheduled_at=next_scheduled_at, phase=phase)
+            if task is None or apply_state is None:
+                continue
+            try:
+                write_queue.put_nowait(task)
+                apply_state()
+            except Full:
+                overflows += 1
+    finally:
+        read_queue.join()
+        write_queue.join()
+        if maintenance_thread is not None:
+            maintenance_stop.set()
+            maintenance_thread.join(timeout=5.0)
+
+    elapsed_s = max(0.0, time.perf_counter() - phase_start)
+    phase_read_outcomes = read_outcomes[start_read_idx:]
+    phase_write_outcomes = write_outcomes[start_write_idx:]
+    latencies_ms = [item.latency_ms for item in phase_read_outcomes] if collect_metrics else []
+    recalls: list[float] = []
+    ndcgs: list[float] = []
+    mrrs: list[float] = []
+    if collect_metrics:
+        for item in phase_read_outcomes:
+            if item.expected_ids is None or item.relevance is None:
+                continue
+            k_eval = min(10, cfg.top_k)
+            recalls.append(recall_at_k(item.got_ids, item.expected_ids, k=k_eval))
+            ndcgs.append(ndcg_at_10(item.got_ids, item.relevance))
+            mrrs.append(mrr_at_k(item.got_ids, item.expected_ids, k=k_eval))
+    errors = overflows + sum(1 for item in phase_read_outcomes if item.error) + sum(1 for item in phase_write_outcomes if item.error)
+    return _PhaseSummary(
+        total_events=total_events,
+        read_arrivals=read_arrivals,
+        completed_reads=len(phase_read_outcomes),
+        errors=errors,
+        overflows=overflows,
+        elapsed_s=elapsed_s,
+        latencies_ms=latencies_ms,
+        recalls=recalls,
+        ndcgs=ndcgs,
+        mrrs=mrrs,
+        maintenance_calls=maintenance_state.calls if collect_metrics else 0,
+        maintenance_elapsed_s=maintenance_state.elapsed_s if collect_metrics else 0.0,
+        audit_sample_size=audited_reads if collect_metrics else 0,
+    )
 
 
-class _ChurnState:
+def _sleep_until(target_ts: float) -> None:
+    while True:
+        remaining = target_ts - time.perf_counter()
+        if remaining <= 0.0:
+            return
+        time.sleep(min(remaining, 0.01))
+
+
+class _MaintenanceState:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.elapsed_s = 0.0
+        self._lock = threading.Lock()
+
+    def record(self, duration_s: float) -> None:
+        with self._lock:
+            self.calls += 1
+            self.elapsed_s += float(duration_s)
+
+
+def _maintenance_loop(
+    adapter: Any,
+    interval_s: float,
+    phase_start: float,
+    phase_deadline: float,
+    stop_event: threading.Event,
+    state: _MaintenanceState,
+) -> None:
+    if interval_s <= 0.0:
+        return
+    next_trigger = phase_start + float(interval_s)
+    while next_trigger < phase_deadline and not stop_event.is_set():
+        wait_s = next_trigger - time.perf_counter()
+        if wait_s > 0.0:
+            if stop_event.wait(wait_s):
+                return
+        if stop_event.is_set():
+            return
+        started = time.perf_counter()
+        try:
+            adapter.optimize_or_compact()
+        except Exception:
+            pass
+        finally:
+            state.record(time.perf_counter() - started)
+        next_trigger += float(interval_s)
+
+
+def _read_worker(
+    adapter: Any,
+    task_queue: Queue[object],
+    outcomes: list[_ReadOutcome],
+    outcomes_lock: threading.Lock,
+) -> None:
+    while True:
+        task = task_queue.get()
+        try:
+            if task is _STOP:
+                return
+            assert isinstance(task, _ReadTask)
+            try:
+                rows = adapter.query(QueryRequest(vector=task.vector.tolist(), top_k=task.top_k))
+                got_ids = [row.id for row in rows]
+                error = False
+            except Exception:
+                got_ids = []
+                error = True
+            latency_ms = (time.perf_counter() - task.scheduled_at) * 1000.0
+            with outcomes_lock:
+                outcomes.append(
+                    _ReadOutcome(
+                        phase=task.phase,
+                        latency_ms=float(latency_ms),
+                        error=error,
+                        got_ids=got_ids,
+                        expected_ids=task.expected_ids,
+                        relevance=task.relevance,
+                    )
+                )
+        finally:
+            task_queue.task_done()
+
+
+def _write_worker(
+    adapter: Any,
+    task_queue: Queue[object],
+    outcomes: list[_WriteOutcome],
+    outcomes_lock: threading.Lock,
+) -> None:
+    while True:
+        task = task_queue.get()
+        try:
+            if task is _STOP:
+                return
+            assert isinstance(task, _WriteTask)
+            error = False
+            try:
+                if task.op == "insert" and task.record is not None:
+                    adapter.insert(task.record)
+                    adapter.flush_or_commit()
+                elif task.op == "update" and task.ids and task.vectors:
+                    adapter.update_vectors(task.ids, task.vectors)
+                    adapter.flush_or_commit()
+                elif task.op == "delete" and task.ids:
+                    adapter.delete(task.ids)
+                    adapter.flush_or_commit()
+            except Exception:
+                error = True
+            with outcomes_lock:
+                outcomes.append(_WriteOutcome(phase=task.phase, error=error))
+        finally:
+            task_queue.task_done()
+
+
+def _audit_interval(cfg: S3Config, *, phase_s: float) -> int:
+    expected_reads = max(1, int(round(max(0.0, cfg.read_rate) * max(0.0, phase_s))))
+    audit_budget = min(max(1, int(cfg.num_queries)), expected_reads)
+    return max(1, int(np.ceil(expected_reads / max(1, audit_budget))))
+
+
+def _effective_total_rate(cfg: S3Config, *, write_multiplier: float) -> float:
+    return max(
+        1e-9,
+        float(cfg.read_rate)
+        + (float(cfg.insert_rate) + float(cfg.update_rate) + float(cfg.delete_rate)) * float(write_multiplier),
+    )
+
+
+class _OracleState:
     def __init__(self, ids: list[str], vectors: np.ndarray, payloads: dict[str, dict[str, Any]], next_id: int) -> None:
-        self.ids = ids
-        self.id_set = set(ids)
-        self.vectors = vectors
-        self.payloads = payloads
+        self.base_ids = list(ids)
+        self.base_vectors = np.asarray(vectors, dtype=np.float32)
+        self.base_id_to_index = {doc_id: idx for idx, doc_id in enumerate(self.base_ids)}
+        self.base_payloads = {doc_id: dict(payloads[doc_id]) for doc_id in self.base_ids}
+        self.active_ids = list(ids)
+        self.id_to_slot = {doc_id: idx for idx, doc_id in enumerate(ids)}
+        self.updated_vectors: dict[str, np.ndarray] = {}
+        self.inserted_vectors: dict[str, np.ndarray] = {}
+        self.payloads = {doc_id: dict(payloads[doc_id]) for doc_id in ids}
+        self.deleted_ids: set[str] = set()
         self.next_id = next_id
-        self.id_to_index = {doc_id: idx for idx, doc_id in enumerate(ids)}
+        self.last_inserted_id: str | None = None
 
     @classmethod
-    def from_dataset(cls, dataset) -> "_ChurnState":  # type: ignore[no-untyped-def]
+    def from_dataset(cls, dataset) -> "_OracleState":  # type: ignore[no-untyped-def]
         ids = list(dataset.ids)
         vectors = np.asarray(dataset.vectors, dtype=np.float32)
         payloads = {ids[i]: dict(dataset.payloads[i]) for i in range(len(ids))}
         return cls(ids=ids, vectors=vectors, payloads=payloads, next_id=len(ids))
 
-    def exact_topk(self, query_vec: np.ndarray, top_k: int) -> list[str]:
-        if not self.ids:
-            return []
-        scores = self.vectors @ query_vec
-        order = np.argsort(-scores, kind="stable")[:top_k]
-        return [self.ids[int(i)] for i in order]
-
     def sample_id(self, rng: np.random.Generator) -> str | None:
-        if not self.ids:
+        if not self.active_ids:
             return None
-        return self.ids[int(rng.integers(0, len(self.ids)))]
+        return self.active_ids[int(rng.integers(0, len(self.active_ids)))]
 
-    def insert_one(self, rng: np.random.Generator) -> None:
+    def sample_query_vector(self, rng: np.random.Generator) -> np.ndarray | None:
+        doc_id = self.sample_id(rng)
+        if doc_id is None:
+            return None
+        return self.vector_for(doc_id).copy()
+
+    def vector_for(self, doc_id: str) -> np.ndarray:
+        if doc_id in self.inserted_vectors:
+            return self.inserted_vectors[doc_id]
+        if doc_id in self.updated_vectors:
+            return self.updated_vectors[doc_id]
+        return self.base_vectors[self.base_id_to_index[doc_id]]
+
+    def insert_one(self, rng: np.random.Generator) -> UpsertRecord:
         new_id = f"doc-{self.next_id:07d}"
         self.next_id += 1
-        vec = _random_unit_vector(self.vectors.shape[1], rng)
+        vec = _random_unit_vector(self.base_vectors.shape[1], rng)
         payload = {
             "tenant_id": f"tenant-{int(rng.integers(0, 100)):03d}",
             "acl_bucket": int(rng.integers(0, 16)),
             "time_bucket": int(rng.integers(0, 52)),
         }
-        self.ids.append(new_id)
-        self.id_set.add(new_id)
+        self.active_ids.append(new_id)
+        self.id_to_slot[new_id] = len(self.active_ids) - 1
+        self.inserted_vectors[new_id] = vec
         self.payloads[new_id] = payload
-        self.vectors = np.vstack([self.vectors, vec[None, :]])
-        self.id_to_index[new_id] = len(self.ids) - 1
-
-    def latest_record(self) -> UpsertRecord:
-        doc_id = self.ids[-1]
-        idx = self.id_to_index[doc_id]
-        return UpsertRecord(id=doc_id, vector=self.vectors[idx].tolist(), payload=self.payloads[doc_id])
+        self.last_inserted_id = new_id
+        return UpsertRecord(id=new_id, vector=vec.tolist(), payload=payload)
 
     def update_vector(self, doc_id: str, vec: np.ndarray) -> None:
-        if doc_id not in self.id_to_index:
+        if doc_id not in self.id_to_slot:
             return
-        self.vectors[self.id_to_index[doc_id]] = vec
+        if doc_id in self.inserted_vectors:
+            self.inserted_vectors[doc_id] = vec
+            return
+        self.updated_vectors[doc_id] = vec
 
     def delete_id(self, doc_id: str) -> None:
-        if doc_id not in self.id_to_index:
+        if doc_id not in self.id_to_slot:
             return
-        idx = self.id_to_index[doc_id]
-        last_idx = len(self.ids) - 1
-        last_id = self.ids[last_idx]
-        # Keep delete/update bookkeeping near O(1) by swapping with the tail.
-        if idx != last_idx:
-            self.ids[idx] = last_id
-            self.vectors[idx] = self.vectors[last_idx]
-            self.id_to_index[last_id] = idx
-        self.ids.pop()
-        self.vectors = self.vectors[:-1]
+        idx = self.id_to_slot[doc_id]
+        last_id = self.active_ids[-1]
+        if idx != len(self.active_ids) - 1:
+            self.active_ids[idx] = last_id
+            self.id_to_slot[last_id] = idx
+        self.active_ids.pop()
+        self.id_to_slot.pop(doc_id, None)
         self.payloads.pop(doc_id, None)
-        self.id_set.discard(doc_id)
-        self.id_to_index.pop(doc_id, None)
+        if doc_id in self.inserted_vectors:
+            self.inserted_vectors.pop(doc_id, None)
+            return
+        self.updated_vectors.pop(doc_id, None)
+        self.deleted_ids.add(doc_id)
+
+    def exact_topk(self, query_vec: np.ndarray, top_k: int) -> list[str]:
+        if not self.active_ids or top_k < 1:
+            return []
+        invalid = self.deleted_ids | set(self.updated_vectors.keys())
+        base_candidates: list[tuple[float, str]] = []
+        if self.base_ids:
+            base_scores = self.base_vectors @ query_vec
+            candidate_k = min(len(self.base_ids), max(top_k, top_k + len(invalid)))
+            if candidate_k >= len(self.base_ids):
+                indices = np.arange(len(self.base_ids), dtype=np.int64)
+            else:
+                indices = np.argpartition(-base_scores, candidate_k - 1)[:candidate_k]
+            ordered = sorted((int(idx) for idx in indices.tolist()), key=lambda idx: (-float(base_scores[idx]), self.base_ids[idx]))
+            for idx in ordered:
+                doc_id = self.base_ids[idx]
+                if doc_id in invalid:
+                    continue
+                base_candidates.append((float(base_scores[idx]), doc_id))
+                if len(base_candidates) >= top_k:
+                    break
+        extras: list[tuple[float, str]] = []
+        for mapping in (self.updated_vectors, self.inserted_vectors):
+            for doc_id, vec in mapping.items():
+                extras.append((float(np.dot(vec, query_vec)), doc_id))
+        merged = base_candidates + extras
+        merged.sort(key=lambda item: (-item[0], item[1]))
+        return [doc_id for _, doc_id in merged[:top_k]]
 
 
-def _ingest_state(adapter: Any, state: _ChurnState) -> None:
+def _prepare_write_task(
+    *,
+    state: _OracleState,
+    cfg: S3Config,
+    rng: np.random.Generator,
+    op: str,
+    scheduled_at: float,
+    phase: str,
+) -> tuple[_WriteTask | None, Callable[[], None] | None]:
+    if op == "insert":
+        inserted_id = f"doc-{state.next_id:07d}"
+        inserted_vec = _random_unit_vector(cfg.vector_dim, rng)
+        inserted_payload = {
+            "tenant_id": f"tenant-{int(rng.integers(0, 100)):03d}",
+            "acl_bucket": int(rng.integers(0, 16)),
+            "time_bucket": int(rng.integers(0, 52)),
+        }
+        record = UpsertRecord(id=inserted_id, vector=inserted_vec.tolist(), payload=inserted_payload)
+
+        def apply_insert() -> None:
+            state.next_id += 1
+            state.active_ids.append(inserted_id)
+            state.id_to_slot[inserted_id] = len(state.active_ids) - 1
+            state.inserted_vectors[inserted_id] = inserted_vec
+            state.payloads[inserted_id] = inserted_payload
+            state.last_inserted_id = inserted_id
+
+        return _WriteTask(scheduled_at=scheduled_at, phase=phase, op="insert", record=record), apply_insert
+
+    target = state.sample_id(rng)
+    if target is None:
+        return None, None
+    if op == "update":
+        new_vec = _random_unit_vector(cfg.vector_dim, rng)
+
+        def apply_update() -> None:
+            state.update_vector(target, new_vec)
+
+        return (
+            _WriteTask(
+                scheduled_at=scheduled_at,
+                phase=phase,
+                op="update",
+                ids=[target],
+                vectors=[new_vec.tolist()],
+            ),
+            apply_update,
+        )
+    if op == "delete":
+
+        def apply_delete() -> None:
+            state.delete_id(target)
+
+        return _WriteTask(scheduled_at=scheduled_at, phase=phase, op="delete", ids=[target]), apply_delete
+    return None, None
+
+
+def _ingest_state(adapter: Any, state: _OracleState) -> None:
     records = [
-        UpsertRecord(id=doc_id, vector=state.vectors[i].tolist(), payload=state.payloads[doc_id])
-        for i, doc_id in enumerate(state.ids)
+        UpsertRecord(id=doc_id, vector=state.base_vectors[i].tolist(), payload=state.base_payloads[doc_id])
+        for i, doc_id in enumerate(state.base_ids)
     ]
     adapter.bulk_upsert(records)
     adapter.flush_or_commit()
