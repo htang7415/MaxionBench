@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from maxionbench.cli import main as cli_main
 from maxionbench.conformance import matrix as conformance_matrix_mod
 from maxionbench.orchestration.slurm import submit_plan as submit_plan_mod
 from maxionbench.orchestration import runner as runner_mod
 from maxionbench.tools import ci_protocol_audit as ci_protocol_audit_mod
+from maxionbench.tools import download_datasets as download_datasets_mod
+from maxionbench.tools import download_d1 as download_d1_mod
+from maxionbench.tools import preprocess_datasets as preprocess_datasets_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
 from maxionbench.tools import verify_conformance_configs as verify_conformance_configs_mod
 from maxionbench.tools import verify_d3_calibration as verify_d3_calibration_mod
@@ -406,6 +411,80 @@ def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # 
     ]
 
 
+def test_cli_download_d1_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 46
+
+    monkeypatch.setattr(download_d1_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "download-d1",
+            "--dataset-name",
+            "deep-image-96-angular",
+            "--output",
+            "data/d1/deep-image-96-angular.hdf5",
+            "--force",
+            "--timeout-s",
+            "12.5",
+            "--json",
+        ]
+    )
+    assert code == 46
+    assert captured["argv"] == [
+        "--dataset-name",
+        "deep-image-96-angular",
+        "--timeout-s",
+        "12.5",
+        "--output",
+        "data/d1/deep-image-96-angular.hdf5",
+        "--force",
+        "--json",
+    ]
+
+
+def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 47
+
+    monkeypatch.setattr(download_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "download-datasets",
+            "--root",
+            "dataset",
+            "--cache-dir",
+            ".cache",
+            "--crag-examples",
+            "500",
+            "--skip-d3",
+            "--force",
+            "--timeout-s",
+            "42.0",
+            "--json",
+        ]
+    )
+    assert code == 47
+    assert captured["argv"] == [
+        "--root",
+        "dataset",
+        "--cache-dir",
+        ".cache",
+        "--crag-examples",
+        "500",
+        "--timeout-s",
+        "42.0",
+        "--skip-d3",
+        "--force",
+        "--json",
+    ]
+
+
 def test_cli_verify_conformance_configs_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
@@ -716,3 +795,58 @@ def test_cli_ci_protocol_audit_dispatches_strict_d3_scenario_scale(monkeypatch) 
         "--strict-d3-scenario-scale",
         "--json",
     ]
+
+
+def test_cli_preprocess_datasets_dispatches_ann_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 271
+
+    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "preprocess-datasets",
+            "ann-hdf5",
+            "--input",
+            "dataset/raw/D1/glove-100-angular.hdf5",
+            "--out",
+            "dataset/processed/D1/glove-100-angular",
+            "--family",
+            "D1",
+            "--name",
+            "glove-100-angular",
+            "--metric",
+            "angular",
+            "--json",
+        ]
+    )
+    assert code == 271
+    assert captured["argv"] == [
+        "ann-hdf5",
+        "--out",
+        "dataset/processed/D1/glove-100-angular",
+        "--input",
+        "dataset/raw/D1/glove-100-angular.hdf5",
+        "--family",
+        "D1",
+        "--name",
+        "glove-100-angular",
+        "--metric",
+        "angular",
+        "--json",
+    ]
+
+
+def test_cli_preprocess_datasets_validates_mode_specific_args() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            [
+                "preprocess-datasets",
+                "ann-hdf5",
+                "--out",
+                "dataset/processed/D1/glove-100-angular",
+            ]
+        )
+    assert excinfo.value.code == 2

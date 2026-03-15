@@ -14,6 +14,19 @@ pip install -e '.[dev,engines]'
 
 Day-to-day development should use the non-paper configs under `configs/scenarios/`. Paper-grade runs use `configs/scenarios_paper/`.
 
+Chosen dataset set for the current project direction:
+
+- D1: `glove-100-angular`, `sift-128-euclidean`, `gist-960-euclidean`
+- D2: `deep-image-96-angular`
+- D3: `yfcc-10M`
+- D4: BEIR `scifact`, `fiqa`, `nfcorpus` plus `crag_task_1_and_2_dev_v4.first_500.jsonl`
+
+Bootstrap the documented local dataset tree with:
+
+```bash
+python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json
+```
+
 Recommended starting points:
 
 ```bash

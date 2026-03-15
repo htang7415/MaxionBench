@@ -26,6 +26,7 @@ class RunConfig:
     dataset_bundle: str = "D1"
     dataset_hash: str = "synthetic-d1-v1"
     dataset_path: str | None = None
+    processed_dataset_path: str | None = None
     dataset_path_sha256: str | None = None
     d2_base_fvecs_path: str | None = None
     d2_base_fvecs_sha256: str | None = None
@@ -218,8 +219,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("s6 candidate budgets must be >= 1")
     if cfg.d4_max_docs < 1 or cfg.d4_max_queries < 1:
         raise ValueError("d4_max_docs and d4_max_queries must be >= 1")
-    if cfg.d4_use_real_data and not cfg.d4_beir_root and not cfg.d4_crag_path:
-        raise ValueError("d4_use_real_data requires at least d4_beir_root or d4_crag_path")
+    if cfg.d4_use_real_data and not cfg.processed_dataset_path and not cfg.d4_beir_root and not cfg.d4_crag_path:
+        raise ValueError("d4_use_real_data requires at least one of processed_dataset_path, d4_beir_root, or d4_crag_path")
     if cfg.d4_use_real_data and cfg.d4_beir_root and not cfg.d4_beir_subsets:
         raise ValueError("d4_beir_subsets must not be empty when d4_beir_root is set")
     for key in [

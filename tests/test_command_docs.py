@@ -17,6 +17,10 @@ def _assert_common_commands(text: str) -> None:
     ) in text
     assert "maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json" in text
     assert "maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json" in text
+    assert "maxionbench download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json" in text
+    assert "maxionbench download-datasets --root dataset --cache-dir .cache --skip-d3 --skip-d4 --json" in text
+    assert "chosen local dataset layout" in text
+    assert "D3 `yfcc-10M`" in text
     assert "MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy \\" in text
     assert "MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex> \\" in text
     assert "keep it separate so reported S2 runs remain benchmark results rather than tuning runs" in text
