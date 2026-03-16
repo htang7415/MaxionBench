@@ -21,7 +21,7 @@ ORIGINAL_ARGS=("$@")
 
 usage() {
   cat <<'EOF'
-Usage: ./run_workstation.sh [options]
+Usage: bash run_workstation.sh [options]
 
 Runs workstation preflight checks, D3 calibration verification, and Slurm plan validation.
 By default this script does NOT submit Slurm jobs.
@@ -36,7 +36,7 @@ Bundle layout:
 
 Options:
   --scenario-config-dir <dir>  Scenario config directory for paper lane (default: configs/scenarios_paper)
-  --slurm-profile <name>       Local Slurm profile key from profiles_local.yaml
+  --slurm-profile <name>       Local Slurm profile key from your override file
   --seed <int>                 Seed forwarded to submit-slurm-plan (default: 42)
   --cpu-only                   Use skip-gpu mode when submitting Slurm jobs
   --skip-s6                    Defer S6 by forwarding --skip-s6 to submit-slurm-plan
@@ -52,8 +52,10 @@ Options:
 
 Private Slurm profile overrides:
   - tracked docs/code do not ship named cluster presets
-  - copy maxionbench/orchestration/slurm/profiles_local.example.yaml to
-    maxionbench/orchestration/slurm/profiles_local.yaml and edit your local values there
+  - start from maxionbench/orchestration/slurm/profiles_local.example.yaml
+  - keep your private overrides in a local YAML file outside the tracked repo surface
+  - point to it with:
+      MAXIONBENCH_SLURM_PROFILE_OVERRIDES=/abs/path/to/slurm_profiles.yaml
 
 Paper D3 calibration:
   - if ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml sets `calibration_require_real_data: true`

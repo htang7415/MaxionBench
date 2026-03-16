@@ -23,8 +23,10 @@ run_workstation.sh
 artifacts/ci/
 artifacts/containers/
 artifacts/conformance/
+artifacts/conformance_local/
 artifacts/figures/
 artifacts/runs/
 artifacts/workstation_runs/
 ci_s1_smoke_local.yaml
 maxionbench/orchestration/slurm/profiles_local.yaml
+.claude/settings.local.json

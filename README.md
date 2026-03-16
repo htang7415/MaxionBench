@@ -72,8 +72,8 @@ bash preprocess_all_datasets.sh
 Use a prebuilt Apptainer image on shared storage, keep private cluster settings in your local Slurm profile, and run:
 
 ```bash
-./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif
-./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
+bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif
+bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
 ```
 
 ## Validate and generate figures

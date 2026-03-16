@@ -24,7 +24,7 @@ DRY_RUN=1
 usage() {
   cat <<'EOF'
 Usage:
-  ./run_slurm_pipeline.sh --cluster <euler|nrel> --container-image </path/to/maxionbench.sif> [options]
+  bash run_slurm_pipeline.sh --cluster <euler|nrel> --container-image </path/to/maxionbench.sif> [options]
 
 Options:
   --cluster <name>               Cluster profile selector: euler or nrel

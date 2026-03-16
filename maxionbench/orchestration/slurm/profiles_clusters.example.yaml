@@ -1,4 +1,4 @@
-euler_apptainer:
+cluster_a_apptainer:
   base:
     - ["--job-name", "maxion"]
     - ["--output", "logs/%x_%j.out"]
@@ -27,7 +27,7 @@ euler_apptainer:
       - ["--mem", "64G"]
       - ["--time", "01:00:00"]
 
-nrel_apptainer:
+cluster_b_apptainer:
   base:
     - ["--job-name", "maxion"]
     - ["--output", "logs/%x_%j.out"]
