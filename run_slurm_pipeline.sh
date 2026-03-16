@@ -154,8 +154,15 @@ if [[ -z "${CONTAINER_IMAGE}" ]]; then
   echo "error: --container-image is required" >&2
   exit 2
 fi
-if ! command -v maxionbench >/dev/null 2>&1; then
-  echo "error: 'maxionbench' command not found in PATH" >&2
+CLI_CMD=()
+if command -v maxionbench >/dev/null 2>&1; then
+  CLI_CMD=(maxionbench)
+elif command -v python >/dev/null 2>&1; then
+  CLI_CMD=(python -m maxionbench.cli)
+elif command -v python3 >/dev/null 2>&1; then
+  CLI_CMD=(python3 -m maxionbench.cli)
+else
+  echo "error: neither 'maxionbench' nor 'python'/'python3' is available in PATH" >&2
   exit 127
 fi
 
@@ -178,7 +185,8 @@ export MAXIONBENCH_HF_CACHE_DIR="${HF_CACHE_DIR:-${DEFAULT_SHARED_ROOT}/.cache/h
 export MAXIONBENCH_D3_DATASET_PATH="${MAXIONBENCH_DATASET_ROOT}/processed/D3/yfcc-10M/base.npy"
 
 CMD=(
-  maxionbench submit-slurm-plan
+  "${CLI_CMD[@]}"
+  submit-slurm-plan
   --slurm-dir "${SLURM_DIR}"
   --slurm-profile "${SLURM_PROFILE}"
   --scenario-config-dir "${SCENARIO_CONFIG_DIR}"

@@ -29,6 +29,8 @@ SLURM_PROFILE_OVERRIDES_ENV = "MAXIONBENCH_SLURM_PROFILE_OVERRIDES"
 DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH = Path(__file__).resolve().with_name("profiles_local.yaml")
 DEFAULT_TRACKED_PROFILES_PATH = Path(__file__).resolve().with_name("profiles_clusters.example.yaml")
 _LOG = logging.getLogger(__name__)
+_D3_WORKLOAD_SCENARIOS = {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
+_GPU_SPLIT_STEP_KEYS = {"gpu_d3_baseline", "gpu_d3_workloads", "gpu_non_d3"}
 
 
 def build_submit_steps(
@@ -117,19 +119,7 @@ def build_submit_steps(
                 depends_on=calibrate_depends_on,
             )
         )
-        cpu_baseline = _manifest_indices(
-            rows=manifest.cpu_rows,
-            predicate=lambda row: row.scenario == "s1_ann_frontier" and row.dataset_bundle.upper() == "D3",
-        )
-        cpu_d3_workloads = _manifest_indices(
-            rows=manifest.cpu_rows,
-            predicate=lambda row: row.scenario in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"},
-        )
-        cpu_non_d3 = [
-            idx
-            for idx in range(len(manifest.cpu_rows))
-            if idx not in set(cpu_baseline) and idx not in set(cpu_d3_workloads)
-        ]
+        cpu_baseline, cpu_d3_workloads, cpu_non_d3 = _partition_manifest_indices(manifest.cpu_rows)
         if cpu_baseline:
             steps.append(
                 SubmitStep(
@@ -159,19 +149,49 @@ def build_submit_steps(
                 )
             )
         if include_gpu and manifest.gpu_rows:
-            steps.append(
-                SubmitStep(
-                    key="gpu_all",
-                    script_name="gpu_array.sh",
-                    array=_indices_to_array_spec(list(range(len(manifest.gpu_rows)))),
-                    depends_on=("calibrate",),
+            gpu_baseline, gpu_d3_workloads, gpu_non_d3 = _partition_manifest_indices(manifest.gpu_rows)
+            if gpu_baseline:
+                steps.append(
+                    SubmitStep(
+                        key="gpu_d3_baseline",
+                        script_name="gpu_array.sh",
+                        array=_indices_to_array_spec(gpu_baseline),
+                        depends_on=("calibrate",),
+                    )
                 )
-            )
+            if gpu_d3_workloads:
+                workload_depends = ("calibrate", "gpu_d3_baseline") if gpu_baseline else ("calibrate",)
+                steps.append(
+                    SubmitStep(
+                        key="gpu_d3_workloads",
+                        script_name="gpu_array.sh",
+                        array=_indices_to_array_spec(gpu_d3_workloads),
+                        depends_on=workload_depends,
+                    )
+                )
+            if gpu_non_d3:
+                steps.append(
+                    SubmitStep(
+                        key="gpu_non_d3",
+                        script_name="gpu_array.sh",
+                        array=_indices_to_array_spec(gpu_non_d3),
+                        depends_on=("calibrate",),
+                    )
+                )
     if include_postprocess:
         benchmark_depends = tuple(
             step.key
             for step in steps
-            if step.key in {"cpu_d3_baseline", "cpu_d3_workloads", "cpu_non_d3", "gpu_all"}
+            if step.key
+            in {
+                "cpu_d3_baseline",
+                "cpu_d3_workloads",
+                "cpu_non_d3",
+                "gpu_all",
+                "gpu_d3_baseline",
+                "gpu_d3_workloads",
+                "gpu_non_d3",
+            }
         )
         steps.append(
             SubmitStep(
@@ -227,6 +247,7 @@ def submit_steps(
         cmd = _build_sbatch_command(
             step_key=step.key,
             script_path=script_path,
+            slurm_dir=resolved_dir,
             array=step.array,
             seed=seed,
             scenario_config_dir=scenario_config_dir,
@@ -280,6 +301,7 @@ def _build_sbatch_command(
     *,
     step_key: str,
     script_path: Path,
+    slurm_dir: Path,
     array: str | None,
     seed: int | None,
     scenario_config_dir: str | None,
@@ -300,6 +322,7 @@ def _build_sbatch_command(
     if array:
         cmd.extend(["--array", array])
     export_vars: list[str] = ["ALL"]
+    export_vars.append(f"MAXIONBENCH_SLURM_DIR={str(slurm_dir)}")
     if seed is not None:
         export_vars.append(f"MAXIONBENCH_SEED={int(seed)}")
     if scenario_config_dir:
@@ -396,6 +419,25 @@ def _manifest_indices(*, rows: list[Any], predicate) -> list[int]:  # type: igno
     return [idx for idx, row in enumerate(rows) if predicate(row)]
 
 
+def _partition_manifest_indices(rows: list[Any]) -> tuple[list[int], list[int], list[int]]:
+    baseline = _manifest_indices(
+        rows=rows,
+        predicate=lambda row: row.scenario == "s1_ann_frontier" and row.dataset_bundle.upper() == "D3",
+    )
+    workloads = _manifest_indices(
+        rows=rows,
+        predicate=lambda row: row.scenario in _D3_WORKLOAD_SCENARIOS,
+    )
+    baseline_set = set(baseline)
+    workload_set = set(workloads)
+    non_d3 = [
+        idx
+        for idx in range(len(rows))
+        if idx not in baseline_set and idx not in workload_set
+    ]
+    return baseline, workloads, non_d3
+
+
 def _indices_to_array_spec(indices: list[int]) -> str:
     if not indices:
         raise ValueError("array spec requires at least one index")
@@ -439,7 +481,14 @@ def _normalize_step_override_specs(raw_payload: Any, *, step_key: str, profile: 
         return ()
     if not isinstance(raw_payload, dict):
         raise ValueError(f"{profile}.step_overrides must be a mapping of step_key -> [flag, value] pairs")
-    return _normalize_flag_specs(raw_payload.get(step_key), label=f"{profile}.step_overrides.{step_key}")
+    for candidate_key in _step_override_lookup_keys(step_key):
+        if candidate_key not in raw_payload:
+            continue
+        return _normalize_flag_specs(
+            raw_payload.get(candidate_key),
+            label=f"{profile}.step_overrides.{candidate_key}",
+        )
+    return ()
 
 
 def _warn_unknown_step_override_keys(profile: str, *, valid_step_keys: set[str]) -> None:
@@ -453,7 +502,7 @@ def _warn_unknown_step_override_keys(profile: str, *, valid_step_keys: set[str])
     unknown = sorted(
         key
         for key in (str(item).strip() for item in raw_payload.keys())
-        if key and key not in valid_step_keys
+        if key and key not in _accepted_step_override_keys(valid_step_keys)
     )
     if not unknown:
         return
@@ -463,6 +512,20 @@ def _warn_unknown_step_override_keys(profile: str, *, valid_step_keys: set[str])
         ", ".join(unknown),
         ", ".join(sorted(valid_step_keys)),
     )
+
+
+def _step_override_lookup_keys(step_key: str) -> tuple[str, ...]:
+    normalized_key = str(step_key).strip()
+    if normalized_key in _GPU_SPLIT_STEP_KEYS:
+        return (normalized_key, "gpu_all")
+    return (normalized_key,)
+
+
+def _accepted_step_override_keys(valid_step_keys: set[str]) -> set[str]:
+    accepted = set(valid_step_keys)
+    if valid_step_keys & _GPU_SPLIT_STEP_KEYS:
+        accepted.add("gpu_all")
+    return accepted
 
 
 def main(argv: list[str] | None = None) -> int:

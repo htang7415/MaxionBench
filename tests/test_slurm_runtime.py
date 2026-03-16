@@ -220,6 +220,21 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "MAXIONBENCH_PGVECTOR_DSN=" in text
 
 
+def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:
+    for rel_path in (
+        "maxionbench/orchestration/slurm/download_datasets.sh",
+        "maxionbench/orchestration/slurm/preprocess_datasets.sh",
+        "maxionbench/orchestration/slurm/postprocess.sh",
+        "maxionbench/orchestration/slurm/calibrate_d3.sh",
+        "maxionbench/orchestration/slurm/prefetch_datasets.sh",
+        "maxionbench/orchestration/slurm/cpu_array.sh",
+        "maxionbench/orchestration/slurm/gpu_array.sh",
+    ):
+        text = Path(rel_path).read_text(encoding="utf-8")
+        assert 'SLURM_DIR="${MAXIONBENCH_SLURM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"' in text
+        assert 'source "${SLURM_DIR}/common.sh"' in text
+
+
 def test_cpu_array_includes_d3_matched_s1_baseline_config() -> None:
     text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
     assert "configs/scenarios/s1_ann_frontier_d3.yaml" in text

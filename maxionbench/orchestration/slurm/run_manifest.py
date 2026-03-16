@@ -23,6 +23,14 @@ _SCENARIO_ORDER = {
     "s5_rerank": 6,
     "s6_fusion": 7,
 }
+_S1_TEMPLATE_ORDER = {
+    "s1_ann_frontier": 0,
+    "s1_ann_frontier_d1_glove": 0,
+    "s1_ann_frontier_d1_sift": 1,
+    "s1_ann_frontier_d1_gist": 2,
+    "s1_ann_frontier_d2": 3,
+    "s1_ann_frontier_d3": 4,
+}
 
 
 @dataclass(frozen=True)
@@ -170,6 +178,7 @@ def _load_templates(root: Path, *, skip_s6: bool) -> list[tuple[str, dict[str, A
         if not isinstance(payload, dict):
             raise ValueError(f"scenario template must be a mapping: {path}")
         templates.append((path.name, dict(payload)))
+    templates.sort(key=lambda item: _template_sort_key(template_name=item[0], payload=item[1]))
     return templates
 
 
@@ -243,11 +252,46 @@ def _task_group_for_payload(payload: dict[str, Any]) -> str:
 
 
 def _row_sort_key(row: RunManifestRow) -> tuple[int, str, str]:
-    return (
-        _SCENARIO_ORDER.get(row.template_name.removesuffix(".yaml"), 999),
-        row.template_name,
-        row.engine,
+    template_key = _template_sort_key(
+        template_name=row.template_name,
+        scenario=row.scenario,
+        dataset_bundle=row.dataset_bundle,
     )
+    return (*template_key, row.engine)
+
+
+def _template_sort_key(
+    *,
+    template_name: str,
+    payload: dict[str, Any] | None = None,
+    scenario: str | None = None,
+    dataset_bundle: str | None = None,
+) -> tuple[int, int, int, str]:
+    resolved_scenario = str(
+        scenario if scenario is not None else (payload or {}).get("scenario", "")
+    ).strip().lower()
+    resolved_bundle = str(
+        dataset_bundle if dataset_bundle is not None else (payload or {}).get("dataset_bundle", "")
+    ).strip().upper()
+    stem = Path(template_name).stem
+
+    scenario_rank = _SCENARIO_ORDER.get(resolved_scenario, 999)
+    dataset_rank = 0
+    variant_rank = 0
+    if resolved_scenario == "s1_ann_frontier":
+        if resolved_bundle == "D1":
+            dataset_rank = 0
+            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
+        elif resolved_bundle == "D2":
+            dataset_rank = 1
+            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
+        elif resolved_bundle == "D3":
+            dataset_rank = 2
+            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
+        else:
+            dataset_rank = 9
+            variant_rank = 999
+    return (scenario_rank, dataset_rank, variant_rank, template_name)
 
 
 def _slug(value: str) -> str:

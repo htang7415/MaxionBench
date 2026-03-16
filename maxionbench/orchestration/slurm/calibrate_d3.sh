@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+SLURM_DIR="${MAXIONBENCH_SLURM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# shellcheck source=/dev/null
+source "${SLURM_DIR}/common.sh"
 
 CONFIG_PATH="${MAXIONBENCH_CALIBRATE_CONFIG:-configs/scenarios/calibrate_d3.yaml}"
 if [[ -z "${MAXIONBENCH_CALIBRATE_CONFIG:-}" ]]; then

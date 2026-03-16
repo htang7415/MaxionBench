@@ -17,12 +17,15 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
         assert path.exists(), path
 
     text = script.read_text(encoding="utf-8")
-    assert "maxionbench submit-slurm-plan" in text
+    assert "submit-slurm-plan" in text
+    assert "CLI_CMD=()" in text
     assert "--download-datasets" in text
     assert "--preprocess-datasets" in text
     assert "--include-postprocess" in text
     assert "--full-matrix" in text
     assert "--container-runtime apptainer" in text
+    assert "python -m maxionbench.cli" in text
+    assert "python3 -m maxionbench.cli" in text
     assert "euler_apptainer" in text
     assert "nrel_apptainer" in text
     assert "--shared-root <path>" in text
@@ -205,3 +208,49 @@ printf '{"ok": true}\\n'
     assert "OUTPUT=/projects/demo/maxionbench/results" in log_text
     assert "FIGURES=/projects/demo/maxionbench/figures" in log_text
     assert "HF=/projects/demo/maxionbench/.cache/huggingface" in log_text
+
+
+def test_run_slurm_pipeline_falls_back_to_python_module_cli(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "python_calls.log"
+    stub_python = bin_dir / "python"
+    stub_python.write_text(
+        """#!/bin/bash
+set -euo pipefail
+printf '%s\\n' "$*" > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_python.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = str(bin_dir)
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "run_slurm_pipeline.sh",
+            "--cluster",
+            "euler",
+            "--container-image",
+            "/shared/containers/maxionbench.sif",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "+ python -m maxionbench.cli submit-slurm-plan" in completed.stdout
+    log_text = stub_log.read_text(encoding="utf-8").strip()
+    assert log_text.startswith("-m maxionbench.cli submit-slurm-plan ")

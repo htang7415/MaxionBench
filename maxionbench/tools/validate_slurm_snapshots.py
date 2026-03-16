@@ -16,6 +16,7 @@ DEFAULT_SUBMIT_PATHS = (
     "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json",
 )
 DEFAULT_REQUIRED_STEP_KEYS = ("calibrate", "cpu_d3_baseline", "cpu_d3_workloads", "cpu_non_d3")
+DEFAULT_GPU_SPLIT_STEP_KEYS = ("gpu_d3_baseline", "gpu_d3_workloads", "gpu_non_d3")
 DEFAULT_REQUIRED_DEPENDS = {
     "calibrate": [],
     "cpu_d3_baseline": ["calibrate"],
@@ -24,6 +25,7 @@ DEFAULT_REQUIRED_DEPENDS = {
     "gpu_all": ["calibrate"],
 }
 DEFAULT_REQUIRED_EXPORT_TOKEN = "ALL"
+DEFAULT_REQUIRED_EXPORT_SLURM_DIR_KEY = "MAXIONBENCH_SLURM_DIR"
 DEFAULT_REQUIRED_EXPORT_SEED_KEY = "MAXIONBENCH_SEED"
 DEFAULT_PAPER_SCENARIO_CONFIG_DIR = "configs/scenarios_paper"
 
@@ -68,10 +70,18 @@ def validate_slurm_snapshots(
         has_prefetch = "prefetch_datasets" in keys
         is_skip_gpu = "skip_gpu" in path.name
         is_paper_snapshot = "paper" in path.name
-        if is_skip_gpu and "gpu_all" in keys:
-            _err(errors, path, "gpu_all", "absent in skip-gpu mode", "present")
-        if not is_skip_gpu and "gpu_all" not in keys:
-            _err(errors, path, "gpu_all", "present in default mode", "absent")
+        has_legacy_gpu = "gpu_all" in keys
+        split_gpu_keys = [key for key in DEFAULT_GPU_SPLIT_STEP_KEYS if key in keys]
+        if is_skip_gpu and (has_legacy_gpu or split_gpu_keys):
+            _err(
+                errors,
+                path,
+                "gpu_step_keys",
+                "absent in skip-gpu mode",
+                ["gpu_all", *split_gpu_keys] if has_legacy_gpu else split_gpu_keys,
+            )
+        if not is_skip_gpu and not has_legacy_gpu and not split_gpu_keys:
+            _err(errors, path, "gpu_step_keys", "present in default mode", "absent")
 
         expected_depends = dict(DEFAULT_REQUIRED_DEPENDS)
         if has_prefetch:
@@ -79,6 +89,16 @@ def validate_slurm_snapshots(
             expected_depends["calibrate"] = ["prefetch_datasets"]
         if is_skip_gpu:
             expected_depends.pop("gpu_all", None)
+        elif split_gpu_keys:
+            expected_depends.pop("gpu_all", None)
+            if "gpu_d3_baseline" in keys:
+                expected_depends["gpu_d3_baseline"] = ["calibrate"]
+            if "gpu_d3_workloads" in keys:
+                expected_depends["gpu_d3_workloads"] = (
+                    ["calibrate", "gpu_d3_baseline"] if "gpu_d3_baseline" in keys else ["calibrate"]
+                )
+            if "gpu_non_d3" in keys:
+                expected_depends["gpu_non_d3"] = ["calibrate"]
         for step_key, expected in expected_depends.items():
             step = step_by_key.get(step_key)
             if not isinstance(step, dict):
@@ -132,6 +152,14 @@ def validate_slurm_snapshots(
                     errors,
                     path,
                     f"{step_key}.command.--export.{DEFAULT_REQUIRED_EXPORT_TOKEN}",
+                    "present",
+                    "absent",
+                )
+            if DEFAULT_REQUIRED_EXPORT_SLURM_DIR_KEY not in export_kv:
+                _err(
+                    errors,
+                    path,
+                    f"{step_key}.command.--export.{DEFAULT_REQUIRED_EXPORT_SLURM_DIR_KEY}",
                     "present",
                     "absent",
                 )
