@@ -112,8 +112,8 @@ printf '{"pass": true}\\n'
 
 def test_command_md_mentions_slurm_pipeline_script() -> None:
     text = Path("command.md").read_text(encoding="utf-8")
-    assert "bash run_slurm_pipeline.sh \\" in text
-    assert "--cluster euler \\" in text
-    assert "--cluster nrel \\" in text
-    assert "--container-image /shared/containers/maxionbench.sif" in text
+    assert "bash run_slurm_pipeline.sh --cluster euler" in text
+    assert "bash run_slurm_pipeline.sh --cluster nrel" in text
+    assert "--shared-root /shared/path/maxionbench" in text
+    assert "${MAXIONBENCH_SHARED_ROOT}/containers/maxionbench.sif" in text
     assert "--launch" in text

@@ -25,6 +25,7 @@ mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "calibrate_d3"
 
 STAGED_CONFIG="$(mb_stage_config_to_tmp "${MB_PREFLIGHT_CONFIG}")"
+export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"
 mb_log "staged config: ${STAGED_CONFIG}"
 mb_run_benchmark "${STAGED_CONFIG}" --seed "${MAXIONBENCH_SEED:-42}"
 
@@ -35,3 +36,4 @@ if [[ -f "${MB_OUTPUT_TMP}/d3_params.yaml" ]]; then
 fi
 
 mb_copy_back_output
+mb_cleanup_local_runtime

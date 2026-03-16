@@ -7,13 +7,15 @@ import subprocess
 
 def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     script = Path("run_slurm_pipeline.sh")
+    build_script = Path("scripts/build_containers.sh")
+    definition = Path("maxionbench.def")
     download = Path("maxionbench/orchestration/slurm/download_datasets.sh")
     preprocess = Path("maxionbench/orchestration/slurm/preprocess_datasets.sh")
     postprocess = Path("maxionbench/orchestration/slurm/postprocess.sh")
     profiles = Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml")
     env_example = Path(".env.slurm.example")
 
-    for path in (script, download, preprocess, postprocess, profiles, env_example):
+    for path in (script, build_script, definition, download, preprocess, postprocess, profiles, env_example):
         assert path.exists(), path
 
     text = script.read_text(encoding="utf-8")
@@ -29,8 +31,24 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "euler_apptainer" in text
     assert "nrel_apptainer" in text
     assert "--shared-root <path>" in text
+    assert ".env.slurm.<cluster> is auto-loaded before CLI overrides" in text
     assert 'SUBMIT_ROOT="$(pwd -P)"' in text
-    assert 'printf \'%s\\n\' "${SUBMIT_ROOT}"' in text
+    assert 'printf \'%s\\n\' "${ROOT_DIR}"' in text
+    assert "prepare_shared_layout()" in text
+    assert "prepare_container_images()" in text
+    assert "scripts/build_containers.sh" in text
+
+    build_text = build_script.read_text(encoding="utf-8")
+    assert "apptainer build" in build_text
+    assert "apptainer pull" in build_text
+    assert "--output-dir" in build_text
+    assert "--only-missing" in build_text
+
+    definition_text = definition.read_text(encoding="utf-8")
+    assert "Bootstrap: docker" in definition_text
+    assert "From: python:3.11-slim" in definition_text
+    assert "%post" in definition_text
+    assert "%runscript" in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -57,6 +75,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     env_text = env_example.read_text(encoding="utf-8")
     assert "MAXIONBENCH_SLURM_ACCOUNT=" in env_text
     assert "MAXIONBENCH_APPTAINER_MODULE=" in env_text
+    assert "MAXIONBENCH_CLEANUP_LOCAL_SCRATCH=" in env_text
     assert "MAXIONBENCH_CONTAINER_IMAGE=" in env_text
     assert "MAXIONBENCH_QDRANT_IMAGE=" in env_text
     assert "MAXIONBENCH_PGVECTOR_IMAGE=" in env_text
@@ -72,6 +91,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
 def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
     for path in (
         "run_slurm_pipeline.sh",
+        "scripts/build_containers.sh",
         "maxionbench/orchestration/slurm/download_datasets.sh",
         "maxionbench/orchestration/slurm/preprocess_datasets.sh",
         "maxionbench/orchestration/slurm/postprocess.sh",
@@ -145,11 +165,11 @@ printf '{"ok": true}\\n'
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     log_text = stub_log.read_text(encoding="utf-8")
-    assert f"DATASET={submit_root}/dataset" in log_text
-    assert f"CACHE={submit_root}/.cache" in log_text
-    assert f"OUTPUT={submit_root}/results" in log_text
-    assert f"FIGURES={submit_root}/figures" in log_text
-    assert f"HF={submit_root}/.cache/huggingface" in log_text
+    assert f"DATASET={repo_dir}/dataset" in log_text
+    assert f"CACHE={repo_dir}/.cache" in log_text
+    assert f"OUTPUT={repo_dir}/results" in log_text
+    assert f"FIGURES={repo_dir}/figures" in log_text
+    assert f"HF={repo_dir}/.cache/huggingface" in log_text
     assert "ARGS=submit-slurm-plan" in log_text
 
 
@@ -211,6 +231,174 @@ printf '{"ok": true}\\n'
     assert "HF=/projects/demo/maxionbench/.cache/huggingface" in log_text
 
 
+def test_run_slurm_pipeline_auto_loads_cluster_env_file(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    submit_root = tmp_path / "submit_root"
+    submit_root.mkdir(parents=True, exist_ok=True)
+    shared_root = tmp_path / "env_shared_root"
+    containers_dir = shared_root / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    for image_name in (
+        "maxionbench.sif",
+        "qdrant.sif",
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "\n".join(
+            (
+                f"MAXIONBENCH_SHARED_ROOT={shared_root}",
+                "MAXIONBENCH_HF_CACHE_DIR=${MAXIONBENCH_SHARED_ROOT}/.cache/huggingface",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "maxionbench_env.log"
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'DATASET=%s\\n' "${MAXIONBENCH_DATASET_ROOT:-}"
+  printf 'CACHE=%s\\n' "${MAXIONBENCH_DATASET_CACHE_DIR:-}"
+  printf 'OUTPUT=%s\\n' "${MAXIONBENCH_OUTPUT_ROOT:-}"
+  printf 'FIGURES=%s\\n' "${MAXIONBENCH_FIGURES_ROOT:-}"
+  printf 'HF=%s\\n' "${MAXIONBENCH_HF_CACHE_DIR:-}"
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+    env.pop("MAXIONBENCH_SHARED_ROOT", None)
+    env.pop("MAXIONBENCH_DATASET_ROOT", None)
+    env.pop("MAXIONBENCH_DATASET_CACHE_DIR", None)
+    env.pop("MAXIONBENCH_OUTPUT_ROOT", None)
+    env.pop("MAXIONBENCH_FIGURES_ROOT", None)
+    env.pop("MAXIONBENCH_HF_CACHE_DIR", None)
+    env.pop("MAXIONBENCH_CONTAINER_IMAGE", None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+        ],
+        cwd=submit_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert f"+ loaded cluster env {tmp_path / '.env.slurm.nrel'}" in completed.stdout
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert f"DATASET={shared_root}/dataset" in log_text
+    assert f"CACHE={shared_root}/.cache" in log_text
+    assert f"OUTPUT={shared_root}/results" in log_text
+    assert f"FIGURES={shared_root}/figures" in log_text
+    assert f"HF={shared_root}/.cache/huggingface" in log_text
+    assert f"CONTAINER={shared_root}/containers/maxionbench.sif" in log_text
+
+
+def test_run_slurm_pipeline_cli_overrides_auto_loaded_cluster_env_file(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    submit_root = tmp_path / "submit_root"
+    submit_root.mkdir(parents=True, exist_ok=True)
+    env_shared_root = tmp_path / "env_shared_root"
+    cli_shared_root = tmp_path / "cli_shared_root"
+    for root in (env_shared_root, cli_shared_root):
+        containers_dir = root / "containers"
+        containers_dir.mkdir(parents=True, exist_ok=True)
+        for image_name in (
+            "maxionbench.sif",
+            "qdrant.sif",
+            "pgvector.sif",
+            "opensearch.sif",
+            "weaviate.sif",
+            "milvus-etcd.sif",
+            "milvus-minio.sif",
+            "milvus.sif",
+        ):
+            (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        f"MAXIONBENCH_SHARED_ROOT={env_shared_root}\n",
+        encoding="utf-8",
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "maxionbench_env.log"
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'DATASET=%s\\n' "${MAXIONBENCH_DATASET_ROOT:-}"
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+    env.pop("MAXIONBENCH_SHARED_ROOT", None)
+    env.pop("MAXIONBENCH_CONTAINER_IMAGE", None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--shared-root",
+            str(cli_shared_root),
+        ],
+        cwd=submit_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert f"DATASET={cli_shared_root}/dataset" in log_text
+    assert f"CONTAINER={cli_shared_root}/containers/maxionbench.sif" in log_text
+
+
 def test_run_slurm_pipeline_falls_back_to_python_module_cli(tmp_path: Path) -> None:
     source_script = Path("run_slurm_pipeline.sh")
     script_path = tmp_path / "run_slurm_pipeline.sh"
@@ -255,3 +443,205 @@ printf '{"ok": true}\\n'
     assert "+ python -m maxionbench.cli submit-slurm-plan" in completed.stdout
     log_text = stub_log.read_text(encoding="utf-8").strip()
     assert log_text.startswith("-m maxionbench.cli submit-slurm-plan ")
+
+
+def test_run_slurm_pipeline_derives_container_paths_from_shared_root(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    shared_root = tmp_path / "shared_root"
+    containers_dir = shared_root / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    for image_name in (
+        "maxionbench.sif",
+        "qdrant.sif",
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "maxionbench_env.log"
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+  printf 'QDRANT=%s\\n' "${MAXIONBENCH_QDRANT_IMAGE:-}"
+  printf 'PGVECTOR=%s\\n' "${MAXIONBENCH_PGVECTOR_IMAGE:-}"
+  printf 'OPENSEARCH=%s\\n' "${MAXIONBENCH_OPENSEARCH_IMAGE:-}"
+  printf 'WEAVIATE=%s\\n' "${MAXIONBENCH_WEAVIATE_IMAGE:-}"
+  printf 'MILVUS_ETCD=%s\\n' "${MAXIONBENCH_MILVUS_ETCD_IMAGE:-}"
+  printf 'MILVUS_MINIO=%s\\n' "${MAXIONBENCH_MILVUS_MINIO_IMAGE:-}"
+  printf 'MILVUS=%s\\n' "${MAXIONBENCH_MILVUS_IMAGE:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+    env.pop("MAXIONBENCH_CONTAINER_IMAGE", None)
+    env.pop("MAXIONBENCH_QDRANT_IMAGE", None)
+    env.pop("MAXIONBENCH_PGVECTOR_IMAGE", None)
+    env.pop("MAXIONBENCH_OPENSEARCH_IMAGE", None)
+    env.pop("MAXIONBENCH_WEAVIATE_IMAGE", None)
+    env.pop("MAXIONBENCH_MILVUS_ETCD_IMAGE", None)
+    env.pop("MAXIONBENCH_MILVUS_MINIO_IMAGE", None)
+    env.pop("MAXIONBENCH_MILVUS_IMAGE", None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "run_slurm_pipeline.sh",
+            "--cluster",
+            "nrel",
+            "--shared-root",
+            str(shared_root),
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert f"CONTAINER={shared_root}/containers/maxionbench.sif" in log_text
+    assert f"QDRANT={shared_root}/containers/qdrant.sif" in log_text
+    assert f"PGVECTOR={shared_root}/containers/pgvector.sif" in log_text
+    assert f"OPENSEARCH={shared_root}/containers/opensearch.sif" in log_text
+    assert f"WEAVIATE={shared_root}/containers/weaviate.sif" in log_text
+    assert f"MILVUS_ETCD={shared_root}/containers/milvus-etcd.sif" in log_text
+    assert f"MILVUS_MINIO={shared_root}/containers/milvus-minio.sif" in log_text
+    assert f"MILVUS={shared_root}/containers/milvus.sif" in log_text
+    assert f"--container-image {shared_root}/containers/maxionbench.sif" in log_text
+
+
+def test_run_slurm_pipeline_launch_builds_missing_container_images(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    build_script_path = scripts_dir / "build_containers.sh"
+    build_script_path.write_text(
+        Path("scripts/build_containers.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    build_script_path.chmod(0o755)
+
+    definition_path = tmp_path / "maxionbench.def"
+    definition_path.write_text(Path("maxionbench.def").read_text(encoding="utf-8"), encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "MAXIONBENCH_SLURM_ACCOUNT=nawimem\n",
+        encoding="utf-8",
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_calls.log"
+    stub_log = tmp_path / "maxionbench_env.log"
+    apptainer_path = bin_dir / "apptainer"
+    apptainer_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
+  printf '%s\\n' '--fakeroot'
+  exit 0
+fi
+if [[ "${1:-}" == "build" ]]; then
+  if [[ "${2:-}" == "--fakeroot" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  mkdir -p "$(dirname "${target}")"
+  printf 'image\\n' > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "pull" ]]; then
+  target="${2:-}"
+  mkdir -p "$(dirname "${target}")"
+  printf 'image\\n' > "${target}"
+  exit 0
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    apptainer_path.chmod(0o755)
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'DATASET=%s\\n' "${MAXIONBENCH_DATASET_ROOT:-}"
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_APPTAINER_LOG"] = str(apptainer_log)
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--launch",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    containers_dir = tmp_path / "containers"
+    for image_name in (
+        "maxionbench.sif",
+        "qdrant.sif",
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        assert (containers_dir / image_name).exists(), image_name
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    assert "build --fakeroot" in apptainer_calls
+    assert "pull" in apptainer_calls
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert f"DATASET={tmp_path}/dataset" in log_text
+    assert f"CONTAINER={tmp_path}/containers/maxionbench.sif" in log_text
+    assert "ARGS=submit-slurm-plan" in log_text

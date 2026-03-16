@@ -1,0 +1,30 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%files
+    pyproject.toml /opt/maxionbench/
+    README.md /opt/maxionbench/
+    AGENTS.md /opt/maxionbench/
+    CLAUDE.md /opt/maxionbench/
+    document.md /opt/maxionbench/
+    project.md /opt/maxionbench/
+    prompt.md /opt/maxionbench/
+    maxionbench /opt/maxionbench/maxionbench
+    configs /opt/maxionbench/configs
+    docs /opt/maxionbench/docs
+    run_workstation.sh /opt/maxionbench/
+
+%post
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        libgomp1
+    rm -rf /var/lib/apt/lists/*
+    cd /opt/maxionbench
+    python -m pip install --upgrade pip setuptools wheel
+    python -m pip install ".[dev,engines,reporting]"
+
+%runscript
+    exec maxionbench "$@"

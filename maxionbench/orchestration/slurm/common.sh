@@ -31,6 +31,7 @@ export MAXIONBENCH_WEAVIATE_IMAGE="${MAXIONBENCH_WEAVIATE_IMAGE:-}"
 export MAXIONBENCH_MILVUS_ETCD_IMAGE="${MAXIONBENCH_MILVUS_ETCD_IMAGE:-}"
 export MAXIONBENCH_MILVUS_MINIO_IMAGE="${MAXIONBENCH_MILVUS_MINIO_IMAGE:-}"
 export MAXIONBENCH_MILVUS_IMAGE="${MAXIONBENCH_MILVUS_IMAGE:-}"
+export MAXIONBENCH_CLEANUP_LOCAL_SCRATCH="${MAXIONBENCH_CLEANUP_LOCAL_SCRATCH:-1}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -39,6 +40,18 @@ mb_log() {
 mb_die() {
   mb_log "ERROR: $*"
   exit 1
+}
+
+mb_flag_enabled() {
+  local raw="${1:-}"
+  case "$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
 }
 
 mb_require_tmpdir() {
@@ -156,10 +169,16 @@ mb_ensure_apptainer() {
     mb_log "loading apptainer module ${module_name}"
     local module_output=""
     local module_status=0
+    local module_log_file=""
+    module_log_file="$(mktemp "${SLURM_TMPDIR:-/tmp}/maxionbench_apptainer_module.XXXXXX")"
     set +e
-    module_output="$(module load "${module_name}" 2>&1)"
+    module load "${module_name}" >"${module_log_file}" 2>&1
     module_status=$?
     set -e
+    if [[ -f "${module_log_file}" ]]; then
+      module_output="$(cat "${module_log_file}")"
+      rm -f "${module_log_file}"
+    fi
     if [[ -n "${module_output}" ]]; then
       mb_log "module load ${module_name} output: ${module_output}"
     fi
@@ -738,8 +757,11 @@ mb_stage_config_to_tmp() {
   local config_path="$1"
   local resolved
   resolved="$(mb_resolve_config "${config_path}")"
-  local staged="${SLURM_TMPDIR}/maxionbench_config_${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}.yaml"
-  mb_python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}" "${ROOT_DIR}"
+  local stage_root="${SLURM_TMPDIR}/maxionbench_stage/${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}"
+  local staged="${stage_root}/config.yaml"
+  export MB_STAGE_ROOT="${stage_root}"
+  export MB_STAGED_CONFIG_PATH="${staged}"
+  mb_python - <<'PY' "${resolved}" "${staged}" "${stage_root}" "${MB_OUTPUT_TMP:-}" "${ROOT_DIR}"
 import pathlib
 import shutil
 import sys
@@ -749,7 +771,7 @@ from maxionbench.orchestration.config_schema import expand_env_placeholders
 
 src = pathlib.Path(sys.argv[1]).resolve()
 dst = pathlib.Path(sys.argv[2]).resolve()
-tmpdir = pathlib.Path(sys.argv[3]).resolve()
+stage_root = pathlib.Path(sys.argv[3]).resolve()
 out_tmp = pathlib.Path(sys.argv[4]).resolve() if sys.argv[4] else None
 repo_root = pathlib.Path(sys.argv[5]).resolve()
 
@@ -777,7 +799,7 @@ def stage_any_path(key: str, bucket: str) -> None:
     source = resolve_source(str(value))
     if not source.exists():
         return
-    bucket_dir = tmpdir / "datasets" / bucket
+    bucket_dir = stage_root / "datasets" / bucket
     bucket_dir.mkdir(parents=True, exist_ok=True)
     target = bucket_dir / source.name
     if source.is_dir():
@@ -851,6 +873,40 @@ mb_copy_back_output() {
   mkdir -p "${MB_OUTPUT_FINAL}"
   cp -R "${MB_OUTPUT_TMP}/." "${MB_OUTPUT_FINAL}/"
   mb_log "copied artifacts to ${MB_OUTPUT_FINAL}"
+}
+
+mb_cleanup_local_path() {
+  local target="$1"
+  if [[ -z "${target}" ]]; then
+    return 0
+  fi
+  if [[ ! -e "${target}" ]]; then
+    return 0
+  fi
+  if [[ -z "${SLURM_TMPDIR:-}" ]]; then
+    mb_log "skipping local scratch cleanup for ${target}; SLURM_TMPDIR is unset"
+    return 0
+  fi
+  case "${target}" in
+    "${SLURM_TMPDIR}"/*)
+      rm -rf "${target}"
+      mb_log "removed local scratch ${target}"
+      ;;
+    *)
+      mb_log "refusing to remove non-scratch path ${target}"
+      ;;
+  esac
+}
+
+mb_cleanup_local_runtime() {
+  if ! mb_flag_enabled "${MAXIONBENCH_CLEANUP_LOCAL_SCRATCH:-1}"; then
+    mb_log "keeping local scratch (MAXIONBENCH_CLEANUP_LOCAL_SCRATCH=${MAXIONBENCH_CLEANUP_LOCAL_SCRATCH:-0})"
+    return 0
+  fi
+  mb_cleanup_local_path "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI:-}"
+  mb_cleanup_local_path "$(mb_engine_runtime_root)"
+  mb_cleanup_local_path "${MB_STAGE_ROOT:-}"
+  mb_cleanup_local_path "${MB_OUTPUT_TMP:-}"
 }
 
 mb_run_benchmark() {
