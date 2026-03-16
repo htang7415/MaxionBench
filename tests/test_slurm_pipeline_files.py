@@ -114,6 +114,7 @@ def test_run_slurm_pipeline_derives_cluster_storage_defaults(tmp_path: Path) -> 
     script_path.chmod(0o755)
     submit_root = tmp_path / "submit_root"
     submit_root.mkdir(parents=True, exist_ok=True)
+    container_image = tmp_path / "images" / "maxionbench.sif"
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -154,7 +155,7 @@ printf '{"ok": true}\\n'
             "--cluster",
             "euler",
             "--container-image",
-            "/shared/containers/maxionbench.sif",
+            str(container_image),
         ],
         cwd=submit_root,
         env=env,
@@ -164,6 +165,13 @@ printf '{"ok": true}\\n'
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    env_file = repo_dir / ".env.slurm.euler"
+    assert env_file.exists()
+    env_text = env_file.read_text(encoding="utf-8")
+    assert f"MAXIONBENCH_SHARED_ROOT={repo_dir}" in env_text
+    assert f"MAXIONBENCH_DATASET_ROOT={repo_dir}/dataset" in env_text
+    assert "MAXIONBENCH_APPTAINER_MODULE=apptainer" in env_text
+    assert f"+ wrote cluster env {env_file}" in completed.stdout
     log_text = stub_log.read_text(encoding="utf-8")
     assert f"DATASET={repo_dir}/dataset" in log_text
     assert f"CACHE={repo_dir}/.cache" in log_text
@@ -178,6 +186,7 @@ def test_run_slurm_pipeline_shared_root_override_derives_all_paths(tmp_path: Pat
     script_path = tmp_path / "run_slurm_pipeline.sh"
     script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
     script_path.chmod(0o755)
+    container_image = tmp_path / "images" / "maxionbench.sif"
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +220,7 @@ printf '{"ok": true}\\n'
             "--cluster",
             "nrel",
             "--container-image",
-            "/shared/containers/maxionbench.sif",
+            str(container_image),
             "--shared-root",
             "/projects/demo/maxionbench",
         ],
@@ -223,6 +232,11 @@ printf '{"ok": true}\\n'
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    env_file = tmp_path / ".env.slurm.nrel"
+    assert env_file.exists()
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "MAXIONBENCH_SHARED_ROOT=/projects/demo/maxionbench" in env_text
+    assert "MAXIONBENCH_DATASET_ROOT=/projects/demo/maxionbench/dataset" in env_text
     log_text = stub_log.read_text(encoding="utf-8")
     assert "DATASET=/projects/demo/maxionbench/dataset" in log_text
     assert "CACHE=/projects/demo/maxionbench/.cache" in log_text
@@ -314,6 +328,7 @@ printf '{"ok": true}\\n'
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert f"+ loaded cluster env {tmp_path / '.env.slurm.nrel'}" in completed.stdout
+    assert f"+ wrote cluster env {tmp_path / '.env.slurm.nrel'}" in completed.stdout
     log_text = stub_log.read_text(encoding="utf-8")
     assert f"DATASET={shared_root}/dataset" in log_text
     assert f"CACHE={shared_root}/.cache" in log_text
@@ -394,6 +409,9 @@ printf '{"ok": true}\\n'
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    env_text = (tmp_path / ".env.slurm.nrel").read_text(encoding="utf-8")
+    assert f"MAXIONBENCH_SHARED_ROOT={cli_shared_root}" in env_text
+    assert f"MAXIONBENCH_CONTAINER_IMAGE={cli_shared_root}/containers/maxionbench.sif" in env_text
     log_text = stub_log.read_text(encoding="utf-8")
     assert f"DATASET={cli_shared_root}/dataset" in log_text
     assert f"CONTAINER={cli_shared_root}/containers/maxionbench.sif" in log_text
@@ -404,6 +422,7 @@ def test_run_slurm_pipeline_falls_back_to_python_module_cli(tmp_path: Path) -> N
     script_path = tmp_path / "run_slurm_pipeline.sh"
     script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
     script_path.chmod(0o755)
+    container_image = tmp_path / "images" / "maxionbench.sif"
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -420,7 +439,7 @@ printf '{"ok": true}\\n'
     stub_python.chmod(0o755)
 
     env = os.environ.copy()
-    env["PATH"] = str(bin_dir)
+    env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
     env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
 
     completed = subprocess.run(
@@ -430,7 +449,7 @@ printf '{"ok": true}\\n'
             "--cluster",
             "euler",
             "--container-image",
-            "/shared/containers/maxionbench.sif",
+            str(container_image),
         ],
         cwd=tmp_path,
         env=env,
@@ -645,3 +664,64 @@ printf '{"ok": true}\\n'
     assert f"DATASET={tmp_path}/dataset" in log_text
     assert f"CONTAINER={tmp_path}/containers/maxionbench.sif" in log_text
     assert "ARGS=submit-slurm-plan" in log_text
+
+
+def test_run_slurm_pipeline_rejects_placeholder_cluster_defaults(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "MAXIONBENCH_SLURM_ACCOUNT=your-account\n",
+        encoding="utf-8",
+    )
+
+    shared_root = tmp_path / "shared_root"
+    containers_dir = shared_root / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    for image_name in (
+        "maxionbench.sif",
+        "qdrant.sif",
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--shared-root",
+            str(shared_root),
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "placeholder cluster-local value detected: your-account" in completed.stderr
