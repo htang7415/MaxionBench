@@ -9,10 +9,14 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 ANN_BENCHMARKS_BASE_URL = "https://ann-benchmarks.com"
 DEFAULT_D1_OUTPUT_ROOT = Path("data") / "d1"
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": "MaxionBench/0.1",
+    "Accept": "*/*",
+}
 _DATASET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -53,7 +57,8 @@ def download_d1_dataset(
             delete=False,
         ) as handle:
             tmp_path = Path(handle.name)
-            with urlopen(url, timeout=float(timeout_s)) as response:
+            request = Request(url, headers=dict(DEFAULT_HTTP_HEADERS))
+            with urlopen(request, timeout=float(timeout_s)) as response:
                 shutil.copyfileobj(response, handle)
         tmp_path.replace(target_path)
     except Exception:

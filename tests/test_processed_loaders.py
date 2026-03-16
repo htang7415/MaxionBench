@@ -118,6 +118,32 @@ def test_load_processed_filtered_ann_dataset_reads_filters_and_payloads(tmp_path
     assert ds.ground_truth_ids[0] == ["doc-0000000", "doc-0000001"]
 
 
+def test_load_processed_filtered_ann_dataset_warns_on_payload_truncation(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root = tmp_path / "processed" / "D3" / "yfcc-10M"
+    root.mkdir(parents=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "filtered_ann",
+            "metric": "l2",
+        },
+    )
+    np.save(root / "base.npy", np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(root / "queries.npy", np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(root / "gt_ids.npy", np.asarray([[0, 1]], dtype=np.int32))
+    _write_jsonl(root / "filters.jsonl", [{"query_id": 0, "must_have_tags": ["tag-a"]}])
+    _write_jsonl(root / "payloads.jsonl", [{"idx": 0}, {"idx": 1}, {"idx": 2}])
+
+    with caplog.at_level(logging.WARNING):
+        ds = load_processed_filtered_ann_dataset(root, top_k=2)
+    assert len(ds.payloads) == 2
+    assert "truncating extras" in caplog.text
+
+
 def test_load_processed_d4_bundle_merges_beir_and_crag(tmp_path: Path) -> None:
     root = tmp_path / "processed" / "D4"
 
@@ -231,3 +257,76 @@ def test_load_processed_d4_bundle_logs_query_drop_warnings(tmp_path: Path, caplo
     assert len(ds.query_ids) >= 1
     assert "dropped 1 queries without surviving qrels" in caplog.text
     assert "processed D4 merge dropped docs/queries during bundle merge" in caplog.text
+
+
+def test_load_processed_d4_bundle_raises_when_all_queries_drop(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root = tmp_path / "processed" / "D4"
+
+    beir = root / "beir" / "fiqa"
+    beir.mkdir(parents=True)
+    _write_json(
+        beir / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "text_retrieval_strict",
+        },
+    )
+    _write_jsonl(
+        beir / "corpus.jsonl",
+        [{"doc_id": "fiqa::doc::d1", "title": "Bond", "text": "bond market"}],
+    )
+    _write_jsonl(
+        beir / "queries.jsonl",
+        [{"query_id": "fiqa::q::q1", "text": "bond market"}],
+    )
+    _write_qrels(beir / "qrels.tsv", [("fiqa::q::q1", "fiqa::doc::missing", 2)])
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError, match="processed D4 merge produced 0 queries after filtering"):
+            load_processed_d4_bundle(
+                root,
+                vector_dim=8,
+                seed=5,
+                beir_subsets=["fiqa"],
+                include_crag=False,
+                max_queries=10,
+            )
+    assert "dropped 1 queries without surviving qrels" in caplog.text
+
+
+def test_load_processed_d4_bundle_accepts_qrels_header_row(tmp_path: Path) -> None:
+    root = tmp_path / "processed" / "D4"
+    beir = root / "beir" / "fiqa"
+    beir.mkdir(parents=True)
+    _write_json(
+        beir / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "text_retrieval_strict",
+        },
+    )
+    _write_jsonl(
+        beir / "corpus.jsonl",
+        [{"doc_id": "fiqa::doc::d1", "title": "Bond", "text": "bond market"}],
+    )
+    _write_jsonl(
+        beir / "queries.jsonl",
+        [{"query_id": "fiqa::q::q1", "text": "bond market"}],
+    )
+    (beir / "qrels.tsv").write_text(
+        "query-id\tcorpus-id\tscore\nfiqa::q::q1\tfiqa::doc::d1\t2\n",
+        encoding="utf-8",
+    )
+
+    ds = load_processed_d4_bundle(
+        root,
+        vector_dim=8,
+        seed=5,
+        beir_subsets=["fiqa"],
+        include_crag=False,
+        max_queries=10,
+    )
+    assert ds.query_ids == ["fiqa::q::q1"]

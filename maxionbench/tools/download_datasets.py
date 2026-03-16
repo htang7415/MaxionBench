@@ -11,10 +11,10 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 import zipfile
 
-from maxionbench.tools.download_d1 import download_d1_dataset
+from maxionbench.tools.download_d1 import DEFAULT_HTTP_HEADERS, download_d1_dataset
 
 ANN_HDF5_LAYOUT = {
     "D1/glove-100-angular.hdf5": "glove-100-angular",
@@ -34,9 +34,13 @@ def run(cmd: list[str], *, cwd: Path | None = None) -> None:
     subprocess.run(cmd, cwd=str(cwd) if cwd is not None else None, check=True)
 
 
-def download_file(*, url: str, dest: Path, timeout_s: float = 60.0, force: bool = False) -> dict[str, str]:
+def _validate_timeout(timeout_s: float) -> None:
     if timeout_s <= 0:
         raise ValueError("timeout_s must be > 0")
+
+
+def download_file(*, url: str, dest: Path, timeout_s: float = 60.0, force: bool = False) -> dict[str, str]:
+    _validate_timeout(timeout_s)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.stat().st_size > 0 and not force:
         return {"url": url, "path": str(dest.resolve()), "source": "cache_hit"}
@@ -50,7 +54,8 @@ def download_file(*, url: str, dest: Path, timeout_s: float = 60.0, force: bool 
             delete=False,
         ) as handle:
             tmp_path = Path(handle.name)
-            with urlopen(url, timeout=float(timeout_s)) as response:
+            request = Request(url, headers=dict(DEFAULT_HTTP_HEADERS))
+            with urlopen(request, timeout=float(timeout_s)) as response:
                 shutil.copyfileobj(response, handle)
         tmp_path.replace(dest)
     except Exception:
@@ -81,6 +86,7 @@ def find_dir_by_name(*, root: Path, name: str) -> Path | None:
 
 
 def download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
+    _validate_timeout(timeout_s)
     fetched: dict[str, Any] = {}
     for rel_path, dataset_name in ANN_HDF5_LAYOUT.items():
         fetched[rel_path] = download_d1_dataset(
@@ -100,7 +106,7 @@ def download_bigann_yfcc(
     force: bool,
     requirements_file: str = "requirements_py3.10.txt",
 ) -> dict[str, Any]:
-    del timeout_s
+    _validate_timeout(timeout_s)
     dst = (root / "D3" / "yfcc-10M").resolve()
     if dst.exists() and not force:
         return {"path": str(dst), "source": "cache_hit"}
@@ -148,6 +154,7 @@ def _extract_archive(*, archive_path: Path, workdir: Path) -> Path:
 
 
 def download_beir(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
+    _validate_timeout(timeout_s)
     beir_root = (root / "D4" / "beir").resolve()
     beir_root.mkdir(parents=True, exist_ok=True)
     fetched: dict[str, Any] = {}
@@ -183,6 +190,8 @@ def make_small_crag_slice(*, source_bz2: Path, output_jsonl: Path, max_examples:
             if not line.strip():
                 continue
             obj = json.loads(line)
+            if not isinstance(obj, dict):
+                continue
             fout.write(json.dumps(obj, ensure_ascii=False) + "\n")
             count += 1
             if count >= max_examples:
@@ -191,6 +200,7 @@ def make_small_crag_slice(*, source_bz2: Path, output_jsonl: Path, max_examples:
 
 
 def download_crag(*, root: Path, timeout_s: float, force: bool, max_examples: int) -> dict[str, Any]:
+    _validate_timeout(timeout_s)
     crag_root = (root / "D4" / "crag").resolve()
     crag_root.mkdir(parents=True, exist_ok=True)
     full_bz2 = crag_root / "crag_task_1_and_2_dev_v4.jsonl.bz2"

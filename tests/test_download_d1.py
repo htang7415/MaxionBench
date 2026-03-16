@@ -20,8 +20,9 @@ def test_download_d1_dataset_writes_default_cache_path(tmp_path: Path, monkeypat
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
 
-    def _fake_urlopen(url: str, timeout: float):
-        assert url == "https://ann-benchmarks.com/deep-image-96-angular.hdf5"
+    def _fake_urlopen(request, timeout: float):
+        assert request.full_url == "https://ann-benchmarks.com/deep-image-96-angular.hdf5"
+        assert request.get_header("User-agent") == "MaxionBench/0.1"
         assert timeout == 30.0
         return _FakeResponse(b"hdf5-bytes")
 
@@ -47,7 +48,7 @@ def test_download_d1_dataset_uses_cache_when_file_exists(tmp_path: Path, monkeyp
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"cached-hdf5")
 
-    def _unexpected_urlopen(url: str, timeout: float):
+    def _unexpected_urlopen(request, timeout: float):
         raise AssertionError("network download should not run on cache hit")
 
     monkeypatch.setattr(download_d1_mod, "urlopen", _unexpected_urlopen)
