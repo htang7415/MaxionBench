@@ -180,6 +180,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_HF_CACHE_DIR" in text
     assert "MAXIONBENCH_APPTAINER_MODULE" in text
     assert "MAXIONBENCH_MODULE_INIT_SH" in text
+    assert "MAXIONBENCH_CLEANUP_LOCAL_SCRATCH" in text
     assert "MAXIONBENCH_DATASET_ENV_SH" in text
     assert "MAXIONBENCH_QDRANT_IMAGE" in text
     assert "MAXIONBENCH_PGVECTOR_IMAGE" in text
@@ -193,6 +194,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "module load" in text
     assert "apptainer exec" in text
     assert "mb_python()" in text
+    assert "mb_cleanup_local_runtime()" in text
     assert "expand_env_placeholders" in text
     assert "mb_read_config_field()" in text
     gate_marker = "pre-run-gate"
@@ -287,6 +289,74 @@ printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
     assert str(fake_image) in logged_args
 
 
+def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    config_path = tmp_path / "cleanup_config.yaml"
+    dataset_dir = tmp_path / "processed_dataset"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    (dataset_dir / "base.npy").write_bytes(b"123")
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "scenario": "cleanup_probe",
+                "processed_dataset_path": str(dataset_dir),
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    scratch_dir = tmp_path / "scratch"
+    output_root = tmp_path / "results"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                f'export SLURM_TMPDIR="{scratch_dir}"; '
+                f'export MAXIONBENCH_OUTPUT_ROOT="{output_root}"; '
+                'export MAXIONBENCH_CLEANUP_LOCAL_SCRATCH="1"; '
+                'export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"; '
+                'mb_require_tmpdir; '
+                'mb_prepare_output_paths "cleanup_probe"; '
+                f'STAGED_CONFIG="$(mb_stage_config_to_tmp "{config_path}")"; '
+                'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"; '
+                'mkdir -p "$(mb_engine_runtime_root)/logs" "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI}" "${MB_OUTPUT_TMP}"; '
+                'printf "service\\n" > "$(mb_engine_runtime_root)/logs/service.log"; '
+                'printf "result\\n" > "${MB_OUTPUT_TMP}/results.parquet"; '
+                'mb_copy_back_output; '
+                'mb_cleanup_local_runtime; '
+                'printf "FINAL=%s\\n" "${MB_OUTPUT_FINAL}"; '
+                'printf "TMP_EXISTS=%s\\n" "$(test -e "${MB_OUTPUT_TMP}" && echo 1 || echo 0)"; '
+                'printf "STAGE_EXISTS=%s\\n" "$(test -e "${MB_STAGE_ROOT}" && echo 1 || echo 0)"; '
+                'printf "RUNTIME_EXISTS=%s\\n" "$(test -e "$(mb_engine_runtime_root)" && echo 1 || echo 0)"; '
+                'printf "LANCEDB_EXISTS=%s\\n" "$(test -e "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI}" && echo 1 || echo 0)"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    stdout_lines = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    final_output = Path(stdout_lines["FINAL"])
+    assert final_output.exists()
+    assert (final_output / "results.parquet").read_text(encoding="utf-8") == "result\n"
+    assert stdout_lines["TMP_EXISTS"] == "0"
+    assert stdout_lines["STAGE_EXISTS"] == "0"
+    assert stdout_lines["RUNTIME_EXISTS"] == "0"
+    assert stdout_lines["LANCEDB_EXISTS"] == "0"
+
+
 def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:
     for rel_path in (
         "maxionbench/orchestration/slurm/download_datasets.sh",
@@ -334,6 +404,8 @@ def test_cpu_array_starts_and_stops_managed_engine_services() -> None:
     assert "SERVICE_STARTED=1" in text
     assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
     assert "mb_stop_engine_services" in text
+    assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
+    assert "mb_cleanup_local_runtime" in text
 
 
 def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
@@ -355,6 +427,8 @@ def test_gpu_array_starts_and_stops_managed_engine_services() -> None:
     assert "SERVICE_STARTED=1" in text
     assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
     assert "mb_stop_engine_services" in text
+    assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
+    assert "mb_cleanup_local_runtime" in text
 
 
 def test_new_slurm_pipeline_scripts_exist() -> None:
@@ -383,6 +457,8 @@ def test_calibrate_d3_supports_scenario_dir_override_with_explicit_override_prec
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"' in text
     assert 'if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then' in text
     assert "mb_source_dataset_env" in text
+    assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
+    assert "mb_cleanup_local_runtime" in text
 
 
 def test_prefetch_datasets_script_exists_and_uses_prefetch_helper() -> None:

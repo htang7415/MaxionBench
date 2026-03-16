@@ -9,24 +9,28 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "# MaxionBench Slurm Commands" in text
     assert "download_datasets -> preprocess_datasets -> benchmark arrays -> postprocess" in text
     assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
-    assert "The script derives shared paths automatically from the directory where you launch it" in text
+    assert ".env.slurm.euler" in text
+    assert ".env.slurm.nrel" in text
+    assert "run_slurm_pipeline.sh` auto-loads `.env.slurm.<cluster>` when present" in text
+    assert "The script derives shared paths automatically from `MAXIONBENCH_SHARED_ROOT` or from the repository root that contains `run_slurm_pipeline.sh`" in text
     assert "- `dataset/`" in text
     assert "- `.cache/`" in text
     assert "- `results/`" in text
     assert "- `figures/`" in text
     assert "- `.cache/huggingface/`" in text
     assert "--shared-root /shared/path/maxionbench" in text
-    assert "bash run_slurm_pipeline.sh \\" in text
-    assert "--cluster euler \\" in text
-    assert "--cluster nrel \\" in text
-    assert "--container-image /shared/containers/maxionbench.sif" in text
+    assert "bash run_slurm_pipeline.sh --cluster euler" in text
+    assert "bash run_slurm_pipeline.sh --cluster nrel" in text
+    assert "Dry-run only prints the submit plan." in text
+    assert "`--launch` prepares the shared directory tree and ensures the required Apptainer images exist before it calls `submit-slurm-plan`." in text
+    assert "${MAXIONBENCH_SHARED_ROOT}/containers/maxionbench.sif" in text
     assert "--launch" in text
     assert 'squeue -u "$USER"' in text
     assert "sacct -j <job_id>" in text
+    assert "tail -f logs/maxion_*.out" in text
 
     assert "run_workstation.sh" not in text
     assert "run_docker_scenario.sh" not in text
-    assert "submit-slurm-plan" not in text
 
 
 def test_command_mac_md_is_concise_local_terminal_doc() -> None:

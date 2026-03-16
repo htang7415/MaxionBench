@@ -27,17 +27,15 @@ def test_readme_describes_study_scope_and_run_entrypoints() -> None:
     assert "| S4 | D4 | hybrid retrieval | clients `16` | dense vs BM25+dense, RRF `k=60`, candidate budget `200/200` |" in text
     assert "| S5 | D4 | candidate generation + rerank | clients `16` | candidate budgets `{50, 200, 1000}`; reranker `BAAI/bge-reranker-base`, `max_seq_len=512`, `fp16`, `batch_size=32` |" in text
     assert "| S6 | D4 | multi-index fusion | clients `16` | fusion budget `200/200`, RRF `k=60`; first deferrable scenario if schedule risk appears |" in text
-    assert "bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif" in text
-    assert "keep private cluster settings in your local Slurm profile" in text
-    assert "By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the directory where you launch the script." in text
+    assert "Keep cluster-local defaults in gitignored local files such as `.env.slurm.nrel`, `.env.slurm.euler`, and `maxionbench/orchestration/slurm/profiles_local.yaml`" in text
+    assert "bash run_slurm_pipeline.sh --cluster nrel" in text
+    assert "Dry-run prints the submit plan only." in text
+    assert "`--launch` prepares the shared directory tree and builds any missing `.sif` images under `${MAXIONBENCH_SHARED_ROOT}/containers/` before submitting jobs." in text
+    assert "By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the repository root that contains `run_slurm_pipeline.sh`." in text
     assert "--shared-root /shared/path/maxionbench" in text
 
     assert "Mac mini" not in text
     assert "mac mini" not in text
-    assert "Euler" not in text
-    assert "NREL" not in text
     assert "--cluster euler" not in text
-    assert "--cluster nrel" not in text
     assert "nawimem" not in text
     assert "pdelab" not in text
-    assert "profiles_local.yaml" not in text

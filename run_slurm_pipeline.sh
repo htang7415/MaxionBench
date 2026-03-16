@@ -2,8 +2,115 @@
 set -euo pipefail
 
 SUBMIT_ROOT="$(pwd -P)"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [[ "${SCRIPT_PATH}" == */* ]]; then
+  ROOT_DIR="$(cd "${SCRIPT_PATH%/*}" && pwd -P)"
+else
+  ROOT_DIR="${SUBMIT_ROOT}"
+fi
 cd "${ROOT_DIR}"
+
+detect_cluster_env_name() {
+  local -a args=("$@")
+  local idx=0
+  local cluster_name=""
+  local slurm_profile_name=""
+  while [[ ${idx} -lt ${#args[@]} ]]; do
+    case "${args[${idx}]}" in
+      --cluster)
+        if [[ $((idx + 1)) -lt ${#args[@]} ]]; then
+          cluster_name="${args[$((idx + 1))]}"
+        fi
+        idx=$((idx + 2))
+        continue
+        ;;
+      --slurm-profile)
+        if [[ $((idx + 1)) -lt ${#args[@]} ]]; then
+          slurm_profile_name="${args[$((idx + 1))]}"
+        fi
+        idx=$((idx + 2))
+        continue
+        ;;
+    esac
+    idx=$((idx + 1))
+  done
+  if [[ -n "${cluster_name}" ]]; then
+    printf '%s\n' "${cluster_name}"
+    return 0
+  fi
+  case "${slurm_profile_name}" in
+    euler_apptainer)
+      printf '%s\n' "euler"
+      ;;
+    nrel_apptainer)
+      printf '%s\n' "nrel"
+      ;;
+  esac
+}
+
+load_cluster_env_defaults() {
+  local cluster_name="$1"
+  if [[ -z "${cluster_name}" ]]; then
+    return 0
+  fi
+  local env_file="${ROOT_DIR}/.env.slurm.${cluster_name}"
+  if [[ ! -f "${env_file}" ]]; then
+    return 0
+  fi
+
+  local -a preserve_vars=(
+    MAXIONBENCH_SHARED_ROOT
+    MAXIONBENCH_DATASET_ROOT
+    MAXIONBENCH_DATASET_CACHE_DIR
+    MAXIONBENCH_OUTPUT_ROOT
+    MAXIONBENCH_FIGURES_ROOT
+    MAXIONBENCH_HF_CACHE_DIR
+    MAXIONBENCH_CONTAINER_IMAGE
+    MAXIONBENCH_QDRANT_IMAGE
+    MAXIONBENCH_PGVECTOR_IMAGE
+    MAXIONBENCH_OPENSEARCH_IMAGE
+    MAXIONBENCH_WEAVIATE_IMAGE
+    MAXIONBENCH_MILVUS_ETCD_IMAGE
+    MAXIONBENCH_MILVUS_MINIO_IMAGE
+    MAXIONBENCH_MILVUS_IMAGE
+    MAXIONBENCH_SLURM_ACCOUNT
+    MAXIONBENCH_SLURM_PARTITION
+    MAXIONBENCH_APPTAINER_MODULE
+    MAXIONBENCH_MODULE_INIT_SH
+    MAXIONBENCH_CLEANUP_LOCAL_SCRATCH
+    MAXIONBENCH_CRAG_EXAMPLES
+  )
+  local -a preserve_set=()
+  local -a preserve_values=()
+  local idx=0
+  local var_name=""
+  for var_name in "${preserve_vars[@]}"; do
+    if [[ "${!var_name+x}" == x ]]; then
+      preserve_set[${idx}]=1
+      preserve_values[${idx}]="${!var_name}"
+    else
+      preserve_set[${idx}]=0
+      preserve_values[${idx}]=""
+    fi
+    idx=$((idx + 1))
+  done
+
+  # shellcheck disable=SC1090
+  source "${env_file}"
+
+  idx=0
+  for var_name in "${preserve_vars[@]}"; do
+    if [[ "${preserve_set[${idx}]}" == "1" ]]; then
+      printf -v "${var_name}" '%s' "${preserve_values[${idx}]}"
+      export "${var_name}"
+    fi
+    idx=$((idx + 1))
+  done
+  printf '%s\n' "+ loaded cluster env ${env_file}"
+}
+
+AUTO_CLUSTER_ENV_NAME="$(detect_cluster_env_name "$@")"
+load_cluster_env_defaults "${AUTO_CLUSTER_ENV_NAME}"
 
 CLUSTER=""
 SLURM_PROFILE=""
@@ -14,6 +121,13 @@ DATASET_CACHE_DIR="${MAXIONBENCH_DATASET_CACHE_DIR:-}"
 OUTPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-}"
 FIGURES_ROOT="${MAXIONBENCH_FIGURES_ROOT:-}"
 HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
+QDRANT_IMAGE="${MAXIONBENCH_QDRANT_IMAGE:-}"
+PGVECTOR_IMAGE="${MAXIONBENCH_PGVECTOR_IMAGE:-}"
+OPENSEARCH_IMAGE="${MAXIONBENCH_OPENSEARCH_IMAGE:-}"
+WEAVIATE_IMAGE="${MAXIONBENCH_WEAVIATE_IMAGE:-}"
+MILVUS_ETCD_IMAGE="${MAXIONBENCH_MILVUS_ETCD_IMAGE:-}"
+MILVUS_MINIO_IMAGE="${MAXIONBENCH_MILVUS_MINIO_IMAGE:-}"
+MILVUS_IMAGE="${MAXIONBENCH_MILVUS_IMAGE:-}"
 SCENARIO_CONFIG_DIR="configs/scenarios_paper"
 ENGINE_CONFIG_DIR="configs/engines"
 RUN_MANIFEST_DIR="artifacts/slurm_manifests/latest"
@@ -26,11 +140,12 @@ DRY_RUN=1
 usage() {
   cat <<'EOF'
 Usage:
-  bash run_slurm_pipeline.sh --cluster <euler|nrel> --container-image </path/to/maxionbench.sif> [options]
+  bash run_slurm_pipeline.sh --cluster <euler|nrel> [options]
 
 Options:
   --cluster <name>               Cluster profile selector: euler or nrel
   --slurm-profile <name>         Explicit Slurm profile key override
+                                 If present, .env.slurm.<cluster> is auto-loaded before CLI overrides
   --container-image <path>       Apptainer image path for Slurm jobs
   --shared-root <path>           Shared base directory; derives dataset/cache/results/figures/HF paths
   --dataset-root <path>          Shared dataset root (default: MAXIONBENCH_DATASET_ROOT)
@@ -45,7 +160,7 @@ Options:
   --seed <int>                   Seed forwarded to submit-slurm-plan
   --skip-gpu                     Omit GPU jobs from the plan
   --skip-s6                      Defer S6 from the plan
-  --launch                       Submit jobs; otherwise prints a dry-run plan
+  --launch                       Prepare shared dirs/images and submit jobs; otherwise prints a dry-run plan
   --help                         Show this message
 EOF
 }
@@ -150,10 +265,6 @@ if [[ -z "${SLURM_PROFILE}" ]]; then
       ;;
   esac
 fi
-if [[ -z "${CONTAINER_IMAGE}" ]]; then
-  echo "error: --container-image is required" >&2
-  exit 2
-fi
 CLI_CMD=()
 if command -v maxionbench >/dev/null 2>&1; then
   CLI_CMD=(maxionbench)
@@ -171,10 +282,200 @@ default_shared_root() {
     printf '%s\n' "${SHARED_ROOT}"
     return 0
   fi
-  printf '%s\n' "${SUBMIT_ROOT}"
+  printf '%s\n' "${ROOT_DIR}"
 }
 
 DEFAULT_SHARED_ROOT="$(default_shared_root)"
+
+resolve_root_path() {
+  local raw_path="$1"
+  if [[ "${raw_path}" = /* ]]; then
+    printf '%s\n' "${raw_path}"
+    return 0
+  fi
+  printf '%s\n' "${ROOT_DIR}/${raw_path}"
+}
+
+default_container_path() {
+  local current_path="$1"
+  local image_name="$2"
+  if [[ -n "${current_path}" ]]; then
+    printf '%s\n' "${current_path}"
+    return 0
+  fi
+  printf '%s\n' "${DEFAULT_SHARED_ROOT}/containers/${image_name}"
+}
+
+report_container_images() {
+  printf '%s\n' "+ MAXIONBENCH_CONTAINER_IMAGE=${MAXIONBENCH_CONTAINER_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_QDRANT_IMAGE=${MAXIONBENCH_QDRANT_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_PGVECTOR_IMAGE=${MAXIONBENCH_PGVECTOR_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_OPENSEARCH_IMAGE=${MAXIONBENCH_OPENSEARCH_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_WEAVIATE_IMAGE=${MAXIONBENCH_WEAVIATE_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_MILVUS_ETCD_IMAGE=${MAXIONBENCH_MILVUS_ETCD_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_MILVUS_MINIO_IMAGE=${MAXIONBENCH_MILVUS_MINIO_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_MILVUS_IMAGE=${MAXIONBENCH_MILVUS_IMAGE}"
+}
+
+MISSING_IMAGE_PATHS=()
+
+list_missing_image_paths() {
+  local image_var=""
+  local image_path=""
+  for image_var in \
+    MAXIONBENCH_CONTAINER_IMAGE \
+    MAXIONBENCH_QDRANT_IMAGE \
+    MAXIONBENCH_PGVECTOR_IMAGE \
+    MAXIONBENCH_OPENSEARCH_IMAGE \
+    MAXIONBENCH_WEAVIATE_IMAGE \
+    MAXIONBENCH_MILVUS_ETCD_IMAGE \
+    MAXIONBENCH_MILVUS_MINIO_IMAGE \
+    MAXIONBENCH_MILVUS_IMAGE
+  do
+    image_path="${!image_var}"
+    if [[ ! -f "${image_path}" ]]; then
+      printf '%s=%s\n' "${image_var}" "${image_path}"
+    fi
+  done
+}
+
+read_missing_image_paths() {
+  local image_record=""
+  MISSING_IMAGE_PATHS=()
+  while IFS= read -r image_record; do
+    if [[ -z "${image_record}" ]]; then
+      continue
+    fi
+    MISSING_IMAGE_PATHS[${#MISSING_IMAGE_PATHS[@]}]="${image_record}"
+  done < <(list_missing_image_paths)
+}
+
+source_module_init() {
+  if command -v module >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local candidate=""
+  if [[ -n "${MAXIONBENCH_MODULE_INIT_SH:-}" ]]; then
+    candidate="$(resolve_root_path "${MAXIONBENCH_MODULE_INIT_SH}")"
+    if [[ -f "${candidate}" ]]; then
+      # shellcheck disable=SC1090
+      source "${candidate}"
+      printf '%s\n' "+ sourced module init ${candidate}"
+      if command -v module >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+  fi
+
+  for candidate in \
+    /etc/profile.d/modules.sh \
+    /usr/share/Modules/init/bash \
+    /etc/profile.d/lmod.sh \
+    /usr/share/lmod/lmod/init/bash
+  do
+    if [[ ! -f "${candidate}" ]]; then
+      continue
+    fi
+    # shellcheck disable=SC1090
+    source "${candidate}"
+    printf '%s\n' "+ sourced module init ${candidate}"
+    if command -v module >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_apptainer() {
+  if command -v apptainer >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local module_name="${MAXIONBENCH_APPTAINER_MODULE:-apptainer}"
+  printf '%s\n' "+ apptainer not found in PATH; attempting module bootstrap with ${module_name}"
+  if source_module_init && command -v module >/dev/null 2>&1; then
+    printf '%s\n' "+ loading apptainer module ${module_name}"
+    local module_output=""
+    local module_status=0
+    local module_log_file=""
+    module_log_file="$(mktemp "${TMPDIR:-/tmp}/maxionbench_apptainer_module.XXXXXX")"
+    set +e
+    module load "${module_name}" >"${module_log_file}" 2>&1
+    module_status=$?
+    set -e
+    if [[ -f "${module_log_file}" ]]; then
+      module_output="$(cat "${module_log_file}")"
+      rm -f "${module_log_file}"
+    fi
+    if [[ -n "${module_output}" ]]; then
+      printf '%s\n' "+ module load ${module_name} output: ${module_output}"
+    fi
+    if [[ ${module_status} -eq 0 ]] && command -v apptainer >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  echo "error: apptainer is required on the login/build node to prepare container images" >&2
+  exit 2
+}
+
+prepare_shared_layout() {
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    return 0
+  fi
+  mkdir -p \
+    "${MAXIONBENCH_SHARED_ROOT}" \
+    "${MAXIONBENCH_DATASET_ROOT}" \
+    "${MAXIONBENCH_DATASET_CACHE_DIR}" \
+    "${MAXIONBENCH_OUTPUT_ROOT}" \
+    "${MAXIONBENCH_FIGURES_ROOT}" \
+    "${MAXIONBENCH_HF_CACHE_DIR}" \
+    "${MAXIONBENCH_SHARED_ROOT}/containers" \
+    "${ROOT_DIR}/logs" \
+    "$(resolve_root_path "${RUN_MANIFEST_DIR}")"
+}
+
+prepare_container_images() {
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    return 0
+  fi
+
+  read_missing_image_paths
+  if [[ "${#MISSING_IMAGE_PATHS[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  local build_script="${ROOT_DIR}/scripts/build_containers.sh"
+  local definition_file="${ROOT_DIR}/maxionbench.def"
+  if [[ ! -f "${build_script}" ]]; then
+    echo "error: missing container build helper: ${build_script}" >&2
+    exit 2
+  fi
+  if [[ ! -f "${definition_file}" ]]; then
+    echo "error: missing Apptainer definition file: ${definition_file}" >&2
+    exit 2
+  fi
+
+  ensure_apptainer
+  printf '%s\n' "+ bash ${build_script} --output-dir ${MAXIONBENCH_SHARED_ROOT}/containers --only-missing"
+  bash "${build_script}" --output-dir "${MAXIONBENCH_SHARED_ROOT}/containers" --only-missing
+}
+
+check_required_image_paths() {
+  read_missing_image_paths
+  if [[ "${#MISSING_IMAGE_PATHS[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  printf '%s\n' "warning: missing container images:" >&2
+  printf '  %s\n' "${MISSING_IMAGE_PATHS[@]}" >&2
+  if [[ "${DRY_RUN}" -eq 0 ]]; then
+    echo "error: refusing to launch because required container images are missing" >&2
+    exit 2
+  fi
+}
 
 export MAXIONBENCH_SHARED_ROOT="${DEFAULT_SHARED_ROOT}"
 export MAXIONBENCH_DATASET_ROOT="${DATASET_ROOT:-${DEFAULT_SHARED_ROOT}/dataset}"
@@ -183,7 +484,20 @@ export MAXIONBENCH_OUTPUT_ROOT="${OUTPUT_ROOT:-${DEFAULT_SHARED_ROOT}/results}"
 export MAXIONBENCH_FIGURES_ROOT="${FIGURES_ROOT:-${DEFAULT_SHARED_ROOT}/figures}"
 export MAXIONBENCH_HF_CACHE_DIR="${HF_CACHE_DIR:-${DEFAULT_SHARED_ROOT}/.cache/huggingface}"
 export MAXIONBENCH_D3_DATASET_PATH="${MAXIONBENCH_DATASET_ROOT}/processed/D3/yfcc-10M/base.npy"
+export MAXIONBENCH_CONTAINER_IMAGE="$(default_container_path "${CONTAINER_IMAGE}" "maxionbench.sif")"
+export MAXIONBENCH_QDRANT_IMAGE="$(default_container_path "${QDRANT_IMAGE}" "qdrant.sif")"
+export MAXIONBENCH_PGVECTOR_IMAGE="$(default_container_path "${PGVECTOR_IMAGE}" "pgvector.sif")"
+export MAXIONBENCH_OPENSEARCH_IMAGE="$(default_container_path "${OPENSEARCH_IMAGE}" "opensearch.sif")"
+export MAXIONBENCH_WEAVIATE_IMAGE="$(default_container_path "${WEAVIATE_IMAGE}" "weaviate.sif")"
+export MAXIONBENCH_MILVUS_ETCD_IMAGE="$(default_container_path "${MILVUS_ETCD_IMAGE}" "milvus-etcd.sif")"
+export MAXIONBENCH_MILVUS_MINIO_IMAGE="$(default_container_path "${MILVUS_MINIO_IMAGE}" "milvus-minio.sif")"
+export MAXIONBENCH_MILVUS_IMAGE="$(default_container_path "${MILVUS_IMAGE}" "milvus.sif")"
+CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE}"
 
+prepare_shared_layout
+prepare_container_images
+report_container_images
+check_required_image_paths
 CMD=(
   "${CLI_CMD[@]}"
   submit-slurm-plan
