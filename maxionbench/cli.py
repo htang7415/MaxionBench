@@ -268,6 +268,18 @@ def main(argv: list[str] | None = None) -> int:
     conformance_parser.add_argument("--dimension", type=int, default=4)
     conformance_parser.add_argument("--metric", default="ip")
 
+    wait_adapter_parser = subparsers.add_parser(
+        "wait-adapter",
+        help="Poll an adapter healthcheck until it becomes ready",
+    )
+    wait_source = wait_adapter_parser.add_mutually_exclusive_group(required=True)
+    wait_source.add_argument("--config", default=None)
+    wait_source.add_argument("--adapter", default=None)
+    wait_adapter_parser.add_argument("--adapter-options-json", default="{}")
+    wait_adapter_parser.add_argument("--timeout-s", type=float, default=120.0)
+    wait_adapter_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    wait_adapter_parser.add_argument("--json", action="store_true")
+
     conformance_matrix_parser = subparsers.add_parser(
         "conformance-matrix",
         help="Run conformance tests for all adapter configs",
@@ -676,6 +688,23 @@ def main(argv: list[str] | None = None) -> int:
             args.metric,
         ]
         return conformance_main(conformance_argv)
+    if args.command == "wait-adapter":
+        from maxionbench.tools.wait_adapter import main as wait_adapter_main
+
+        wait_argv: list[str] = [
+            "--timeout-s",
+            str(args.timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.config:
+            wait_argv.extend(["--config", args.config])
+        if args.adapter:
+            wait_argv.extend(["--adapter", args.adapter])
+            wait_argv.extend(["--adapter-options-json", args.adapter_options_json])
+        if args.json:
+            wait_argv.append("--json")
+        return wait_adapter_main(wait_argv)
     if args.command == "conformance-matrix":
         from maxionbench.conformance.matrix import main as conformance_matrix_main
 

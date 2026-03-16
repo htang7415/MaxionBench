@@ -1,7 +1,7 @@
 engine: qdrant
 engine_version: local
 adapter_options:
-  location: ":memory:"
+  location: ${MAXIONBENCH_QDRANT_LOCAL_LOCATION:-:memory:}
 scenario: s1_ann_frontier
 dataset_bundle: D1
 dataset_hash: synthetic-d1-local

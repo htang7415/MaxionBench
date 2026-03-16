@@ -9,7 +9,7 @@ from typing import Any
 
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 
-PINNED_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
+PINNED_BEIR_SUBSETS = ["scifact", "fiqa", "nfcorpus"]
 PINNED_RAG_CRAG_SOURCE = "facebookresearch/CRAG"
 PINNED_RAG_CRAG_PATH = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 PINNED_ANN_QUALITY_TARGETS = [0.80, 0.90, 0.95]

@@ -15,7 +15,12 @@ from maxionbench.metrics.cost_rhu import RHUReferences, RHUWeights
 from maxionbench.datasets.loaders.d4_text import DEFAULT_BEIR_SUBSETS
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ENV_TOKEN_RE = re.compile(r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$")
+_ENV_TOKEN_RE = re.compile(
+    r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)(?::-(?P<braced_default>[^}]*))?\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$"
+)
+_ENV_SUB_RE = re.compile(
+    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)(?::-(?P<braced_default>[^}]*))?\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+)
 _LOG = logging.getLogger(__name__)
 
 
@@ -254,9 +259,28 @@ def expand_env_placeholders(value: Any) -> Any:
     match = _ENV_TOKEN_RE.fullmatch(token)
     if match is not None:
         env_name = match.group("braced") or match.group("plain") or ""
-        env_value = os.environ.get(env_name)
+        default_value = match.group("braced_default") if match.group("braced") else None
+        env_value = _resolve_env_value(env_name, default_value)
         if env_value in {None, ""}:
             _LOG.warning("Environment placeholder %s resolved to empty/None; using null", env_name)
             return None
         return env_value
-    return os.path.expandvars(value)
+
+    def _replace(match_obj: re.Match[str]) -> str:
+        env_name = match_obj.group("braced") or match_obj.group("plain") or ""
+        default_value = match_obj.group("braced_default") if match_obj.group("braced") else None
+        env_value = _resolve_env_value(env_name, default_value)
+        if env_value is None:
+            return match_obj.group(0)
+        return env_value
+
+    return _ENV_SUB_RE.sub(_replace, value)
+
+
+def _resolve_env_value(env_name: str, default_value: str | None) -> str | None:
+    env_value = os.environ.get(env_name)
+    if env_value not in {None, ""}:
+        return env_value
+    if default_value is not None:
+        return default_value
+    return None

@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from maxionbench.orchestration.config_schema import expand_env_placeholders
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Run MaxionBench adapter conformance tests")
@@ -30,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--adapter-options-json must be valid JSON object") from exc
     if not isinstance(options, dict):
         raise ValueError("--adapter-options-json must decode to a JSON object")
+    options = dict(expand_env_placeholders(options))
 
     env = os.environ.copy()
     env["MAXIONBENCH_CONFORMANCE_ADAPTER"] = args.adapter

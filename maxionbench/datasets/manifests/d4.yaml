@@ -8,10 +8,8 @@ crag_source: facebookresearch/CRAG
 crag_file: data/crag_task_1_and_2_dev_v4.jsonl.bz2
 crag_url: https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2
 beir_subsets:
-  - trec-covid
-  - nfcorpus
-  - fiqa
   - scifact
-  - hotpotqa
-crag_slice_queries: 5000
-crag_slice_docs: 200000
+  - fiqa
+  - nfcorpus
+crag_slice_queries: 500
+crag_slice_docs: 437344

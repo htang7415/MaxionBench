@@ -1,6 +1,6 @@
 {
   "adapter": "opensearch",
-  "adapter_options_json": "{\"host\":\"127.0.0.1\",\"port\":9200,\"scheme\":\"http\",\"verify_ssl\":false}",
+  "adapter_options_json": "{\"host\":\"${MAXIONBENCH_OPENSEARCH_HOST:-127.0.0.1}\",\"port\":\"${MAXIONBENCH_OPENSEARCH_PORT:-9200}\",\"scheme\":\"${MAXIONBENCH_OPENSEARCH_SCHEME:-http}\",\"verify_ssl\":false}",
   "collection": "conformance",
   "dimension": 4,
   "metric": "ip"

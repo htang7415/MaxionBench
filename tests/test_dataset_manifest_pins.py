@@ -12,3 +12,6 @@ def test_d4_manifest_pins_crag_source_file_and_url() -> None:
     assert payload["crag_url"] == (
         "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2"
     )
+    assert payload["beir_subsets"] == ["scifact", "fiqa", "nfcorpus"]
+    assert payload["crag_slice_queries"] == 500
+    assert payload["crag_slice_docs"] == 437344

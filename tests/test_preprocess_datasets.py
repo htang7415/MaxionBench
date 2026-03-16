@@ -3,8 +3,6 @@ from __future__ import annotations
 import bz2
 import json
 from pathlib import Path
-import sys
-import types
 
 import h5py
 import numpy as np
@@ -31,6 +29,13 @@ def _read_jsonl(path: Path) -> list[dict]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
 
 
 def _write_u8bin(path: Path, array: np.ndarray) -> None:
@@ -293,33 +298,20 @@ def test_preprocess_crag_small_slice_rejects_overlap_ge_chunk_chars(tmp_path: Pa
         )
 
 
-def test_preprocess_beir_dataset_prefixes_ids(tmp_path: Path, monkeypatch) -> None:
-    fake_loader_module = types.ModuleType("beir.datasets.data_loader")
-
-    class _FakeLoader:
-        def __init__(self, data_folder: str) -> None:
-            self.data_folder = data_folder
-
-        def load(self, split: str = "test"):
-            assert split == "test"
-            corpus = {"d1": {"title": "Bond", "text": "bond market"}}
-            queries = {"q1": "bond market"}
-            qrels = {"q1": {"d1": 2}}
-            return corpus, queries, qrels
-
-    fake_loader_module.GenericDataLoader = _FakeLoader
-    fake_datasets_module = types.ModuleType("beir.datasets")
-    fake_datasets_module.data_loader = fake_loader_module
-    fake_beir_module = types.ModuleType("beir")
-    fake_beir_module.datasets = fake_datasets_module
-
-    monkeypatch.setitem(sys.modules, "beir", fake_beir_module)
-    monkeypatch.setitem(sys.modules, "beir.datasets", fake_datasets_module)
-    monkeypatch.setitem(sys.modules, "beir.datasets.data_loader", fake_loader_module)
+def test_preprocess_beir_dataset_prefixes_ids(tmp_path: Path) -> None:
+    source_dir = tmp_path / "raw" / "fiqa"
+    source_dir.mkdir(parents=True)
+    _write_jsonl(source_dir / "corpus.jsonl", [{"_id": "d1", "title": "Bond", "text": "bond market"}])
+    _write_jsonl(source_dir / "queries.jsonl", [{"_id": "q1", "text": "bond market"}])
+    (source_dir / "qrels").mkdir(parents=True)
+    (source_dir / "qrels" / "test.tsv").write_text(
+        "query-id\tcorpus-id\tscore\nq1\td1\t2\n",
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "processed" / "D4" / "beir" / "fiqa"
     summary = preprocess_beir_dataset(
-        dataset_dir=tmp_path / "raw" / "fiqa",
+        dataset_dir=source_dir,
         out_dir=out_dir,
         dataset_name="fiqa",
         split="test",
