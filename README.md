@@ -69,16 +69,12 @@ bash preprocess_all_datasets.sh
 
 ### Slurm cluster workflow
 
-Use a prebuilt Apptainer image on shared storage, keep private cluster settings only in the gitignored local profile, and run:
+Use a prebuilt Apptainer image on shared storage, keep private cluster settings in your local Slurm profile, and run:
 
 ```bash
 ./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif
 ./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
 ```
-
-Private cluster account and partition values belong only in:
-
-- `maxionbench/orchestration/slurm/profiles_local.yaml`
 
 ## Validate and generate figures
 
