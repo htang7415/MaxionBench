@@ -109,15 +109,10 @@ printf '{"pass": true}\\n'
     assert all("--prefetch-datasets" not in line for line in submit_calls)
 
 
-def test_command_md_mentions_workstation_script() -> None:
+def test_command_md_mentions_slurm_pipeline_script() -> None:
     text = Path("command.md").read_text(encoding="utf-8")
-    assert "./run_workstation.sh" in text
-    assert "./run_workstation.sh --launch" in text
-    assert "./run_workstation.sh --prefetch-datasets" in text
-    assert "./run_workstation.sh --skip-s6 --launch" in text
-    assert "./run_workstation.sh --launch --cpu-only" in text
-    assert "MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy ./run_workstation.sh" in text
-    assert "--container-runtime apptainer --container-image /shared/containers/maxionbench.sif" in text
-    assert "artifacts/workstation_runs/<run_id>/" in text
-    assert "helpers/render_figures.sh" in text
-    assert "--output-root artifacts/workstation_runs/<run_id>/results/slurm" in text
+    assert "./run_slurm_pipeline.sh \\" in text
+    assert "--cluster euler \\" in text
+    assert "--cluster nrel \\" in text
+    assert "--container-image /shared/containers/maxionbench.sif" in text
+    assert "--launch" in text
