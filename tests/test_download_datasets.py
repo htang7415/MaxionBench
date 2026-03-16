@@ -3,6 +3,8 @@ from __future__ import annotations
 import bz2
 import json
 from pathlib import Path
+import sys
+import types
 import zipfile
 
 import pytest
@@ -138,8 +140,8 @@ def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypat
 
     def _fake_clone_or_update_repo(*, repo_url: str, repo_dir: Path) -> None:
         del repo_url
-        (repo_dir / "data" / "yfcc-10M").mkdir(parents=True, exist_ok=True)
-        (repo_dir / "data" / "yfcc-10M" / "vectors.bin").write_bytes(b"abc")
+        (repo_dir / "data" / "yfcc100M").mkdir(parents=True, exist_ok=True)
+        (repo_dir / "data" / "yfcc100M" / "vectors.bin").write_bytes(b"abc")
         (repo_dir / "requirements_py3.10.txt").write_text("numpy\n", encoding="utf-8")
 
     def _fake_run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -154,6 +156,44 @@ def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypat
     assert summary["source"] == "copied_from_bigann_repo"
     assert any("pip" in cmd for cmd in commands)
     assert any("create_dataset.py" in cmd for cmd in commands)
+
+
+def test_find_existing_yfcc_dir_accepts_upstream_yfcc100m_name(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "big-ann-benchmarks"
+    upstream_dir = repo_dir / "data" / "yfcc100M"
+    upstream_dir.mkdir(parents=True)
+
+    found = download_datasets_mod._find_existing_yfcc_dir(repo_dir)
+    assert found == upstream_dir
+
+
+def test_select_bigann_requirements_prefers_newer_compatible_file_for_python_311(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_dir = tmp_path / "big-ann-benchmarks"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "requirements_py3.10.txt").write_text("matplotlib==3.3.4\n", encoding="utf-8")
+    (repo_dir / "requirements_py3.12.txt").write_text("matplotlib==3.10.*\n", encoding="utf-8")
+
+    fake_version = types.SimpleNamespace(major=3, minor=11)
+    monkeypatch.setattr(download_datasets_mod.sys, "version_info", fake_version)
+
+    selected = download_datasets_mod._select_bigann_requirements_file(repo_dir=repo_dir, requested=None)
+    assert selected.name == "requirements_py3.12.txt"
+
+
+def test_select_bigann_requirements_parses_compact_py38_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_dir = tmp_path / "big-ann-benchmarks"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "requirements_py38.txt").write_text("numpy\n", encoding="utf-8")
+    (repo_dir / "requirements_py3.10.txt").write_text("numpy\n", encoding="utf-8")
+
+    fake_version = types.SimpleNamespace(major=3, minor=8)
+    monkeypatch.setattr(download_datasets_mod.sys, "version_info", fake_version)
+
+    selected = download_datasets_mod._select_bigann_requirements_file(repo_dir=repo_dir, requested=None)
+    assert selected.name == "requirements_py38.txt"
 
 
 def test_download_bigann_yfcc_uses_existing_dst_cache_before_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

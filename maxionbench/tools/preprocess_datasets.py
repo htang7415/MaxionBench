@@ -9,15 +9,20 @@ from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 import re
+import shutil
 from typing import Any, Iterable
 
 import h5py
 import numpy as np
+from numpy.lib.format import open_memmap
 
 from maxionbench.datasets.loaders.processed import PROCESSED_SCHEMA_VERSION
 
 _PREPROCESS_VERSION = "0.1"
 _TAG_RE = re.compile(r"<[^>]+>")
+_YFCC_PRIVATE_QUERY_RE = re.compile(r"^query\.private\.(?P<token>[0-9]+)\.100K\.u8bin$")
+_YFCC_PRIVATE_GT_RE = re.compile(r"^GT\.private\.(?P<token>[0-9]+)\.ibin$")
+_YFCC_PRIVATE_META_RE = re.compile(r"^query\.metadata\.private\.(?P<token>[0-9]+)\.100K\.spmat$")
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,15 @@ class DatasetMeta:
     ground_truth_k: int | None = None
     dtype: str | None = None
     extra: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _YfccQueryArtifacts:
+    split: str
+    queries_path: Path
+    gt_ids_path: Path
+    metadata_path: Path
+    token: str | None = None
 
 
 def preprocess_ann_hdf5(
@@ -97,9 +111,9 @@ def preprocess_d3_from_explicit_files(
     metric: str = "l2",
 ) -> dict[str, Any]:
     ensure_dir(out_dir)
-    base = np.asarray(_load_array_file(base_path), dtype=np.float32)
-    queries = np.asarray(_load_array_file(queries_path), dtype=np.float32)
-    gt_ids = np.asarray(_load_array_file(gt_ids_path), dtype=np.int32)
+    base = np.asarray(_load_array_file(base_path, mmap=True))
+    queries = np.asarray(_load_array_file(queries_path, mmap=True))
+    gt_ids = np.asarray(_load_array_file(gt_ids_path, mmap=True))
     if base.ndim != 2:
         raise ValueError(f"D3 base array must be 2D [N, D]; got shape={tuple(base.shape)}")
     if queries.ndim != 2:
@@ -114,17 +128,24 @@ def preprocess_d3_from_explicit_files(
         raise ValueError(
             f"D3 gt_ids rows must cover all queries: gt rows={int(gt_ids.shape[0])}, queries={int(queries.shape[0])}"
         )
-    filters = list(_read_jsonl(filters_path))
-    if len(filters) < int(queries.shape[0]):
-        raise ValueError("filters file must include at least one row per query")
-    payloads = list(_read_jsonl(payloads_path)) if payloads_path is not None else []
+    _write_array_file(base_path, out_dir / "base.npy", dtype=np.float32)
+    _write_array_file(queries_path, out_dir / "queries.npy", dtype=np.float32)
+    _write_array_file(gt_ids_path, out_dir / "gt_ids.npy", dtype=np.int32)
 
-    np.save(out_dir / "base.npy", base)
-    np.save(out_dir / "queries.npy", queries)
-    np.save(out_dir / "gt_ids.npy", gt_ids)
-    write_jsonl(out_dir / "filters.jsonl", filters[: int(queries.shape[0])])
-    if payloads:
-        write_jsonl(out_dir / "payloads.jsonl", payloads)
+    written_filters = _copy_jsonl_rows(
+        filters_path,
+        out_dir / "filters.jsonl",
+        max_rows=int(queries.shape[0]),
+    )
+    if written_filters < int(queries.shape[0]):
+        raise ValueError("filters file must include at least one row per query")
+
+    payload_out_path = out_dir / "payloads.jsonl"
+    payload_rows = 0
+    if payloads_path is not None:
+        payload_rows = _copy_jsonl_rows(payloads_path, payload_out_path)
+    if payload_rows == 0 and payload_out_path.exists():
+        payload_out_path.unlink()
 
     meta = DatasetMeta(
         schema_version=PROCESSED_SCHEMA_VERSION,
@@ -160,6 +181,167 @@ def preprocess_d3_from_explicit_files(
         "num_base": meta.num_base,
         "num_queries": meta.num_queries,
         "dim": meta.dim,
+    }
+
+
+def preprocess_d3_yfcc_raw_to_explicit(
+    *,
+    dataset_dir: Path,
+    out_dir: Path,
+    query_split: str = "public",
+    private_query_token: str | None = None,
+    include_payloads: bool = True,
+) -> dict[str, Any]:
+    ensure_dir(out_dir)
+    root = dataset_dir.expanduser().resolve()
+    base_path = root / "base.10M.u8bin"
+    base_metadata_path = root / "base.metadata.10M.spmat"
+    if not base_path.exists():
+        raise FileNotFoundError(f"missing D3 base vectors: {base_path}")
+    if not base_metadata_path.exists():
+        raise FileNotFoundError(f"missing D3 base metadata: {base_metadata_path}")
+
+    query_artifacts = _resolve_yfcc_query_artifacts(
+        root,
+        query_split=query_split,
+        private_query_token=private_query_token,
+    )
+    base = _load_xbin_mmap(base_path, dtype=np.uint8)
+    queries = _load_xbin_mmap(query_artifacts.queries_path, dtype=np.uint8)
+    gt_ids = _read_ibin_array(query_artifacts.gt_ids_path)
+
+    if base.ndim != 2:
+        raise ValueError(f"raw D3 base vectors must be 2D [N, D]; got shape={tuple(base.shape)}")
+    if queries.ndim != 2:
+        raise ValueError(f"raw D3 query vectors must be 2D [Q, D]; got shape={tuple(queries.shape)}")
+    if gt_ids.ndim != 2:
+        raise ValueError(f"raw D3 ground-truth ids must be 2D [Q, K]; got shape={tuple(gt_ids.shape)}")
+    if int(base.shape[1]) != int(queries.shape[1]):
+        raise ValueError(
+            f"raw D3 base/query dimension mismatch: base dim={int(base.shape[1])}, queries dim={int(queries.shape[1])}"
+        )
+    if int(gt_ids.shape[0]) != int(queries.shape[0]):
+        raise ValueError(
+            f"raw D3 gt rows must match query rows: gt rows={int(gt_ids.shape[0])}, queries={int(queries.shape[0])}"
+        )
+
+    base_meta_rows, base_meta_cols, base_meta_nnz = _read_spmat_header(base_metadata_path)
+    query_meta_rows, query_meta_cols, query_meta_nnz = _read_spmat_header(query_artifacts.metadata_path)
+    if base_meta_rows != int(base.shape[0]):
+        raise ValueError(
+            f"raw D3 base metadata rows must match base vectors: metadata rows={base_meta_rows}, base rows={int(base.shape[0])}"
+        )
+    if query_meta_rows != int(queries.shape[0]):
+        raise ValueError(
+            f"raw D3 query metadata rows must match query vectors: metadata rows={query_meta_rows}, queries={int(queries.shape[0])}"
+        )
+    if base_meta_cols != query_meta_cols:
+        raise ValueError(
+            f"raw D3 base/query metadata dimension mismatch: base cols={base_meta_cols}, query cols={query_meta_cols}"
+        )
+
+    _write_array_to_npy(base, out_dir / "base.npy", dtype=np.float32)
+    _write_array_to_npy(queries, out_dir / "queries.npy", dtype=np.float32)
+    _write_array_to_npy(gt_ids, out_dir / "gt_ids.npy", dtype=np.int32)
+    _write_query_filters_from_spmat(
+        query_artifacts.metadata_path,
+        out_dir / "filters.jsonl",
+        expected_rows=int(queries.shape[0]),
+    )
+
+    payload_path = out_dir / "payloads.jsonl"
+    if include_payloads:
+        _write_payloads_from_spmat(
+            base_metadata_path,
+            payload_path,
+            expected_rows=int(base.shape[0]),
+        )
+    elif payload_path.exists():
+        payload_path.unlink()
+
+    write_json(
+        out_dir / "source_manifest.json",
+        {
+            "dataset_name": "yfcc-10M",
+            "source_layout": "big-ann-benchmarks-yfcc100M",
+            "query_split": query_artifacts.split,
+            "private_query_token": query_artifacts.token,
+            "base_path": str(base_path),
+            "queries_path": str(query_artifacts.queries_path),
+            "gt_ids_path": str(query_artifacts.gt_ids_path),
+            "base_metadata_path": str(base_metadata_path),
+            "query_metadata_path": str(query_artifacts.metadata_path),
+            "metadata_num_tags": int(base_meta_cols),
+            "base_metadata_nnz": int(base_meta_nnz),
+            "query_metadata_nnz": int(query_meta_nnz),
+            "include_payloads": bool(include_payloads),
+        },
+    )
+    return {
+        "output_dir": str(out_dir.resolve()),
+        "family": "D3",
+        "dataset_name": "yfcc-10M",
+        "query_split": query_artifacts.split,
+        "num_base": int(base.shape[0]),
+        "num_queries": int(queries.shape[0]),
+        "dim": int(base.shape[1]),
+        "ground_truth_k": int(gt_ids.shape[1]),
+        "payloads_written": bool(include_payloads),
+    }
+
+
+def preprocess_d3_yfcc_raw(
+    *,
+    dataset_dir: Path,
+    out_dir: Path,
+    query_split: str = "public",
+    private_query_token: str | None = None,
+    include_payloads: bool = True,
+    metric: str = "l2",
+) -> dict[str, Any]:
+    summary = preprocess_d3_yfcc_raw_to_explicit(
+        dataset_dir=dataset_dir,
+        out_dir=out_dir,
+        query_split=query_split,
+        private_query_token=private_query_token,
+        include_payloads=include_payloads,
+    )
+    base = np.load(out_dir / "base.npy", mmap_mode="r", allow_pickle=False)
+    queries = np.load(out_dir / "queries.npy", mmap_mode="r", allow_pickle=False)
+    gt_ids = np.load(out_dir / "gt_ids.npy", mmap_mode="r", allow_pickle=False)
+    source_manifest = json.loads((out_dir / "source_manifest.json").read_text(encoding="utf-8"))
+    meta = DatasetMeta(
+        schema_version=PROCESSED_SCHEMA_VERSION,
+        preprocess_version=_PREPROCESS_VERSION,
+        dataset_name="yfcc-10M",
+        family="D3",
+        task_type="filtered_ann",
+        metric=metric,
+        num_base=int(base.shape[0]),
+        num_queries=int(queries.shape[0]),
+        dim=int(base.shape[1]),
+        ground_truth_k=int(gt_ids.shape[1]),
+        dtype=str(base.dtype),
+        source_path=json.dumps(source_manifest, sort_keys=True),
+        created_at_utc=_utc_now_iso(),
+        extra={
+            "filter_type": "tags",
+            "query_split": str(source_manifest.get("query_split", query_split)),
+            "private_query_token": source_manifest.get("private_query_token"),
+        },
+    )
+    write_json(out_dir / "meta.json", asdict(meta))
+    return {
+        "output_dir": str(out_dir.resolve()),
+        "family": "D3",
+        "dataset_name": "yfcc-10M",
+        "task_type": meta.task_type,
+        "query_split": str(source_manifest.get("query_split", query_split)),
+        "num_base": meta.num_base,
+        "num_queries": meta.num_queries,
+        "dim": meta.dim,
+        "ground_truth_k": meta.ground_truth_k,
+        "payloads_written": bool(include_payloads),
     }
 
 
@@ -328,6 +510,29 @@ def parse_args(argv: list[str] | None = None):
     ann_parser.add_argument("--metric", required=True)
     ann_parser.add_argument("--json", action="store_true")
 
+    d3_raw_parser = sub.add_parser(
+        "d3-yfcc-raw",
+        help="Convert raw YFCC big-ann files into explicit D3 arrays/filter inputs",
+    )
+    d3_raw_parser.add_argument("--input", required=True)
+    d3_raw_parser.add_argument("--out", required=True)
+    d3_raw_parser.add_argument("--query-split", choices=["public", "private"], default="public")
+    d3_raw_parser.add_argument("--private-query-token", default=None)
+    d3_raw_parser.add_argument("--skip-payloads", action="store_true")
+    d3_raw_parser.add_argument("--json", action="store_true")
+
+    d3_yfcc_parser = sub.add_parser(
+        "d3-yfcc",
+        help="Preprocess raw YFCC big-ann files directly into canonical processed D3 files",
+    )
+    d3_yfcc_parser.add_argument("--input", required=True)
+    d3_yfcc_parser.add_argument("--out", required=True)
+    d3_yfcc_parser.add_argument("--query-split", choices=["public", "private"], default="public")
+    d3_yfcc_parser.add_argument("--private-query-token", default=None)
+    d3_yfcc_parser.add_argument("--skip-payloads", action="store_true")
+    d3_yfcc_parser.add_argument("--metric", default="l2")
+    d3_yfcc_parser.add_argument("--json", action="store_true")
+
     d3_parser = sub.add_parser("d3-explicit", help="Preprocess explicit D3 array/filter inputs into canonical files")
     d3_parser.add_argument("--base", required=True)
     d3_parser.add_argument("--queries", required=True)
@@ -364,6 +569,25 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=Path(args.out).expanduser(),
             family=str(args.family),
             dataset_name=str(args.name),
+            metric=str(args.metric),
+        )
+        emit_json = bool(args.json)
+    elif args.command == "d3-yfcc-raw":
+        summary = preprocess_d3_yfcc_raw_to_explicit(
+            dataset_dir=Path(args.input).expanduser(),
+            out_dir=Path(args.out).expanduser(),
+            query_split=str(args.query_split),
+            private_query_token=str(args.private_query_token) if args.private_query_token else None,
+            include_payloads=not bool(args.skip_payloads),
+        )
+        emit_json = bool(args.json)
+    elif args.command == "d3-yfcc":
+        summary = preprocess_d3_yfcc_raw(
+            dataset_dir=Path(args.input).expanduser(),
+            out_dir=Path(args.out).expanduser(),
+            query_split=str(args.query_split),
+            private_query_token=str(args.private_query_token) if args.private_query_token else None,
+            include_payloads=not bool(args.skip_payloads),
             metric=str(args.metric),
         )
         emit_json = bool(args.json)
@@ -484,8 +708,8 @@ def _read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
                 yield obj
 
 
-def _load_array_file(path: Path) -> np.ndarray:
-    loaded = np.load(path, allow_pickle=False)
+def _load_array_file(path: Path, *, mmap: bool = False) -> np.ndarray:
+    loaded = np.load(path, allow_pickle=False, mmap_mode="r" if mmap else None)
     if isinstance(loaded, np.ndarray):
         return loaded
     if "vectors" in loaded:
@@ -493,6 +717,193 @@ def _load_array_file(path: Path) -> np.ndarray:
     if len(loaded.files) == 1:
         return np.asarray(loaded[loaded.files[0]])
     raise ValueError(f"could not infer array from {path}; npz files must contain `vectors` or a single array")
+
+
+def _write_array_file(src_path: Path, dst_path: Path, *, dtype: np.dtype[Any] | type[np.generic]) -> None:
+    np_dtype = np.dtype(dtype)
+    if src_path.suffix == ".npy":
+        loaded = np.load(src_path, allow_pickle=False, mmap_mode="r")
+        if isinstance(loaded, np.ndarray) and loaded.dtype == np_dtype:
+            ensure_dir(dst_path.parent)
+            shutil.copy2(src_path, dst_path)
+            return
+    _write_array_to_npy(_load_array_file(src_path, mmap=True), dst_path, dtype=np_dtype)
+
+
+def _write_array_to_npy(
+    array: np.ndarray,
+    dst_path: Path,
+    *,
+    dtype: np.dtype[Any] | type[np.generic],
+    target_chunk_bytes: int = 64 * 1024 * 1024,
+) -> None:
+    src = np.asarray(array)
+    np_dtype = np.dtype(dtype)
+    ensure_dir(dst_path.parent)
+    target = open_memmap(dst_path, mode="w+", dtype=np_dtype, shape=src.shape)
+    if src.ndim == 0:
+        target[...] = np.asarray(src, dtype=np_dtype)
+        target.flush()
+        del target
+        return
+    if src.ndim == 1:
+        items_per_chunk = max(1, target_chunk_bytes // max(np_dtype.itemsize, 1))
+        for start in range(0, int(src.shape[0]), items_per_chunk):
+            end = min(int(src.shape[0]), start + items_per_chunk)
+            target[start:end] = np.asarray(src[start:end], dtype=np_dtype)
+        target.flush()
+        del target
+        return
+
+    row_width = int(np.prod(src.shape[1:], dtype=np.int64))
+    row_bytes = max(1, row_width * np_dtype.itemsize)
+    rows_per_chunk = max(1, target_chunk_bytes // row_bytes)
+    for start in range(0, int(src.shape[0]), rows_per_chunk):
+        end = min(int(src.shape[0]), start + rows_per_chunk)
+        target[start:end] = np.asarray(src[start:end], dtype=np_dtype)
+    target.flush()
+    del target
+
+
+def _copy_jsonl_rows(path: Path, dst_path: Path, *, max_rows: int | None = None) -> int:
+    ensure_dir(dst_path.parent)
+    written = 0
+    with dst_path.open("w", encoding="utf-8") as handle:
+        for row in _read_jsonl(path):
+            if max_rows is not None and written >= max_rows:
+                break
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            written += 1
+    return written
+
+
+def _load_xbin_mmap(path: Path, *, dtype: np.dtype[Any] | type[np.generic]) -> np.ndarray:
+    header = np.fromfile(path, dtype=np.uint32, count=2)
+    if header.shape[0] != 2:
+        raise ValueError(f"invalid xbin header: {path}")
+    n, dim = int(header[0]), int(header[1])
+    expected_bytes = 8 + n * dim * np.dtype(dtype).itemsize
+    actual_bytes = path.stat().st_size
+    if actual_bytes != expected_bytes:
+        raise ValueError(
+            f"xbin file size mismatch for {path}: expected {expected_bytes} bytes, found {actual_bytes}"
+        )
+    return np.memmap(path, dtype=dtype, mode="r", offset=8, shape=(n, dim))
+
+
+def _read_ibin_array(path: Path) -> np.ndarray:
+    with path.open("rb") as handle:
+        header = np.fromfile(handle, dtype=np.int32, count=2)
+        if header.shape[0] != 2:
+            raise ValueError(f"invalid ibin header: {path}")
+        n, dim = int(header[0]), int(header[1])
+        data = np.fromfile(handle, dtype=np.int32, count=n * dim)
+    if data.size != n * dim:
+        raise ValueError(f"ibin payload size mismatch for {path}: expected {n * dim} ints, found {data.size}")
+    return data.reshape(n, dim)
+
+
+def _read_spmat_header(path: Path) -> tuple[int, int, int]:
+    with path.open("rb") as handle:
+        sizes = np.fromfile(handle, dtype=np.int64, count=3)
+    if sizes.shape[0] != 3:
+        raise ValueError(f"invalid spmat header: {path}")
+    return int(sizes[0]), int(sizes[1]), int(sizes[2])
+
+
+def _read_spmat_index_fields(path: Path) -> tuple[int, int, np.ndarray, np.ndarray]:
+    nrow, ncol, nnz = _read_spmat_header(path)
+    ofs = 3 * np.dtype(np.int64).itemsize
+    indptr = np.memmap(path, dtype=np.int64, mode="r", offset=ofs, shape=(nrow + 1,))
+    ofs += indptr.nbytes
+    indices = np.memmap(path, dtype=np.int32, mode="r", offset=ofs, shape=(nnz,))
+    if int(indptr[-1]) != nnz:
+        raise ValueError(f"invalid spmat indptr payload in {path}: expected nnz={nnz}, found tail={int(indptr[-1])}")
+    if nnz and (int(indices.min()) < 0 or int(indices.max()) >= ncol):
+        raise ValueError(f"invalid spmat indices in {path}: expected range 0..{ncol - 1}")
+    return nrow, ncol, indices, indptr
+
+
+def _write_query_filters_from_spmat(path: Path, out_path: Path, *, expected_rows: int) -> None:
+    nrow, _, indices, indptr = _read_spmat_index_fields(path)
+    if nrow != expected_rows:
+        raise ValueError(f"query metadata rows must match query count: metadata rows={nrow}, queries={expected_rows}")
+    ensure_dir(out_path.parent)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for row_idx in range(nrow):
+            start = int(indptr[row_idx])
+            end = int(indptr[row_idx + 1])
+            row = {"query_id": row_idx, "must_have_tags": [int(tag) for tag in indices[start:end].tolist()]}
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _write_payloads_from_spmat(path: Path, out_path: Path, *, expected_rows: int) -> None:
+    nrow, _, indices, indptr = _read_spmat_index_fields(path)
+    if nrow != expected_rows:
+        raise ValueError(f"base metadata rows must match base vector count: metadata rows={nrow}, base rows={expected_rows}")
+    ensure_dir(out_path.parent)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for row_idx in range(nrow):
+            start = int(indptr[row_idx])
+            end = int(indptr[row_idx + 1])
+            row = {"tags": [int(tag) for tag in indices[start:end].tolist()]}
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _resolve_yfcc_query_artifacts(
+    dataset_dir: Path,
+    *,
+    query_split: str,
+    private_query_token: str | None,
+) -> _YfccQueryArtifacts:
+    if query_split == "public":
+        queries_path = dataset_dir / "query.public.100K.u8bin"
+        gt_ids_path = dataset_dir / "GT.public.ibin"
+        metadata_path = dataset_dir / "query.metadata.public.100K.spmat"
+        for path in (queries_path, gt_ids_path, metadata_path):
+            if not path.exists():
+                raise FileNotFoundError(path)
+        return _YfccQueryArtifacts(
+            split="public",
+            queries_path=queries_path,
+            gt_ids_path=gt_ids_path,
+            metadata_path=metadata_path,
+        )
+
+    query_candidates = _match_yfcc_tokened_files(dataset_dir, _YFCC_PRIVATE_QUERY_RE)
+    gt_candidates = _match_yfcc_tokened_files(dataset_dir, _YFCC_PRIVATE_GT_RE)
+    metadata_candidates = _match_yfcc_tokened_files(dataset_dir, _YFCC_PRIVATE_META_RE)
+    common_tokens = sorted(set(query_candidates) & set(gt_candidates) & set(metadata_candidates))
+    if not common_tokens:
+        raise FileNotFoundError(f"no matching private YFCC query/GT/metadata bundle found under {dataset_dir}")
+    token = str(private_query_token) if private_query_token else None
+    if token is None:
+        if len(common_tokens) != 1:
+            raise ValueError(
+                f"multiple private YFCC query tokens found under {dataset_dir}; pass --private-query-token "
+                f"(available: {', '.join(common_tokens)})"
+            )
+        token = common_tokens[0]
+    if token not in common_tokens:
+        raise FileNotFoundError(
+            f"private YFCC query token {token!r} not found under {dataset_dir}; available tokens: {', '.join(common_tokens)}"
+        )
+    return _YfccQueryArtifacts(
+        split="private",
+        queries_path=query_candidates[token],
+        gt_ids_path=gt_candidates[token],
+        metadata_path=metadata_candidates[token],
+        token=token,
+    )
+
+
+def _match_yfcc_tokened_files(dataset_dir: Path, pattern: re.Pattern[str]) -> dict[str, Path]:
+    matches: dict[str, Path] = {}
+    for path in sorted(dataset_dir.iterdir()):
+        match = pattern.match(path.name)
+        if match:
+            matches[str(match.group("token"))] = path
+    return matches
 
 
 def _utc_now_iso() -> str:

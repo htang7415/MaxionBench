@@ -839,6 +839,76 @@ def test_cli_preprocess_datasets_dispatches_ann_mode(monkeypatch) -> None:  # ty
     ]
 
 
+def test_cli_preprocess_datasets_dispatches_d3_yfcc_raw_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 314
+
+    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "preprocess-datasets",
+            "d3-yfcc-raw",
+            "--input",
+            "dataset/D3/yfcc-10M",
+            "--out",
+            "dataset/explicit/D3/yfcc-10M",
+            "--query-split",
+            "public",
+            "--skip-payloads",
+            "--json",
+        ]
+    )
+    assert code == 314
+    assert captured["argv"] == [
+        "d3-yfcc-raw",
+        "--out",
+        "dataset/explicit/D3/yfcc-10M",
+        "--input",
+        "dataset/D3/yfcc-10M",
+        "--query-split",
+        "public",
+        "--skip-payloads",
+        "--json",
+    ]
+
+
+def test_cli_preprocess_datasets_dispatches_d3_yfcc_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 315
+
+    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "preprocess-datasets",
+            "d3-yfcc",
+            "--input",
+            "dataset/D3/yfcc-10M",
+            "--out",
+            "dataset/processed/D3/yfcc-10M",
+            "--query-split",
+            "public",
+            "--json",
+        ]
+    )
+    assert code == 315
+    assert captured["argv"] == [
+        "d3-yfcc",
+        "--out",
+        "dataset/processed/D3/yfcc-10M",
+        "--input",
+        "dataset/D3/yfcc-10M",
+        "--query-split",
+        "public",
+        "--json",
+    ]
+
+
 def test_cli_preprocess_datasets_validates_mode_specific_args() -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli_main(
@@ -847,6 +917,28 @@ def test_cli_preprocess_datasets_validates_mode_specific_args() -> None:
                 "ann-hdf5",
                 "--out",
                 "dataset/processed/D1/glove-100-angular",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            [
+                "preprocess-datasets",
+                "d3-yfcc-raw",
+                "--out",
+                "dataset/explicit/D3/yfcc-10M",
+            ]
+        )
+    assert excinfo.value.code == 2
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            [
+                "preprocess-datasets",
+                "d3-yfcc",
+                "--out",
+                "dataset/processed/D3/yfcc-10M",
             ]
         )
     assert excinfo.value.code == 2

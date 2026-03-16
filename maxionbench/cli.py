@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         "preprocess-datasets",
         help="Normalize raw datasets into the canonical processed layout",
     )
-    preprocess_datasets_parser.add_argument("mode", choices=["ann-hdf5", "d3-explicit", "beir", "crag"])
+    preprocess_datasets_parser.add_argument("mode", choices=["ann-hdf5", "d3-yfcc-raw", "d3-yfcc", "d3-explicit", "beir", "crag"])
     preprocess_datasets_parser.add_argument("--input", default=None)
     preprocess_datasets_parser.add_argument("--out", required=True)
     preprocess_datasets_parser.add_argument("--family", default=None)
@@ -111,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     preprocess_datasets_parser.add_argument("--gt", default=None)
     preprocess_datasets_parser.add_argument("--filters", default=None)
     preprocess_datasets_parser.add_argument("--payloads", default=None)
+    preprocess_datasets_parser.add_argument("--query-split", default=None)
+    preprocess_datasets_parser.add_argument("--private-query-token", default=None)
+    preprocess_datasets_parser.add_argument("--skip-payloads", action="store_true")
     preprocess_datasets_parser.add_argument("--split", default=None)
     preprocess_datasets_parser.add_argument("--max-examples", type=int, default=None)
     preprocess_datasets_parser.add_argument("--chunk-chars", type=int, default=None)
@@ -396,6 +399,12 @@ def main(argv: list[str] | None = None) -> int:
                 "--name": args.name,
                 "--metric": args.metric,
             },
+            "d3-yfcc-raw": {
+                "--input": args.input,
+            },
+            "d3-yfcc": {
+                "--input": args.input,
+            },
             "d3-explicit": {
                 "--base": args.base,
                 "--queries": args.queries,
@@ -433,6 +442,12 @@ def main(argv: list[str] | None = None) -> int:
             preprocess_argv.extend(["--filters", args.filters])
         if args.payloads is not None:
             preprocess_argv.extend(["--payloads", args.payloads])
+        if args.query_split is not None:
+            preprocess_argv.extend(["--query-split", args.query_split])
+        if args.private_query_token is not None:
+            preprocess_argv.extend(["--private-query-token", args.private_query_token])
+        if args.skip_payloads:
+            preprocess_argv.append("--skip-payloads")
         if args.split is not None:
             preprocess_argv.extend(["--split", args.split])
         if args.max_examples is not None:
