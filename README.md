@@ -67,8 +67,6 @@ python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --
 bash preprocess_all_datasets.sh
 ```
 
-Then run the local end-to-end workflow in [command-mac.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command-mac.md).
-
 ### Slurm cluster workflow
 
 Use a prebuilt Apptainer image on shared storage, keep private cluster settings only in the gitignored local profile, and run:
@@ -77,8 +75,6 @@ Use a prebuilt Apptainer image on shared storage, keep private cluster settings 
 ./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif
 ./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
 ```
-
-Detailed Slurm commands live in [command.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command.md).
 
 Private cluster account and partition values belong only in:
 
