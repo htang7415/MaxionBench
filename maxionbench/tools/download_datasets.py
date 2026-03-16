@@ -13,6 +13,7 @@ import tempfile
 from typing import Any
 from urllib.request import Request, urlopen
 import zipfile
+import re
 
 from maxionbench.tools.download_d1 import DEFAULT_HTTP_HEADERS, download_d1_dataset
 
@@ -28,6 +29,8 @@ CRAG_TASK12_URL = (
     "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/"
     "data/crag_task_1_and_2_dev_v4.jsonl.bz2?download="
 )
+_REQUIREMENTS_VERSION_RE = re.compile(r"^requirements_py(?:(?P<major>\d)\.(?P<minor>\d+)|(?P<compact>\d{2,}))\.txt$")
+_YFCC_DIR_CANDIDATES = ("yfcc100M", "yfcc-10M")
 
 
 def run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -104,7 +107,7 @@ def download_bigann_yfcc(
     cache_dir: Path,
     timeout_s: float,
     force: bool,
-    requirements_file: str = "requirements_py3.10.txt",
+    requirements_file: str | None = None,
 ) -> dict[str, Any]:
     _validate_timeout(timeout_s)
     dst = (root / "D3" / "yfcc-10M").resolve()
@@ -119,7 +122,7 @@ def download_bigann_yfcc(
             return {"path": str(dst), "source": "copied_from_repo_cache"}
     clone_or_update_repo(repo_url=BIGANN_REPO_URL, repo_dir=repo_dir)
 
-    req_path = repo_dir / requirements_file
+    req_path = _select_bigann_requirements_file(repo_dir=repo_dir, requested=requirements_file)
     if req_path.exists():
         run([sys.executable, "-m", "pip", "install", "-r", str(req_path)])
     else:
@@ -130,19 +133,66 @@ def download_bigann_yfcc(
     run([sys.executable, "create_dataset.py", "--dataset", "yfcc-10M"], cwd=repo_dir)
     src = _find_existing_yfcc_dir(repo_dir)
     if src is None:
-        raise FileNotFoundError("Could not locate yfcc-10M under big-ann-benchmarks/data")
+        raise FileNotFoundError(
+            "Could not locate YFCC dataset under big-ann-benchmarks/data "
+            f"(tried {', '.join(_YFCC_DIR_CANDIDATES)})"
+        )
     copytree_replace(src=src, dst=dst)
     return {"path": str(dst), "source": "copied_from_bigann_repo"}
 
 
 def _find_existing_yfcc_dir(repo_dir: Path) -> Path | None:
-    src = repo_dir / "data" / "yfcc-10M"
-    if src.exists():
-        return src
     data_root = repo_dir / "data"
     if not data_root.exists():
         return None
-    return find_dir_by_name(root=data_root, name="yfcc-10M")
+    for name in _YFCC_DIR_CANDIDATES:
+        src = data_root / name
+        if src.exists():
+            return src
+    for name in _YFCC_DIR_CANDIDATES:
+        found = find_dir_by_name(root=data_root, name=name)
+        if found is not None:
+            return found
+    return None
+
+
+def _select_bigann_requirements_file(*, repo_dir: Path, requested: str | None) -> Path:
+    if requested:
+        return repo_dir / requested
+
+    versioned: list[tuple[tuple[int, int], Path]] = []
+    for path in repo_dir.glob("requirements_py*.txt"):
+        parsed = _parse_bigann_requirements_version(path.name)
+        if parsed is not None:
+            versioned.append((parsed, path))
+    if not versioned:
+        return repo_dir / "requirements.txt"
+
+    current = (sys.version_info.major, sys.version_info.minor)
+    versioned.sort(key=lambda item: item[0])
+    for version, path in versioned:
+        if version == current:
+            return path
+    newer = [(version, path) for version, path in versioned if version > current]
+    if newer:
+        return min(newer, key=lambda item: item[0])[1]
+    return max(versioned, key=lambda item: item[0])[1]
+
+
+def _parse_bigann_requirements_version(filename: str) -> tuple[int, int] | None:
+    match = _REQUIREMENTS_VERSION_RE.fullmatch(filename)
+    if match is None:
+        return None
+    compact = match.group("compact")
+    if compact:
+        if len(compact) < 2:
+            return None
+        return (int(compact[0]), int(compact[1:]))
+    major = match.group("major")
+    minor = match.group("minor")
+    if major is None or minor is None:
+        return None
+    return (int(major), int(minor))
 
 
 def _extract_archive(*, archive_path: Path, workdir: Path) -> Path:
