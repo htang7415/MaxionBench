@@ -69,7 +69,7 @@ bash preprocess_all_datasets.sh
 
 ### Slurm cluster workflow
 
-Keep cluster-local defaults in gitignored local files such as `.env.slurm.nrel`, `.env.slurm.euler`, and `maxionbench/orchestration/slurm/profiles_local.yaml`, then run:
+Keep cluster-local defaults in gitignored local files such as `.env.slurm.nrel`, `.env.slurm.euler`, and `maxionbench/orchestration/slurm/profiles_local.yaml`. The wrapper auto-loads and refreshes `.env.slurm.<cluster>` for the current run, then run:
 
 ```bash
 bash run_slurm_pipeline.sh --cluster nrel
@@ -77,6 +77,8 @@ bash run_slurm_pipeline.sh --cluster nrel --launch
 ```
 
 Dry-run prints the submit plan only. `--launch` prepares the shared directory tree and builds any missing `.sif` images under `${MAXIONBENCH_SHARED_ROOT}/containers/` before submitting jobs.
+
+Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission.
 
 By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the repository root that contains `run_slurm_pipeline.sh`. To use a different shared base path, add:
 

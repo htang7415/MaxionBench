@@ -11,7 +11,7 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
     assert ".env.slurm.euler" in text
     assert ".env.slurm.nrel" in text
-    assert "run_slurm_pipeline.sh` auto-loads `.env.slurm.<cluster>` when present" in text
+    assert "run_slurm_pipeline.sh` auto-loads `.env.slurm.<cluster>` when present and refreshes that file with the resolved values for the current run." in text
     assert "The script derives shared paths automatically from `MAXIONBENCH_SHARED_ROOT` or from the repository root that contains `run_slurm_pipeline.sh`" in text
     assert "- `dataset/`" in text
     assert "- `.cache/`" in text
@@ -23,6 +23,7 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "bash run_slurm_pipeline.sh --cluster nrel" in text
     assert "Dry-run only prints the submit plan." in text
     assert "`--launch` prepares the shared directory tree and ensures the required Apptainer images exist before it calls `submit-slurm-plan`." in text
+    assert "Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission." in text
     assert "${MAXIONBENCH_SHARED_ROOT}/containers/maxionbench.sif" in text
     assert "--launch" in text
     assert 'squeue -u "$USER"' in text
