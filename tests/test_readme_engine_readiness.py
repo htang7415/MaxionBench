@@ -28,8 +28,7 @@ def test_readme_describes_study_scope_and_run_entrypoints() -> None:
     assert "| S5 | D4 | candidate generation + rerank | clients `16` | candidate budgets `{50, 200, 1000}`; reranker `BAAI/bge-reranker-base`, `max_seq_len=512`, `fp16`, `batch_size=32` |" in text
     assert "| S6 | D4 | multi-index fusion | clients `16` | fusion budget `200/200`, RRF `k=60`; first deferrable scenario if schedule risk appears |" in text
     assert "./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif" in text
-    assert "gitignored local profile" in text
-    assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
+    assert "keep private cluster settings in your local Slurm profile" in text
 
     assert "Mac mini" not in text
     assert "mac mini" not in text
@@ -39,3 +38,4 @@ def test_readme_describes_study_scope_and_run_entrypoints() -> None:
     assert "--cluster nrel" not in text
     assert "nawimem" not in text
     assert "pdelab" not in text
+    assert "profiles_local.yaml" not in text
