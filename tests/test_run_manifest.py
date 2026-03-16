@@ -99,3 +99,97 @@ def test_build_run_manifest_writes_engine_scenario_matrix(tmp_path: Path) -> Non
     resolved = resolve_manifest_row(manifest_path=manifest_path, group="gpu", task_id=0)
     assert resolved.group == "gpu"
     assert resolved.template_name == "s1_ann_frontier_d3.yaml"
+
+
+def test_build_run_manifest_orders_s1_dataset_variants_deterministically(tmp_path: Path) -> None:
+    scenario_dir = tmp_path / "scenarios"
+    engine_dir = tmp_path / "engines"
+    out_dir = tmp_path / "out"
+
+    for name, payload in (
+        (
+            "s1_ann_frontier_d1_gist.yaml",
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "processed_dataset_path": "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D1/gist-960-euclidean",
+            },
+        ),
+        (
+            "s1_ann_frontier_d3.yaml",
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D3",
+                "dataset_path": "${MAXIONBENCH_D3_DATASET_PATH}",
+            },
+        ),
+        (
+            "s1_ann_frontier_d1_sift.yaml",
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "processed_dataset_path": "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D1/sift-128-euclidean",
+            },
+        ),
+        (
+            "s1_ann_frontier_d2.yaml",
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D2",
+                "processed_dataset_path": "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D2/deep-image-96-angular",
+            },
+        ),
+        (
+            "s1_ann_frontier_d1_glove.yaml",
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "processed_dataset_path": "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D1/glove-100-angular",
+            },
+        ),
+    ):
+        _write_yaml(scenario_dir / name, payload)
+
+    _write_yaml(engine_dir / "qdrant.yaml", {"engine": "qdrant", "adapter_options": {"host": "127.0.0.1", "port": 6333}})
+    _write_yaml(engine_dir / "faiss_gpu.yaml", {"engine": "faiss-gpu", "adapter_options": {"gpu_count": 1}})
+
+    manifest = build_run_manifest(
+        repo_root=tmp_path,
+        scenario_config_dir=scenario_dir,
+        engine_config_dir=engine_dir,
+        out_dir=out_dir,
+        include_gpu=True,
+        skip_s6=False,
+    )
+
+    assert manifest.selected_templates == [
+        "s1_ann_frontier_d1_glove.yaml",
+        "s1_ann_frontier_d1_sift.yaml",
+        "s1_ann_frontier_d1_gist.yaml",
+        "s1_ann_frontier_d2.yaml",
+        "s1_ann_frontier_d3.yaml",
+    ]
+    assert [row.template_name for row in manifest.cpu_rows] == [
+        "s1_ann_frontier_d1_glove.yaml",
+        "s1_ann_frontier_d1_sift.yaml",
+        "s1_ann_frontier_d1_gist.yaml",
+        "s1_ann_frontier_d2.yaml",
+        "s1_ann_frontier_d3.yaml",
+    ]
+    assert [row.template_name for row in manifest.gpu_rows] == [
+        "s1_ann_frontier_d1_glove.yaml",
+        "s1_ann_frontier_d1_sift.yaml",
+        "s1_ann_frontier_d1_gist.yaml",
+        "s1_ann_frontier_d2.yaml",
+        "s1_ann_frontier_d3.yaml",
+    ]

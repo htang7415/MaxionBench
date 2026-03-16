@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from maxionbench.orchestration.slurm.run_manifest import RunManifest, RunManifestRow
-from maxionbench.orchestration.slurm.submit_plan import build_submit_steps, submit_steps
+from maxionbench.orchestration.slurm.submit_plan import SubmitStep, build_submit_steps, submit_steps
 
 
 def test_build_submit_steps_enforces_d3_dependency_chain() -> None:
@@ -92,6 +92,7 @@ def test_submit_steps_exports_scenario_config_dir_when_provided(tmp_path: Path) 
         command = [str(item) for item in step["command"]]
         assert "--export" in command
         export_value = command[command.index("--export") + 1]
+        assert f"MAXIONBENCH_SLURM_DIR={slurm_dir.resolve()}" in export_value
         assert "MAXIONBENCH_SEED=42" in export_value
         assert "MAXIONBENCH_SCENARIO_CONFIG_DIR=configs/scenarios_paper" in export_value
 
@@ -242,6 +243,7 @@ def test_submit_steps_exports_output_root_when_provided(tmp_path: Path) -> None:
         cmd = [str(item) for item in step["command"]]
         assert "--export" in cmd
         export_value = cmd[cmd.index("--export") + 1]
+        assert f"MAXIONBENCH_SLURM_DIR={slurm_dir.resolve()}" in export_value
         assert "MAXIONBENCH_OUTPUT_ROOT=artifacts/workstation_runs/example/results/slurm" in export_value
 
 
@@ -269,6 +271,7 @@ def test_submit_steps_exports_container_runtime_settings_when_provided(tmp_path:
         cmd = [str(item) for item in step["command"]]
         assert "--export" in cmd
         export_value = cmd[cmd.index("--export") + 1]
+        assert f"MAXIONBENCH_SLURM_DIR={slurm_dir.resolve()}" in export_value
         assert "MAXIONBENCH_CONTAINER_RUNTIME=apptainer" in export_value
         assert "MAXIONBENCH_CONTAINER_IMAGE=/shared/containers/maxionbench.sif" in export_value
         assert "MAXIONBENCH_CONTAINER_BIND=/shared/datasets|/shared/models/hf:/shared/models/hf" in export_value
@@ -355,7 +358,7 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
         "cpu_d3_baseline",
         "cpu_d3_workloads",
         "cpu_non_d3",
-        "gpu_all",
+        "gpu_non_d3",
         "postprocess",
     ]
     assert by_key["download_datasets"].depends_on == ()
@@ -364,13 +367,124 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
     assert by_key["cpu_d3_baseline"].array == "0"
     assert by_key["cpu_d3_workloads"].array == "1"
     assert by_key["cpu_non_d3"].array == "2"
-    assert by_key["gpu_all"].array == "0"
+    assert by_key["gpu_non_d3"].array == "0"
     assert by_key["postprocess"].depends_on == (
         "cpu_d3_baseline",
         "cpu_d3_workloads",
         "cpu_non_d3",
-        "gpu_all",
+        "gpu_non_d3",
     )
+
+
+def test_build_submit_steps_splits_gpu_manifest_d3_dependency_chain() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/artifacts/slurm_manifests/latest/generated_configs",
+        cpu_rows=[],
+        gpu_rows=[
+            RunManifestRow(
+                group="gpu",
+                config_path="/repo/generated/s1_d3_faiss_gpu.yaml",
+                engine="faiss-gpu",
+                scenario="s1_ann_frontier",
+                dataset_bundle="D3",
+                template_name="s1_ann_frontier_d3.yaml",
+            ),
+            RunManifestRow(
+                group="gpu",
+                config_path="/repo/generated/s3_faiss_gpu.yaml",
+                engine="faiss-gpu",
+                scenario="s3_churn_smooth",
+                dataset_bundle="D3",
+                template_name="s3_churn_smooth.yaml",
+            ),
+            RunManifestRow(
+                group="gpu",
+                config_path="/repo/generated/s5_qdrant.yaml",
+                engine="qdrant",
+                scenario="s5_rerank",
+                dataset_bundle="D4",
+                template_name="s5_rerank.yaml",
+            ),
+        ],
+        selected_engines=["faiss-gpu", "qdrant"],
+        selected_templates=["s1_ann_frontier_d3.yaml", "s3_churn_smooth.yaml", "s5_rerank.yaml"],
+    )
+
+    steps = build_submit_steps(include_gpu=True, manifest=manifest, include_postprocess=True)
+    by_key = {step.key: step for step in steps}
+
+    assert [step.key for step in steps] == [
+        "calibrate",
+        "gpu_d3_baseline",
+        "gpu_d3_workloads",
+        "gpu_non_d3",
+        "postprocess",
+    ]
+    assert by_key["gpu_d3_baseline"].array == "0"
+    assert by_key["gpu_d3_baseline"].depends_on == ("calibrate",)
+    assert by_key["gpu_d3_workloads"].array == "1"
+    assert by_key["gpu_d3_workloads"].depends_on == ("calibrate", "gpu_d3_baseline")
+    assert by_key["gpu_non_d3"].array == "2"
+    assert by_key["gpu_non_d3"].depends_on == ("calibrate",)
+    assert by_key["postprocess"].depends_on == (
+        "gpu_d3_baseline",
+        "gpu_d3_workloads",
+        "gpu_non_d3",
+    )
+
+
+def test_submit_steps_applies_gpu_all_profile_override_to_split_gpu_steps(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    overrides_path = tmp_path / "profiles_local.yaml"
+    overrides_path.write_text(
+        """
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+  step_overrides:
+    calibrate:
+      - ["--gres", "gpu:1"]
+    gpu_all:
+      - ["--gres", "gpu:1"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(overrides_path))
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=[
+            SubmitStep(key="calibrate", script_name="calibrate_d3.sh"),
+            SubmitStep(key="gpu_d3_baseline", script_name="gpu_array.sh"),
+            SubmitStep(key="gpu_d3_workloads", script_name="gpu_array.sh", depends_on=("calibrate",)),
+            SubmitStep(key="gpu_non_d3", script_name="gpu_array.sh", depends_on=("calibrate",)),
+        ],
+        seed=42,
+        slurm_profile="your_cluster",
+        dry_run=True,
+    )
+    by_key = {step["key"]: [str(item) for item in step["command"]] for step in summary["steps"]}
+
+    assert by_key["calibrate"][by_key["calibrate"].index("--gres") + 1] == "gpu:1"
+    assert by_key["gpu_d3_baseline"][by_key["gpu_d3_baseline"].index("--gres") + 1] == "gpu:1"
+    assert by_key["gpu_d3_workloads"][by_key["gpu_d3_workloads"].index("--gres") + 1] == "gpu:1"
+    assert by_key["gpu_non_d3"][by_key["gpu_non_d3"].index("--gres") + 1] == "gpu:1"
 
 
 def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None:
@@ -403,6 +517,7 @@ def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None
         command = [str(item) for item in step["command"]]
         assert "--export" in command
         export_value = command[command.index("--export") + 1]
+        assert f"MAXIONBENCH_SLURM_DIR={slurm_dir.resolve()}" in export_value
         assert "MAXIONBENCH_SLURM_RUN_MANIFEST=artifacts/slurm_manifests/latest/run_manifest.json" in export_value
 
 
@@ -422,7 +537,7 @@ def test_submit_steps_uses_tracked_cluster_profile_examples(
         slurm_dir=slurm_dir,
         steps=build_submit_steps(include_gpu=True),
         seed=42,
-        slurm_profile="euler_apptainer",
+        slurm_profile="cluster_a_apptainer",
         dry_run=True,
     )
     calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]
@@ -451,7 +566,7 @@ def test_submit_steps_expands_env_placeholders_in_tracked_profiles(
         slurm_dir=slurm_dir,
         steps=build_submit_steps(include_gpu=True),
         seed=42,
-        slurm_profile="nrel_apptainer",
+        slurm_profile="cluster_b_apptainer",
         dry_run=True,
     )
     calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]

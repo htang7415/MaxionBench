@@ -18,8 +18,9 @@ def _valid_submit_steps(
     seed: int = 42,
     scenario_config_dir: str | None = None,
     prefetch_datasets: bool = False,
+    split_gpu: bool = False,
 ) -> list[dict[str, Any]]:
-    export_parts = ["ALL", f"MAXIONBENCH_SEED={int(seed)}"]
+    export_parts = ["ALL", "MAXIONBENCH_SLURM_DIR=/repo/maxionbench/orchestration/slurm", f"MAXIONBENCH_SEED={int(seed)}"]
     if scenario_config_dir:
         export_parts.append(f"MAXIONBENCH_SCENARIO_CONFIG_DIR={scenario_config_dir}")
     export_value = ",".join(export_parts)
@@ -91,7 +92,54 @@ def _valid_submit_steps(
         },
         ]
     )
-    if include_gpu:
+    if include_gpu and split_gpu:
+        steps.extend(
+            [
+                {
+                    "key": "gpu_d3_baseline",
+                    "depends_on": ["calibrate"],
+                    "dependencies_resolved": ["<CALIBRATE_JOB_ID>"],
+                    "command": [
+                        "sbatch",
+                        "--parsable",
+                        "--dependency",
+                        "afterok:<CALIBRATE_JOB_ID>",
+                        "--export",
+                        export_value,
+                        "gpu_array.sh",
+                    ],
+                },
+                {
+                    "key": "gpu_d3_workloads",
+                    "depends_on": ["calibrate", "gpu_d3_baseline"],
+                    "dependencies_resolved": ["<CALIBRATE_JOB_ID>", "<GPU_D3_BASELINE_JOB_ID>"],
+                    "command": [
+                        "sbatch",
+                        "--parsable",
+                        "--dependency",
+                        "afterok:<CALIBRATE_JOB_ID>:<GPU_D3_BASELINE_JOB_ID>",
+                        "--export",
+                        export_value,
+                        "gpu_array.sh",
+                    ],
+                },
+                {
+                    "key": "gpu_non_d3",
+                    "depends_on": ["calibrate"],
+                    "dependencies_resolved": ["<CALIBRATE_JOB_ID>"],
+                    "command": [
+                        "sbatch",
+                        "--parsable",
+                        "--dependency",
+                        "afterok:<CALIBRATE_JOB_ID>",
+                        "--export",
+                        export_value,
+                        "gpu_array.sh",
+                    ],
+                },
+            ]
+        )
+    elif include_gpu:
         steps.append(
             {
                 "key": "gpu_all",
@@ -175,6 +223,35 @@ def test_validate_slurm_snapshots_accepts_optional_prefetch_step(tmp_path: Path)
     assert int(summary["error_count"]) == 0
 
 
+def test_validate_slurm_snapshots_accepts_split_gpu_dependency_topology(tmp_path: Path) -> None:
+    verify = tmp_path / "slurm_plan_verify.json"
+    submit = tmp_path / "slurm_submit_plan_dry_run.json"
+    _write_json(
+        verify,
+        {
+            "pass": True,
+            "error_count": 0,
+            "cpu_scenarios": [
+                "configs/scenarios/s1_ann_frontier.yaml",
+                "configs/scenarios/s1_ann_frontier_d3.yaml",
+            ],
+        },
+    )
+    _write_json(
+        submit,
+        {
+            "steps": _valid_submit_steps(include_gpu=True, split_gpu=True),
+        },
+    )
+
+    summary = validate_slurm_snapshots(
+        verify_paths=[verify],
+        submit_paths=[submit],
+    )
+    assert summary["pass"] is True
+    assert int(summary["error_count"]) == 0
+
+
 def test_validate_slurm_snapshots_fails_on_missing_required_keys(tmp_path: Path) -> None:
     verify_a = tmp_path / "slurm_plan_verify.json"
     verify_b = tmp_path / "slurm_plan_verify_skip_gpu.json"
@@ -222,7 +299,7 @@ def test_validate_slurm_snapshots_fails_on_missing_required_keys(tmp_path: Path)
     messages = [str(item.get("message", "")) for item in summary["errors"]]
     assert any("cpu_scenarios" in msg for msg in messages)
     assert any("required_step_keys" in msg for msg in messages)
-    assert any("gpu_all" in msg for msg in messages)
+    assert any("gpu_step_keys" in msg for msg in messages)
 
 
 def test_validate_slurm_snapshots_fails_on_dependency_topology_drift(tmp_path: Path) -> None:
@@ -250,7 +327,7 @@ def test_validate_slurm_snapshots_fails_on_dependency_topology_drift(tmp_path: P
                 "--dependency",
                 "afterok:<CALIBRATE_JOB_ID>",
                 "--export",
-                "ALL,MAXIONBENCH_SEED=42",
+                "ALL,MAXIONBENCH_SLURM_DIR=/repo/maxionbench/orchestration/slurm,MAXIONBENCH_SEED=42",
                 "cpu_array.sh",
             ]
             break

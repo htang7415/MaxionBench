@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+SLURM_DIR="${MAXIONBENCH_SLURM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# shellcheck source=/dev/null
+source "${SLURM_DIR}/common.sh"
 
 INPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-${ROOT_DIR}/artifacts/runs/slurm}"
 FIGURES_ROOT="${MAXIONBENCH_FIGURES_ROOT:-${ROOT_DIR}/artifacts/figures}"
