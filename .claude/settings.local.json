@@ -15,7 +15,13 @@
       "Bash(find /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench -name d3_params* -o -name *calibrate*)",
       "Bash(python3:*)",
       "Bash(du -sh /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/D* /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed)",
-      "Bash(find /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench -type f \\\\\\(-name *.sbatch -o -name *.slurm -o -name Dockerfile* -o -name *.def -o -name docker-compose* -o -name Makefile -o -name .dockerignore -o -name .singularityrc \\\\\\))"
+      "Bash(find /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench -type f \\\\\\(-name *.sbatch -o -name *.slurm -o -name Dockerfile* -o -name *.def -o -name docker-compose* -o -name Makefile -o -name .dockerignore -o -name .singularityrc \\\\\\))",
+      "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/maxionbench/scenarios/*.py)",
+      "Bash(ls -lh dataset/processed/D1/*/meta.json)",
+      "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/queries.jsonl /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/corpus.jsonl /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/qrels.tsv)",
+      "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/crag/small_slice/*)",
+      "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D3/yfcc-10M/*.jsonl)",
+      "Bash(ls -lh /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D3/yfcc-10M/*.jsonl)"
     ]
   }
 }
