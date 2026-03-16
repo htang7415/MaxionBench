@@ -19,6 +19,7 @@ from maxionbench.tools import verify_pins as verify_pins_mod
 from maxionbench.tools import verify_promotion_gate as verify_promotion_gate_mod
 from maxionbench.tools import verify_slurm_plan as verify_slurm_plan_mod
 from maxionbench.tools import validate_slurm_snapshots as validate_slurm_snapshots_mod
+from maxionbench.tools import wait_adapter as wait_adapter_mod
 
 
 def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -142,6 +143,38 @@ def test_cli_conformance_matrix_dispatches_flags(monkeypatch) -> None:  # type: 
         "artifacts/conformance",
         "--timeout-s",
         "45.5",
+    ]
+
+
+def test_cli_wait_adapter_dispatches_config_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 49
+
+    monkeypatch.setattr(wait_adapter_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "wait-adapter",
+            "--config",
+            "configs/scenarios/s1_ann_frontier_qdrant.yaml",
+            "--timeout-s",
+            "45",
+            "--poll-interval-s",
+            "2",
+            "--json",
+        ]
+    )
+    assert code == 49
+    assert captured["argv"] == [
+        "--timeout-s",
+        "45.0",
+        "--poll-interval-s",
+        "2.0",
+        "--config",
+        "configs/scenarios/s1_ann_frontier_qdrant.yaml",
+        "--json",
     ]
 
 

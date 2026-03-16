@@ -352,38 +352,40 @@ def preprocess_beir_dataset(
     dataset_name: str,
     split: str = "test",
 ) -> dict[str, Any]:
-    from beir.datasets.data_loader import GenericDataLoader
+    from maxionbench.datasets.loaders.d4_text import _load_beir_subset_bundle
 
     ensure_dir(out_dir)
-    corpus, queries, qrels = GenericDataLoader(data_folder=str(dataset_dir)).load(split=split)
+    bundle = _load_beir_subset_bundle(
+        subset_dir=dataset_dir.expanduser().resolve(),
+        subset_name=dataset_name,
+        split=split,
+        max_docs=1_000_000_000,
+        max_queries=1_000_000_000,
+    )
 
-    corpus_rows: list[dict[str, Any]] = []
-    for doc_id, doc in corpus.items():
-        title = str(doc.get("title") or "").strip()
-        text = str(doc.get("text") or doc.get("contents") or "").strip()
-        corpus_rows.append(
-            {
-                "doc_id": f"{dataset_name}::doc::{doc_id}",
-                "title": title,
-                "text": text,
-                "source": f"beir_{dataset_name}",
-            }
-        )
+    corpus_rows = [
+        {
+            "doc_id": doc_id,
+            "title": "",
+            "text": doc_text,
+            "source": f"beir_{dataset_name}",
+        }
+        for doc_id, doc_text in zip(bundle.doc_ids, bundle.doc_texts)
+    ]
 
-    query_rows: list[dict[str, Any]] = []
-    for query_id, text in queries.items():
-        query_rows.append(
-            {
-                "query_id": f"{dataset_name}::q::{query_id}",
-                "text": str(text),
-                "source": f"beir_{dataset_name}",
-            }
-        )
+    query_rows = [
+        {
+            "query_id": query_id,
+            "text": query_text,
+            "source": f"beir_{dataset_name}",
+        }
+        for query_id, query_text in zip(bundle.query_ids, bundle.query_texts)
+    ]
 
     qrel_rows: list[tuple[str, str, int]] = []
-    for query_id, rels in qrels.items():
+    for query_id, rels in bundle.qrels.items():
         for doc_id, relevance in rels.items():
-            qrel_rows.append((f"{dataset_name}::q::{query_id}", f"{dataset_name}::doc::{doc_id}", int(relevance)))
+            qrel_rows.append((query_id, doc_id, int(relevance)))
 
     write_jsonl(out_dir / "corpus.jsonl", corpus_rows)
     write_jsonl(out_dir / "queries.jsonl", query_rows)

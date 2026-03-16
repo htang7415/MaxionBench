@@ -1,8 +1,8 @@
 engine: milvus
 engine_version: "2.x"
 adapter_options:
-  host: 127.0.0.1
-  port: 19530
+  host: ${MAXIONBENCH_MILVUS_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_MILVUS_PORT:-19530}
 scenario: s1_ann_frontier
 dataset_bundle: D1
 dataset_hash: ann-benchmarks-d1

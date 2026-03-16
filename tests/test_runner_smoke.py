@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from maxionbench.orchestration.runner import _gpu_count_for_cfg, _resolve_d3_params, run_from_config
-from maxionbench.orchestration.config_schema import RunConfig, load_run_config
+from maxionbench.orchestration.config_schema import RunConfig, expand_env_placeholders, load_run_config
 from maxionbench.tools.validate_outputs import validate_run_directory
 
 
@@ -277,6 +277,49 @@ def test_run_from_config_rejects_missing_d3_params_path(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match="d3 params file not found"):
         run_from_config(cfg_path, cli_overrides={"d3_params": "artifacts/calibration/missing.yaml"})
+
+
+def test_expand_env_placeholders_supports_shell_style_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MAXIONBENCH_QDRANT_HOST", raising=False)
+    payload = {
+        "adapter_options": {
+            "host": "${MAXIONBENCH_QDRANT_HOST:-127.0.0.1}",
+            "dsn": "postgresql://postgres:postgres@${MAXIONBENCH_PGVECTOR_HOST:-127.0.0.1}:${MAXIONBENCH_PGVECTOR_PORT:-5432}/postgres",
+            "inproc_uri": "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI:-}",
+        }
+    }
+
+    expanded = expand_env_placeholders(payload)
+    assert expanded["adapter_options"]["host"] == "127.0.0.1"
+    assert expanded["adapter_options"]["dsn"] == "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
+    assert expanded["adapter_options"]["inproc_uri"] is None
+
+
+def test_load_run_config_resolves_docker_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MAXIONBENCH_QDRANT_HOST", "qdrant")
+    cfg_path = tmp_path / "cfg_env.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "qdrant",
+                "engine_version": "server",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "dataset_hash": "synthetic-d1-v1",
+                "no_retry": True,
+                "adapter_options": {
+                    "host": "${MAXIONBENCH_QDRANT_HOST:-127.0.0.1}",
+                    "port": "${MAXIONBENCH_QDRANT_PORT:-6333}",
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_run_config(cfg_path)
+    assert cfg.adapter_options["host"] == "qdrant"
+    assert cfg.adapter_options["port"] == "6333"
 
 
 def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(tmp_path: Path) -> None:

@@ -16,7 +16,7 @@ from maxionbench.datasets.cache_integrity import verify_file_sha256
 from .d4_synthetic import D4RetrievalDataset, compute_idf, tokenize_text
 
 
-DEFAULT_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
+DEFAULT_BEIR_SUBSETS = ["scifact", "fiqa", "nfcorpus"]
 
 
 @dataclass(frozen=True)

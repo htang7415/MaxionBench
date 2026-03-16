@@ -29,11 +29,9 @@ s6_bm25_candidates: 200
 d4_use_real_data: true
 d4_beir_root: data/beir
 d4_beir_subsets:
-  - trec-covid
-  - nfcorpus
-  - fiqa
   - scifact
-  - hotpotqa
+  - fiqa
+  - nfcorpus
 d4_beir_split: test
 d4_crag_source: facebookresearch/CRAG
 d4_crag_path: data/crag_task_1_and_2_dev_v4.jsonl.bz2

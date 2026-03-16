@@ -29,7 +29,8 @@ _OPTIONAL_CACHE_CHECKSUM_KEYS = (
     "cache_sha256_d2_gt_ivecs_path",
     "cache_sha256_d4_crag_path",
 )
-_PINNED_D4_BEIR_SUBSETS = ["trec-covid", "nfcorpus", "fiqa", "scifact", "hotpotqa"]
+_PINNED_D4_BEIR_SUBSETS = ["scifact", "fiqa", "nfcorpus"]
+_PINNED_D4_CRAG_SLICE_QUERIES = 500
 
 
 def verify_dataset_manifest_dir(manifest_dir: Path) -> dict[str, Any]:
@@ -119,15 +120,28 @@ def _validate_d4_manifest(*, path: Path, payload: Mapping[str, Any], errors: lis
                 "message": f"D4 beir_subsets must equal {_PINNED_D4_BEIR_SUBSETS!r}",
             }
         )
-    for key in ("crag_slice_queries", "crag_slice_docs"):
-        value = payload.get(key)
-        try:
-            numeric = int(value)
-        except (TypeError, ValueError):
-            errors.append({"path": str(path), "message": f"D4 {key} must be a positive integer"})
-            continue
-        if numeric <= 0:
-            errors.append({"path": str(path), "message": f"D4 {key} must be > 0"})
+    value = payload.get("crag_slice_queries")
+    try:
+        numeric_queries = int(value)
+    except (TypeError, ValueError):
+        errors.append({"path": str(path), "message": "D4 crag_slice_queries must be a positive integer"})
+    else:
+        if numeric_queries != _PINNED_D4_CRAG_SLICE_QUERIES:
+            errors.append(
+                {
+                    "path": str(path),
+                    "message": f"D4 crag_slice_queries must equal {_PINNED_D4_CRAG_SLICE_QUERIES}",
+                }
+            )
+
+    value = payload.get("crag_slice_docs")
+    try:
+        numeric_docs = int(value)
+    except (TypeError, ValueError):
+        errors.append({"path": str(path), "message": "D4 crag_slice_docs must be a positive integer"})
+    else:
+        if numeric_docs <= 0:
+            errors.append({"path": str(path), "message": "D4 crag_slice_docs must be > 0"})
 
 
 def _read_yaml_mapping(path: Path) -> dict[str, Any]:

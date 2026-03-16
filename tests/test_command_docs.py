@@ -25,6 +25,10 @@ def _assert_common_commands(text: str) -> None:
     assert "MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex> \\" in text
     assert "keep it separate so reported S2 runs remain benchmark results rather than tuning runs" in text
     assert "docker build -t maxionbench:0.1.0 ." in text
+    assert "docker compose build benchmark" in text
+    assert "./run_docker_scenario.sh --config configs/scenarios/s1_ann_frontier_qdrant.yaml" in text
+    assert "maxionbench wait-adapter" in text
+    assert "cp .env.docker.example .env" in text
     assert "apptainer build /shared/containers/maxionbench.sif docker-daemon://maxionbench:0.1.0" in text
     assert "docker save maxionbench:0.1.0 -o artifacts/containers/maxionbench_0.1.0.tar" in text
     assert "apptainer build /shared/containers/maxionbench.sif docker-archive://$(pwd)/artifacts/containers/maxionbench_0.1.0.tar" in text
