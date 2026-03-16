@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import logging
 import os
 from pathlib import Path
 import re
@@ -15,6 +16,7 @@ from maxionbench.datasets.loaders.d4_text import DEFAULT_BEIR_SUBSETS
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ENV_TOKEN_RE = re.compile(r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$")
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class RunConfig:
     dataset_hash: str = "synthetic-d1-v1"
     dataset_path: str | None = None
     processed_dataset_path: str | None = None
+    processed_dataset_sha256: str | None = None
     dataset_path_sha256: str | None = None
     d2_base_fvecs_path: str | None = None
     d2_base_fvecs_sha256: str | None = None
@@ -224,6 +227,7 @@ def _validate(cfg: RunConfig) -> None:
     if cfg.d4_use_real_data and cfg.d4_beir_root and not cfg.d4_beir_subsets:
         raise ValueError("d4_beir_subsets must not be empty when d4_beir_root is set")
     for key in [
+        "processed_dataset_sha256",
         "dataset_path_sha256",
         "d2_base_fvecs_sha256",
         "d2_query_fvecs_sha256",
@@ -252,6 +256,7 @@ def expand_env_placeholders(value: Any) -> Any:
         env_name = match.group("braced") or match.group("plain") or ""
         env_value = os.environ.get(env_name)
         if env_value in {None, ""}:
+            _LOG.warning("Environment placeholder %s resolved to empty/None; using null", env_name)
             return None
         return env_value
     return os.path.expandvars(value)

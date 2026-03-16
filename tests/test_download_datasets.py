@@ -93,6 +93,44 @@ def test_download_crag_writes_archive_and_slice(tmp_path: Path, monkeypatch: pyt
     assert len([line for line in slice_path.read_text(encoding="utf-8").splitlines() if line.strip()]) == 3
 
 
+def test_download_file_sets_explicit_user_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self, size: int = -1) -> bytes:
+            if captured.get("used"):
+                return b""
+            captured["used"] = True
+            return b"payload"
+
+    def _fake_urlopen(request, timeout: float):
+        captured["url"] = request.full_url
+        captured["user_agent"] = request.get_header("User-agent")
+        captured["timeout"] = timeout
+        return _FakeResponse()
+
+    monkeypatch.setattr(download_datasets_mod, "urlopen", _fake_urlopen)
+    dest = tmp_path / "file.bin"
+    summary = download_datasets_mod.download_file(
+        url="https://example.com/file.bin",
+        dest=dest,
+        timeout_s=15.0,
+        force=True,
+    )
+
+    assert summary["source"] == "download"
+    assert captured["url"] == "https://example.com/file.bin"
+    assert captured["user_agent"] == "MaxionBench/0.1"
+    assert captured["timeout"] == 15.0
+    assert dest.read_bytes() == b"payload"
+
+
 def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "dataset"
     cache_dir = tmp_path / ".cache"
@@ -170,3 +208,18 @@ def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monke
     assert "d3" not in summary["fetched"]
     assert "d4_beir" in summary["fetched"]
     assert "d4_crag" in summary["fetched"]
+
+
+def test_download_beir_rejects_invalid_timeout(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="timeout_s must be > 0"):
+        download_datasets_mod.download_beir(root=tmp_path / "dataset", timeout_s=0.0, force=False)
+
+
+def test_download_crag_rejects_invalid_timeout(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="timeout_s must be > 0"):
+        download_datasets_mod.download_crag(
+            root=tmp_path / "dataset",
+            timeout_s=-1.0,
+            force=False,
+            max_examples=5,
+        )

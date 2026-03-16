@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from maxionbench.datasets.loaders.processed import PROCESSED_SCHEMA_VERSION
+from maxionbench.datasets.loaders.processed import PROCESSED_SCHEMA_VERSION, dataset_dir_sha256
 from maxionbench.orchestration.runner import run_from_config
 
 
@@ -227,3 +227,138 @@ def test_runner_rejects_processed_d3_for_s2_until_scenario_migration_finishes(tm
 
     with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
         run_from_config(cfg_path, cli_overrides=None)
+
+
+def test_runner_rejects_processed_d3_for_s3_until_scenario_migration_finishes(tmp_path: Path) -> None:
+    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M", task_type="filtered_ann")
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s3_churn_smooth",
+        "dataset_bundle": "D3",
+        "dataset_hash": "processed-d3",
+        "processed_dataset_path": str(processed),
+        "seed": 7,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d3-s3"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 1,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 120.0,
+        "vector_dim": 2,
+        "num_vectors": 4,
+        "num_queries": 2,
+        "top_k": 2,
+    }
+    cfg_path = tmp_path / "cfg_d3_s3.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
+        run_from_config(cfg_path, cli_overrides=None)
+
+
+def test_runner_rejects_processed_d3_for_s3b_until_scenario_migration_finishes(tmp_path: Path) -> None:
+    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M", task_type="filtered_ann")
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s3b_churn_bursty",
+        "dataset_bundle": "D3",
+        "dataset_hash": "processed-d3",
+        "processed_dataset_path": str(processed),
+        "seed": 7,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d3-s3b"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 1,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 120.0,
+        "vector_dim": 2,
+        "num_vectors": 4,
+        "num_queries": 2,
+        "top_k": 2,
+    }
+    cfg_path = tmp_path / "cfg_d3_s3b.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
+        run_from_config(cfg_path, cli_overrides=None)
+
+
+def test_runner_enforces_processed_dataset_sha256(tmp_path: Path) -> None:
+    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D1" / "glove-100-angular")
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "processed-d1",
+        "processed_dataset_path": str(processed),
+        "processed_dataset_sha256": "0" * 64,
+        "seed": 9,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d1"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 2,
+        "num_vectors": 4,
+        "num_queries": 2,
+        "top_k": 2,
+    }
+    cfg_path = tmp_path / "cfg_d1_bad_sha.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="processed dataset sha256 mismatch"):
+        run_from_config(cfg_path, cli_overrides=None)
+
+
+def test_runner_accepts_matching_processed_dataset_sha256(tmp_path: Path) -> None:
+    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D1" / "glove-100-angular")
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "processed-d1",
+        "processed_dataset_path": str(processed),
+        "processed_dataset_sha256": dataset_dir_sha256(processed),
+        "seed": 9,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d1-sha"),
+        "quality_target": 0.8,
+        "quality_targets": [0.8],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 2,
+        "num_vectors": 4,
+        "num_queries": 2,
+        "top_k": 2,
+    }
+    cfg_path = tmp_path / "cfg_d1_good_sha.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1

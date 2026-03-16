@@ -118,6 +118,12 @@ def load_processed_filtered_ann_dataset(
         raise ValueError("processed filtered ANN dataset does not include one filter row per query")
     if payloads and len(payloads) < len(ids):
         raise ValueError("processed filtered ANN payload count is smaller than vector count")
+    if payloads and len(payloads) > len(ids):
+        _LOG.warning(
+            "processed filtered ANN dataset payloads.jsonl has %d rows for %d ids; truncating extras",
+            len(payloads),
+            len(ids),
+        )
     padded_payloads = payloads[: len(ids)] if payloads else [{} for _ in ids]
 
     return ProcessedFilteredAnnDataset(
@@ -254,6 +260,12 @@ def _load_processed_text_bundle(dataset_dir: Path) -> _ProcessedTextBundle:
         full_text = f"{title} {text}".strip()
         if full_text:
             docs[doc_id] = full_text
+        else:
+            _LOG.warning(
+                "processed text dataset %s skipped empty doc %s",
+                dataset_dir,
+                doc_id,
+            )
 
     queries: dict[str, str] = {}
     for row in _read_jsonl(queries_path):
@@ -321,6 +333,12 @@ def _merge_text_bundles(
             doc_limit_drops,
             query_limit_drops,
             query_no_rels_drops,
+        )
+    if not query_ids:
+        raise ValueError(
+            "processed D4 merge produced 0 queries after filtering "
+            f"(doc_limit_drops={doc_limit_drops}, query_limit_drops={query_limit_drops}, "
+            f"query_missing_qrels={query_no_rels_drops})"
         )
     return _ProcessedTextBundle(
         doc_ids=list(docs.keys()),

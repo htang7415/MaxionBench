@@ -100,6 +100,20 @@ def preprocess_d3_from_explicit_files(
     base = np.asarray(_load_array_file(base_path), dtype=np.float32)
     queries = np.asarray(_load_array_file(queries_path), dtype=np.float32)
     gt_ids = np.asarray(_load_array_file(gt_ids_path), dtype=np.int32)
+    if base.ndim != 2:
+        raise ValueError(f"D3 base array must be 2D [N, D]; got shape={tuple(base.shape)}")
+    if queries.ndim != 2:
+        raise ValueError(f"D3 queries array must be 2D [Q, D]; got shape={tuple(queries.shape)}")
+    if gt_ids.ndim != 2:
+        raise ValueError(f"D3 gt_ids array must be 2D [Q, K]; got shape={tuple(gt_ids.shape)}")
+    if base.shape[1] != queries.shape[1]:
+        raise ValueError(
+            f"D3 base/query dimension mismatch: base dim={int(base.shape[1])}, queries dim={int(queries.shape[1])}"
+        )
+    if int(gt_ids.shape[0]) < int(queries.shape[0]):
+        raise ValueError(
+            f"D3 gt_ids rows must cover all queries: gt rows={int(gt_ids.shape[0])}, queries={int(queries.shape[0])}"
+        )
     filters = list(_read_jsonl(filters_path))
     if len(filters) < int(queries.shape[0]):
         raise ValueError("filters file must include at least one row per query")
@@ -437,6 +451,8 @@ def chunk_text(text: str, *, chunk_chars: int, overlap: int) -> list[str]:
         raise ValueError("chunk_chars must be >= 1")
     if overlap < 0:
         raise ValueError("overlap must be >= 0")
+    if overlap >= chunk_chars:
+        raise ValueError("overlap must be < chunk_chars")
     chunks: list[str] = []
     start = 0
     limit = len(text)

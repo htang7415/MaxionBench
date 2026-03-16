@@ -8,6 +8,7 @@ import types
 
 import h5py
 import numpy as np
+import pytest
 
 from maxionbench.tools.preprocess_datasets import (
     preprocess_ann_hdf5,
@@ -80,6 +81,84 @@ def test_preprocess_d3_explicit_writes_filters_and_payloads(tmp_path: Path) -> N
     assert summary["task_type"] == "filtered_ann"
     assert len(_read_jsonl(out_dir / "filters.jsonl")) == 1
     assert len(_read_jsonl(out_dir / "payloads.jsonl")) == 2
+
+
+def test_preprocess_d3_explicit_rejects_non_2d_queries(tmp_path: Path) -> None:
+    base = tmp_path / "base.npy"
+    queries = tmp_path / "queries.npy"
+    gt = tmp_path / "gt.npy"
+    filters = tmp_path / "filters.jsonl"
+
+    np.save(base, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(queries, np.asarray([1.0, 0.0], dtype=np.float32))
+    np.save(gt, np.asarray([[0, 1]], dtype=np.int32))
+    filters.write_text(json.dumps({"query_id": 0, "must_have_tags": ["tag-a"]}) + "\n", encoding="utf-8")
+
+    out_dir = tmp_path / "processed" / "D3" / "yfcc-10M"
+    with pytest.raises(ValueError, match="queries array must be 2D"):
+        preprocess_d3_from_explicit_files(
+            base_path=base,
+            queries_path=queries,
+            gt_ids_path=gt,
+            filters_path=filters,
+            out_dir=out_dir,
+        )
+
+
+def test_preprocess_d3_explicit_ignores_empty_payloads_file(tmp_path: Path) -> None:
+    base = tmp_path / "base.npy"
+    queries = tmp_path / "queries.npy"
+    gt = tmp_path / "gt.npy"
+    filters = tmp_path / "filters.jsonl"
+    payloads = tmp_path / "payloads.jsonl"
+
+    np.save(base, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(queries, np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(gt, np.asarray([[0, 1]], dtype=np.int32))
+    filters.write_text(json.dumps({"query_id": 0, "must_have_tags": ["tag-a"]}) + "\n", encoding="utf-8")
+    payloads.write_text("", encoding="utf-8")
+
+    out_dir = tmp_path / "processed" / "D3" / "yfcc-10M"
+    summary = preprocess_d3_from_explicit_files(
+        base_path=base,
+        queries_path=queries,
+        gt_ids_path=gt,
+        filters_path=filters,
+        payloads_path=payloads,
+        out_dir=out_dir,
+    )
+    assert summary["task_type"] == "filtered_ann"
+    assert not (out_dir / "payloads.jsonl").exists()
+
+
+def test_preprocess_crag_small_slice_rejects_overlap_ge_chunk_chars(tmp_path: Path) -> None:
+    source = tmp_path / "crag.first_1.jsonl.bz2"
+    with bz2.open(source, "wt", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "interaction_id": "1",
+                    "query": "weather report",
+                    "search_results": [
+                        {
+                            "page_name": "Forecast",
+                            "page_result": "<html><body>weather report today</body></html>",
+                            "page_url": "https://example.com/weather",
+                        }
+                    ],
+                }
+            )
+            + "\n"
+        )
+
+    with pytest.raises(ValueError, match="overlap must be < chunk_chars"):
+        preprocess_crag_small_slice(
+            crag_path=source,
+            out_dir=tmp_path / "processed" / "D4" / "crag" / "small_slice",
+            max_examples=1,
+            chunk_chars=50,
+            overlap=50,
+        )
 
 
 def test_preprocess_beir_dataset_prefixes_ids(tmp_path: Path, monkeypatch) -> None:

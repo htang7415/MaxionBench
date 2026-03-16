@@ -27,6 +27,7 @@ from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.datasets.loaders.processed import (
+    dataset_dir_sha256,
     load_processed_ann_dataset,
     load_processed_d4_bundle,
     load_processed_filtered_ann_dataset,
@@ -144,6 +145,11 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     overrides = dict(cli_overrides or {})
     resolved_config_path = config_path.resolve()
     d3_params_path = overrides.pop("d3_params", None)
+    if d3_params_path:
+        resolved_d3_params_path = _resolve_config_value_path(value=str(d3_params_path), config_path=resolved_config_path)
+        if not resolved_d3_params_path.exists():
+            raise FileNotFoundError(f"d3 params file not found: {resolved_d3_params_path}")
+        d3_params_path = str(resolved_d3_params_path)
     enforce_readiness = bool(overrides.pop("enforce_readiness", False))
     conformance_matrix = Path(str(overrides.pop("conformance_matrix", "artifacts/conformance/conformance_matrix.csv")))
     behavior_dir = Path(str(overrides.pop("behavior_dir", "docs/behavior")))
@@ -1374,6 +1380,28 @@ def _collect_dataset_cache_checksum_provenance(*, cfg: RunConfig, config_path: P
     cfg_payload = cfg.as_dict()
     rows: list[dict[str, str]] = []
     checks: list[tuple[str, str, str, str, str]] = []
+    raw_processed_path = cfg_payload.get("processed_dataset_path")
+    expected_processed_sha = cfg_payload.get("processed_dataset_sha256")
+    if raw_processed_path not in {None, ""} and expected_processed_sha not in {None, ""}:
+        resolved_processed = _resolve_config_value_path(value=str(raw_processed_path), config_path=config_path)
+        expected_text = str(expected_processed_sha).strip().lower()
+        actual_processed_sha = dataset_dir_sha256(resolved_processed)
+        if actual_processed_sha != expected_text:
+            raise ValueError(
+                "processed dataset sha256 mismatch for "
+                f"{resolved_processed}: expected {expected_text}, got {actual_processed_sha}"
+            )
+        rows.append(
+            {
+                "path_key": "processed_dataset_path",
+                "resolved_path": str(resolved_processed),
+                "source": "config key processed_dataset_sha256",
+                "expected_sha256": expected_text,
+                "actual_sha256": actual_processed_sha,
+            }
+        )
+    elif raw_processed_path in {None, ""} and expected_processed_sha not in {None, ""}:
+        raise ValueError("processed_dataset_sha256 provided but `processed_dataset_path` is missing")
     if cfg.dataset_bundle == "D1":
         checks.append(
             (

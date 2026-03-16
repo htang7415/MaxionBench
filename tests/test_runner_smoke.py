@@ -243,6 +243,42 @@ def test_config_rejects_d4_real_data_without_any_source_path(tmp_path: Path) -> 
         load_run_config(cfg_path)
 
 
+def test_run_from_config_rejects_missing_d3_params_path(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "cfg_d3_missing_params.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "mock",
+                "engine_version": "0.1.0",
+                "scenario": "s2_filtered_ann",
+                "dataset_bundle": "D3",
+                "dataset_hash": "synthetic-d3",
+                "seed": 1,
+                "repeats": 1,
+                "no_retry": True,
+                "output_dir": str(tmp_path / "run"),
+                "quality_target": 0.8,
+                "quality_targets": [0.8],
+                "clients_read": 1,
+                "clients_write": 0,
+                "clients_grid": [1],
+                "search_sweep": [{"hnsw_ef": 32}],
+                "rpc_baseline_requests": 5,
+                "sla_threshold_ms": 80.0,
+                "vector_dim": 8,
+                "num_vectors": 20,
+                "num_queries": 5,
+                "top_k": 10,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="d3 params file not found"):
+        run_from_config(cfg_path, cli_overrides={"d3_params": "artifacts/calibration/missing.yaml"})
+
+
 def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(tmp_path: Path) -> None:
     d3_params_path = tmp_path / "d3_params.yaml"
     payload = {
