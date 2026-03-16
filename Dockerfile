@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt/maxionbench
 
 COPY pyproject.toml README.md ./
-COPY AGENTS.md CLAUDE.md command.md command-mac.md document.md project.md prompt.md ./
+COPY AGENTS.md CLAUDE.md document.md project.md prompt.md ./
 COPY maxionbench ./maxionbench
 COPY configs ./configs
 COPY docs ./docs

@@ -43,7 +43,8 @@ def test_workstation_script_exists_and_references_paper_lane_checks() -> None:
     assert "--hf-cache-dir <path>" in text
     assert "cmd+=(\"${SLURM_CONTAINER_ARGS[@]}\")" in text
     assert "profiles_local.example.yaml" in text
-    assert "profiles_local.yaml" in text
+    assert "MAXIONBENCH_SLURM_PROFILE_OVERRIDES" in text
+    assert "profiles_local.yaml" not in text
     assert "MAXIONBENCH_D3_DATASET_PATH" in text
     assert "MAXIONBENCH_D3_DATASET_SHA256" in text
     assert "requires real D3 vectors" in text
@@ -111,7 +112,7 @@ printf '{"pass": true}\\n'
 
 def test_command_md_mentions_slurm_pipeline_script() -> None:
     text = Path("command.md").read_text(encoding="utf-8")
-    assert "./run_slurm_pipeline.sh \\" in text
+    assert "bash run_slurm_pipeline.sh \\" in text
     assert "--cluster euler \\" in text
     assert "--cluster nrel \\" in text
     assert "--container-image /shared/containers/maxionbench.sif" in text

@@ -41,8 +41,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "maxionbench.cli report" in postprocess_text
 
     profiles_text = profiles.read_text(encoding="utf-8")
-    assert "euler_apptainer:" in profiles_text
-    assert "nrel_apptainer:" in profiles_text
+    assert "cluster_a_apptainer:" in profiles_text
+    assert "cluster_b_apptainer:" in profiles_text
     assert "download_datasets:" in profiles_text
     assert "preprocess_datasets:" in profiles_text
     assert "postprocess:" in profiles_text

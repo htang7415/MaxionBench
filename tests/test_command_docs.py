@@ -7,11 +7,11 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     text = Path("command.md").read_text(encoding="utf-8")
 
     assert "# MaxionBench Slurm Commands" in text
-    assert "download_datasets -> preprocess_datasets -> calibrate_d3 -> benchmark arrays -> postprocess" in text
+    assert "download_datasets -> preprocess_datasets -> benchmark arrays -> postprocess" in text
     assert "cp .env.slurm.example .env.slurm" in text
     assert "source .env.slurm" in text
     assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
-    assert "./run_slurm_pipeline.sh \\" in text
+    assert "bash run_slurm_pipeline.sh \\" in text
     assert "--cluster euler \\" in text
     assert "--cluster nrel \\" in text
     assert "--container-image /shared/containers/maxionbench.sif" in text
@@ -30,6 +30,7 @@ def test_command_mac_md_is_concise_local_terminal_doc() -> None:
     assert "# MaxionBench Mac Mini M4 Commands" in text
     assert 'python -m pip install -e ".[dev,engines,reporting]"' in text
     assert "python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json" in text
+    assert "## 3. Prepare datasets" in text
     assert "bash preprocess_all_datasets.sh" in text
     assert "python -m maxionbench.cli run --config configs/scenarios/calibrate_d3.yaml --seed 42 --repeats 1 --no-retry" in text
     assert "python -m maxionbench.cli run --config configs/scenarios/s1_ann_frontier_qdrant_local.yaml --seed 42 --repeats 1 --no-retry" in text
