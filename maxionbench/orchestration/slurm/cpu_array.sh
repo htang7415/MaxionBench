@@ -68,6 +68,7 @@ mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "${SCENARIO_NAME}"
 STAGED_CONFIG="$(mb_stage_config_to_tmp "${MB_PREFLIGHT_CONFIG}")"
+SERVICE_STARTED=0
 
 EXTRA_ARGS=()
 if [[ "${SCENARIO_KEY}" == "s2_filtered_ann" || "${SCENARIO_KEY}" == "s3_churn_smooth" || "${SCENARIO_KEY}" == "s3b_churn_bursty" ]]; then
@@ -78,5 +79,16 @@ if [[ "${SCENARIO_KEY}" == "s2_filtered_ann" || "${SCENARIO_KEY}" == "s3_churn_s
   EXTRA_ARGS+=(--d3-params "${D3_PARAMS_PATH}")
 fi
 
+if mb_engine_requires_service "${STAGED_CONFIG}"; then
+  trap 'mb_stop_engine_services' EXIT
+  mb_start_engine_services "${STAGED_CONFIG}"
+  mb_wait_engine_health "${STAGED_CONFIG}"
+  SERVICE_STARTED=1
+fi
+
 mb_run_benchmark "${STAGED_CONFIG}" --seed "${MAXIONBENCH_SEED:-42}" "${EXTRA_ARGS[@]}"
+if [[ "${SERVICE_STARTED}" -eq 1 ]]; then
+  mb_stop_engine_services
+  trap - EXIT
+fi
 mb_copy_back_output

@@ -180,6 +180,51 @@ your_cluster:
     assert "--gres" not in cpu_cmd
 
 
+def test_submit_steps_warns_on_unknown_step_override_keys(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+    caplog,
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh", "download_datasets.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    overrides_path = tmp_path / "profiles_local.yaml"
+    overrides_path.write_text(
+        """
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+  step_overrides:
+    downlod_datasets:
+      - ["--cpus-per-task", "4"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(overrides_path))
+
+    caplog.set_level("WARNING")
+    submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=False, download_datasets=True),
+        seed=42,
+        slurm_profile="your_cluster",
+        dry_run=True,
+    )
+
+    assert "Ignoring unknown your_cluster.step_overrides keys: downlod_datasets" in caplog.text
+    assert "Known step keys:" in caplog.text
+
+
 def test_submit_steps_exports_output_root_when_provided(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
@@ -361,11 +406,17 @@ def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None
         assert "MAXIONBENCH_SLURM_RUN_MANIFEST=artifacts/slurm_manifests/latest/run_manifest.json" in export_value
 
 
-def test_submit_steps_uses_tracked_cluster_profile_examples(tmp_path: Path) -> None:
+def test_submit_steps_uses_tracked_cluster_profile_examples(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
     for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
+    monkeypatch.setenv("MAXIONBENCH_SLURM_ACCOUNT", "tracked-account")
 
     summary = submit_steps(
         slurm_dir=slurm_dir,
@@ -381,3 +432,30 @@ def test_submit_steps_uses_tracked_cluster_profile_examples(tmp_path: Path) -> N
     assert calibrate_cmd[calibrate_cmd.index("--cpus-per-task") + 1] == "96"
     assert "--gres" in calibrate_cmd
     assert calibrate_cmd[calibrate_cmd.index("--gres") + 1] == "gpu:1"
+
+
+def test_submit_steps_expands_env_placeholders_in_tracked_profiles(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
+    monkeypatch.setenv("MAXIONBENCH_SLURM_ACCOUNT", "tracked-account")
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PARTITION", "tracked-partition")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=True),
+        seed=42,
+        slurm_profile="nrel_apptainer",
+        dry_run=True,
+    )
+    calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]
+    assert "--account" in calibrate_cmd
+    assert calibrate_cmd[calibrate_cmd.index("--account") + 1] == "tracked-account"
+    assert "--partition" in calibrate_cmd
+    assert calibrate_cmd[calibrate_cmd.index("--partition") + 1] == "tracked-partition"

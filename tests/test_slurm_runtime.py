@@ -7,7 +7,7 @@ import yaml
 
 from maxionbench.orchestration.slurm import preflight as preflight_mod
 from maxionbench.orchestration.slurm.preflight import evaluate_preflight
-from maxionbench.runtime.ports import allocate_named_ports, allocate_port_range
+from maxionbench.runtime.ports import allocate_named_ports, allocate_port, allocate_port_range
 
 
 def test_allocate_port_range_and_named_ports() -> None:
@@ -18,6 +18,20 @@ def test_allocate_port_range_and_named_ports() -> None:
     named = allocate_named_ports(["a", "b", "a"], base=26000, span=1000)
     assert set(named.keys()) == {"a", "b"}
     assert named["b"] == named["a"] + 1
+
+
+def test_allocate_port_uses_array_task_id(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    monkeypatch.setenv("SLURM_JOB_ID", "4242")
+    monkeypatch.setenv("SLURM_ARRAY_TASK_ID", "3")
+    first = allocate_port(base=27000, span=1000)
+
+    monkeypatch.setenv("SLURM_ARRAY_TASK_ID", "4")
+    second = allocate_port(base=27000, span=1000)
+
+    assert first != second
+    assert second == first + 1
 
 
 def test_preflight_uses_manifest_when_available(tmp_path: Path) -> None:
@@ -164,6 +178,13 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_CONTAINER_BIND" in text
     assert "MAXIONBENCH_HF_CACHE_DIR" in text
     assert "MAXIONBENCH_DATASET_ENV_SH" in text
+    assert "MAXIONBENCH_QDRANT_IMAGE" in text
+    assert "MAXIONBENCH_PGVECTOR_IMAGE" in text
+    assert "MAXIONBENCH_OPENSEARCH_IMAGE" in text
+    assert "MAXIONBENCH_WEAVIATE_IMAGE" in text
+    assert "MAXIONBENCH_MILVUS_ETCD_IMAGE" in text
+    assert "MAXIONBENCH_MILVUS_MINIO_IMAGE" in text
+    assert "MAXIONBENCH_MILVUS_IMAGE" in text
     assert "mb_source_dataset_env()" in text
     assert "apptainer exec" in text
     assert "mb_python()" in text
@@ -174,6 +195,29 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert gate_marker in text
     assert runner_marker in text
     assert text.index(gate_marker) < text.index(runner_marker)
+
+
+def test_slurm_common_revalidates_fallback_config_after_preflight_failure() -> None:
+    text = Path("maxionbench/orchestration/slurm/common.sh").read_text(encoding="utf-8")
+    assert 'mb_log "scratch preflight failed, validating fallback config ${resolved_fallback}"' in text
+    assert 'if mb_run_scratch_preflight "${resolved_fallback}"; then' in text
+    assert 'mb_log "fallback config ${resolved_fallback} also failed scratch preflight"' in text
+
+
+def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
+    text = Path("maxionbench/orchestration/slurm/common.sh").read_text(encoding="utf-8")
+    assert "mb_detect_engine_runtime_mode()" in text
+    assert "mb_engine_requires_service()" in text
+    assert "mb_start_engine_services()" in text
+    assert "mb_stop_engine_services()" in text
+    assert "mb_wait_engine_health()" in text
+    assert "mb_start_qdrant_service()" in text
+    assert "mb_start_pgvector_service()" in text
+    assert "mb_start_opensearch_service()" in text
+    assert "mb_start_weaviate_service()" in text
+    assert "mb_start_milvus_services()" in text
+    assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
+    assert "MAXIONBENCH_PGVECTOR_DSN=" in text
 
 
 def test_cpu_array_includes_d3_matched_s1_baseline_config() -> None:
@@ -199,6 +243,17 @@ def test_cpu_array_supports_skip_s6_env_flag() -> None:
     assert "skipping S6 task index" in text
 
 
+def test_cpu_array_starts_and_stops_managed_engine_services() -> None:
+    text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
+    assert 'if mb_engine_requires_service "${STAGED_CONFIG}"; then' in text
+    assert "mb_start_engine_services" in text
+    assert "mb_wait_engine_health" in text
+    assert "trap 'mb_stop_engine_services' EXIT" in text
+    assert "SERVICE_STARTED=1" in text
+    assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
+    assert "mb_stop_engine_services" in text
+
+
 def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
     assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
@@ -207,6 +262,17 @@ def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
     assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
     assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+
+
+def test_gpu_array_starts_and_stops_managed_engine_services() -> None:
+    text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
+    assert 'if mb_engine_requires_service "${STAGED_CONFIG}"; then' in text
+    assert "mb_start_engine_services" in text
+    assert "mb_wait_engine_health" in text
+    assert "trap 'mb_stop_engine_services' EXIT" in text
+    assert "SERVICE_STARTED=1" in text
+    assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
+    assert "mb_stop_engine_services" in text
 
 
 def test_new_slurm_pipeline_scripts_exist() -> None:

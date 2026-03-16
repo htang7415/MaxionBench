@@ -52,6 +52,18 @@ mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "${SCENARIO_NAME}"
 STAGED_CONFIG="$(mb_stage_config_to_tmp "${MB_PREFLIGHT_CONFIG}")"
+SERVICE_STARTED=0
+
+if mb_engine_requires_service "${STAGED_CONFIG}"; then
+  trap 'mb_stop_engine_services' EXIT
+  mb_start_engine_services "${STAGED_CONFIG}"
+  mb_wait_engine_health "${STAGED_CONFIG}"
+  SERVICE_STARTED=1
+fi
 
 mb_run_benchmark "${STAGED_CONFIG}" --seed "${MAXIONBENCH_SEED:-42}"
+if [[ "${SERVICE_STARTED}" -eq 1 ]]; then
+  mb_stop_engine_services
+  trap - EXIT
+fi
 mb_copy_back_output
