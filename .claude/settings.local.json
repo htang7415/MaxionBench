@@ -21,7 +21,11 @@
       "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/queries.jsonl /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/corpus.jsonl /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/beir/*/qrels.tsv)",
       "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D4/crag/small_slice/*)",
       "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D3/yfcc-10M/*.jsonl)",
-      "Bash(ls -lh /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D3/yfcc-10M/*.jsonl)"
+      "Bash(ls -lh /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/dataset/processed/D3/yfcc-10M/*.jsonl)",
+      "Bash(ls -la /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/*.sh /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/*.yml /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/.env*)",
+      "Bash(grep -E \"\\\\.\\(sh|yaml|py\\)$\")",
+      "Bash(wc -l /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/maxionbench/orchestration/slurm/*.py /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/maxionbench/orchestration/slurm/*.sh)",
+      "Bash(ls -la /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/tests/test_*slurm*.py /Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/tests/test_*docker*.py)"
     ]
   }
 }

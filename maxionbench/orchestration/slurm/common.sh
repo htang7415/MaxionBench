@@ -20,6 +20,14 @@ export MAXIONBENCH_HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
 export MAXIONBENCH_DATASET_ENV_SH="${MAXIONBENCH_DATASET_ENV_SH:-${ROOT_DIR}/artifacts/prefetch/dataset_env.sh}"
 export MAXIONBENCH_D3_PARAMS_PATH="${MAXIONBENCH_D3_PARAMS_PATH:-}"
 export MAXIONBENCH_SLURM_RUN_MANIFEST="${MAXIONBENCH_SLURM_RUN_MANIFEST:-}"
+export MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S="${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S:-120}"
+export MAXIONBENCH_QDRANT_IMAGE="${MAXIONBENCH_QDRANT_IMAGE:-}"
+export MAXIONBENCH_PGVECTOR_IMAGE="${MAXIONBENCH_PGVECTOR_IMAGE:-}"
+export MAXIONBENCH_OPENSEARCH_IMAGE="${MAXIONBENCH_OPENSEARCH_IMAGE:-}"
+export MAXIONBENCH_WEAVIATE_IMAGE="${MAXIONBENCH_WEAVIATE_IMAGE:-}"
+export MAXIONBENCH_MILVUS_ETCD_IMAGE="${MAXIONBENCH_MILVUS_ETCD_IMAGE:-}"
+export MAXIONBENCH_MILVUS_MINIO_IMAGE="${MAXIONBENCH_MILVUS_MINIO_IMAGE:-}"
+export MAXIONBENCH_MILVUS_IMAGE="${MAXIONBENCH_MILVUS_IMAGE:-}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -213,10 +221,8 @@ mb_python() {
   esac
 }
 
-mb_scratch_preflight() {
-  local config_path="$1"
-  local resolved
-  resolved="$(mb_resolve_config "${config_path}")"
+mb_run_scratch_preflight() {
+  local resolved="$1"
   local summary
   local status
 
@@ -231,7 +237,15 @@ mb_scratch_preflight() {
   export MB_PREFLIGHT_SUMMARY="${summary}"
   mb_log "preflight=${summary}"
 
-  if [[ "${status}" -eq 0 ]]; then
+  return "${status}"
+}
+
+mb_scratch_preflight() {
+  local config_path="$1"
+  local resolved
+  resolved="$(mb_resolve_config "${config_path}")"
+
+  if mb_run_scratch_preflight "${resolved}"; then
     export MB_PREFLIGHT_CONFIG="${resolved}"
     return 0
   fi
@@ -248,9 +262,12 @@ PY
     local resolved_fallback
     resolved_fallback="$(mb_resolve_config "${fallback}")"
     if [[ -f "${resolved_fallback}" ]]; then
-      mb_log "scratch preflight failed, applying fallback config ${resolved_fallback}"
-      export MB_PREFLIGHT_CONFIG="${resolved_fallback}"
-      return 0
+      mb_log "scratch preflight failed, validating fallback config ${resolved_fallback}"
+      if mb_run_scratch_preflight "${resolved_fallback}"; then
+        export MB_PREFLIGHT_CONFIG="${resolved_fallback}"
+        return 0
+      fi
+      mb_log "fallback config ${resolved_fallback} also failed scratch preflight"
     fi
   fi
 
@@ -261,7 +278,24 @@ mb_allocate_ports() {
   local payload
   payload="$(mb_python - <<'PY'
 from maxionbench.runtime.ports import allocate_named_ports
-ports = allocate_named_ports(["qdrant", "weaviate", "opensearch", "lancedb", "milvus"], base=20000, span=20000)
+ports = allocate_named_ports(
+    [
+        "qdrant",
+        "qdrant_grpc",
+        "weaviate",
+        "opensearch",
+        "opensearch_transport",
+        "lancedb",
+        "milvus",
+        "milvus_metrics",
+        "milvus_etcd",
+        "milvus_minio",
+        "milvus_minio_console",
+        "pgvector",
+    ],
+    base=20000,
+    span=20000,
+)
 for name, port in sorted(ports.items()):
     print(f"{name}={port}")
 PY
@@ -272,6 +306,350 @@ PY
       export "MAXIONBENCH_PORT_${upper}=${value}"
     fi
   done <<<"${payload}"
+
+  export MAXIONBENCH_QDRANT_HOST="127.0.0.1"
+  export MAXIONBENCH_QDRANT_PORT="${MAXIONBENCH_PORT_QDRANT}"
+  export MAXIONBENCH_MILVUS_HOST="127.0.0.1"
+  export MAXIONBENCH_MILVUS_PORT="${MAXIONBENCH_PORT_MILVUS}"
+  export MAXIONBENCH_OPENSEARCH_HOST="127.0.0.1"
+  export MAXIONBENCH_OPENSEARCH_PORT="${MAXIONBENCH_PORT_OPENSEARCH}"
+  export MAXIONBENCH_OPENSEARCH_SCHEME="http"
+  export MAXIONBENCH_WEAVIATE_HOST="127.0.0.1"
+  export MAXIONBENCH_WEAVIATE_PORT="${MAXIONBENCH_PORT_WEAVIATE}"
+  export MAXIONBENCH_WEAVIATE_SCHEME="http"
+  export MAXIONBENCH_PGVECTOR_PORT="${MAXIONBENCH_PORT_PGVECTOR}"
+  export MAXIONBENCH_PGVECTOR_DSN="postgresql://postgres:postgres@127.0.0.1:${MAXIONBENCH_PORT_PGVECTOR}/postgres"
+  export MAXIONBENCH_LANCEDB_SERVICE_URL="http://127.0.0.1:${MAXIONBENCH_PORT_LANCEDB}"
+  if [[ -z "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI:-}" ]]; then
+    export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"
+  fi
+  mkdir -p "${MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI}"
+}
+
+mb_engine_runtime_root() {
+  local job_id="${SLURM_JOB_ID:-local}"
+  local task_id="${SLURM_ARRAY_TASK_ID:-0}"
+  echo "${SLURM_TMPDIR}/maxionbench_engine_runtime/${job_id}_${task_id}"
+}
+
+mb_resolve_apptainer_image() {
+  local raw_path="$1"
+  if [[ -z "${raw_path}" ]]; then
+    echo ""
+    return 0
+  fi
+  mb_resolve_host_path "${raw_path}"
+}
+
+mb_require_apptainer_service_image() {
+  local env_name="$1"
+  local label="$2"
+  local raw_path="${!env_name:-}"
+  if [[ -z "${raw_path}" ]]; then
+    mb_die "${env_name} must be set to a prebuilt Apptainer image for ${label}"
+  fi
+  local resolved
+  resolved="$(mb_resolve_apptainer_image "${raw_path}")"
+  if [[ ! -f "${resolved}" ]]; then
+    mb_die "${label} Apptainer image not found: ${resolved}"
+  fi
+  echo "${resolved}"
+}
+
+mb_detect_engine_runtime_mode() {
+  local config_path="$1"
+  local resolved
+  resolved="$(mb_resolve_config "${config_path}")"
+  mb_python - <<'PY' "${resolved}"
+from pathlib import Path
+import sys
+
+from maxionbench.orchestration.config_schema import load_run_config
+
+cfg = load_run_config(Path(sys.argv[1]).resolve())
+engine = str(cfg.engine).strip()
+mode = "embedded"
+if engine == "qdrant" and cfg.adapter_options.get("location"):
+    mode = "embedded"
+elif engine == "lancedb-service":
+    mode = "embedded" if cfg.adapter_options.get("inproc_uri") else "service"
+elif engine in {"qdrant", "milvus", "opensearch", "pgvector", "weaviate"}:
+    mode = "service"
+print(f"{engine}|{mode}")
+PY
+}
+
+mb_engine_requires_service() {
+  local config_path="$1"
+  local runtime_mode
+  runtime_mode="$(mb_detect_engine_runtime_mode "${config_path}")"
+  local engine=""
+  local mode=""
+  IFS='|' read -r engine mode <<<"${runtime_mode}"
+  [[ "${mode}" == "service" ]]
+}
+
+mb_register_engine_pid() {
+  local name="$1"
+  local pid="$2"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  mkdir -p "${runtime_root}"
+  local pid_file="${runtime_root}/pids.tsv"
+  printf '%s\t%s\n' "${name}" "${pid}" >> "${pid_file}"
+}
+
+mb_start_apptainer_service_process() {
+  local name="$1"
+  local image_path="$2"
+  local service_cmd="$3"
+  local env_array_name="$4"
+  local bind_array_name="$5"
+  local -n env_specs_ref="${env_array_name}"
+  local -n bind_specs_ref="${bind_array_name}"
+
+  if ! command -v apptainer >/dev/null 2>&1; then
+    mb_die "Apptainer is required to start managed engine services"
+  fi
+
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local log_dir="${runtime_root}/logs"
+  mkdir -p "${log_dir}"
+  local log_file="${log_dir}/${name}.log"
+
+  local -a container_cmd=(env)
+  local env_spec=""
+  for env_spec in "${env_specs_ref[@]}"; do
+    if [[ -n "${env_spec}" ]]; then
+      container_cmd+=("${env_spec}")
+    fi
+  done
+  container_cmd+=(apptainer exec --cleanenv)
+  if mb_apptainer_use_nv; then
+    container_cmd+=(--nv)
+  fi
+
+  local bind_spec=""
+  while IFS= read -r bind_spec; do
+    if [[ -n "${bind_spec}" ]]; then
+      container_cmd+=(--bind "${bind_spec}")
+    fi
+  done < <(mb_container_bind_specs)
+
+  for bind_spec in "${bind_specs_ref[@]}"; do
+    if [[ -n "${bind_spec}" ]]; then
+      container_cmd+=(--bind "${bind_spec}")
+    fi
+  done
+
+  container_cmd+=("${image_path}" /bin/sh -lc "exec ${service_cmd}")
+
+  "${container_cmd[@]}" >"${log_file}" 2>&1 &
+  local pid=$!
+  sleep 1
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    mb_die "managed engine service ${name} exited early; see ${log_file}"
+  fi
+  mb_register_engine_pid "${name}" "${pid}"
+  mb_log "started engine service ${name} pid=${pid} log=${log_file}"
+}
+
+mb_start_qdrant_service() {
+  local image_path
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant")"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local storage_dir="${runtime_root}/qdrant/storage"
+  mkdir -p "${storage_dir}"
+  local -a env_specs=(
+    "QDRANT__SERVICE__HOST=0.0.0.0"
+    "QDRANT__SERVICE__HTTP_PORT=${MAXIONBENCH_PORT_QDRANT}"
+    "QDRANT__SERVICE__GRPC_PORT=${MAXIONBENCH_PORT_QDRANT_GRPC}"
+    "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage"
+  )
+  local -a bind_specs=("${storage_dir}:/qdrant/storage")
+  local cmd="${MAXIONBENCH_QDRANT_START_CMD:-qdrant}"
+  mb_start_apptainer_service_process "qdrant" "${image_path}" "${cmd}" env_specs bind_specs
+}
+
+mb_start_pgvector_service() {
+  local image_path
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector")"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local data_dir="${runtime_root}/pgvector/data"
+  mkdir -p "${data_dir}"
+  local -a env_specs=(
+    "POSTGRES_USER=postgres"
+    "POSTGRES_PASSWORD=postgres"
+    "POSTGRES_DB=postgres"
+    "PGDATA=/var/lib/postgresql/data/pgdata"
+  )
+  local -a bind_specs=("${data_dir}:/var/lib/postgresql/data")
+  local cmd="${MAXIONBENCH_PGVECTOR_START_CMD:-docker-entrypoint.sh postgres -p ${MAXIONBENCH_PORT_PGVECTOR}}"
+  mb_start_apptainer_service_process "pgvector" "${image_path}" "${cmd}" env_specs bind_specs
+}
+
+mb_start_opensearch_service() {
+  local image_path
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_OPENSEARCH_IMAGE" "opensearch")"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local data_dir="${runtime_root}/opensearch/data"
+  local config_dir="${runtime_root}/opensearch/config"
+  local config_path="${config_dir}/opensearch.yml"
+  mkdir -p "${data_dir}" "${config_dir}"
+  cat > "${config_path}" <<EOF
+cluster.name: maxionbench-slurm
+network.host: 0.0.0.0
+http.port: ${MAXIONBENCH_PORT_OPENSEARCH}
+transport.port: ${MAXIONBENCH_PORT_OPENSEARCH_TRANSPORT}
+discovery.type: single-node
+plugins.security.disabled: true
+path.data: /usr/share/opensearch/data
+EOF
+  local -a env_specs=(
+    "DISABLE_SECURITY_PLUGIN=true"
+    "OPENSEARCH_JAVA_OPTS=${MAXIONBENCH_OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}"
+  )
+  local -a bind_specs=(
+    "${data_dir}:/usr/share/opensearch/data"
+    "${config_path}:/usr/share/opensearch/config/opensearch.yml"
+  )
+  local cmd="${MAXIONBENCH_OPENSEARCH_START_CMD:-opensearch}"
+  mb_start_apptainer_service_process "opensearch" "${image_path}" "${cmd}" env_specs bind_specs
+}
+
+mb_start_weaviate_service() {
+  local image_path
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_WEAVIATE_IMAGE" "weaviate")"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local data_dir="${runtime_root}/weaviate/data"
+  mkdir -p "${data_dir}"
+  local -a env_specs=(
+    "QUERY_DEFAULTS_LIMIT=20"
+    "AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true"
+    "PERSISTENCE_DATA_PATH=/var/lib/weaviate"
+    "DEFAULT_VECTORIZER_MODULE=none"
+    "ENABLE_MODULES="
+    "CLUSTER_HOSTNAME=node1"
+  )
+  local -a bind_specs=("${data_dir}:/var/lib/weaviate")
+  local cmd="${MAXIONBENCH_WEAVIATE_START_CMD:-weaviate --host 0.0.0.0 --port ${MAXIONBENCH_PORT_WEAVIATE}}"
+  mb_start_apptainer_service_process "weaviate" "${image_path}" "${cmd}" env_specs bind_specs
+}
+
+mb_start_milvus_services() {
+  local etcd_image
+  local minio_image
+  local milvus_image
+  etcd_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_ETCD_IMAGE" "milvus-etcd")"
+  minio_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_MINIO_IMAGE" "milvus-minio")"
+  milvus_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_IMAGE" "milvus")"
+
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+
+  local etcd_dir="${runtime_root}/milvus/etcd"
+  mkdir -p "${etcd_dir}"
+  local -a etcd_env=()
+  local -a etcd_binds=("${etcd_dir}:/etcd")
+  local etcd_cmd="${MAXIONBENCH_MILVUS_ETCD_START_CMD:-etcd -advertise-client-urls=http://127.0.0.1:${MAXIONBENCH_PORT_MILVUS_ETCD} -listen-client-urls=http://0.0.0.0:${MAXIONBENCH_PORT_MILVUS_ETCD} --data-dir=/etcd}"
+  mb_start_apptainer_service_process "milvus-etcd" "${etcd_image}" "${etcd_cmd}" etcd_env etcd_binds
+
+  local minio_dir="${runtime_root}/milvus/minio"
+  mkdir -p "${minio_dir}"
+  local -a minio_env=(
+    "MINIO_ROOT_USER=minioadmin"
+    "MINIO_ROOT_PASSWORD=minioadmin"
+  )
+  local -a minio_binds=("${minio_dir}:/minio_data")
+  local minio_cmd="${MAXIONBENCH_MILVUS_MINIO_START_CMD:-minio server /minio_data --address :${MAXIONBENCH_PORT_MILVUS_MINIO} --console-address :${MAXIONBENCH_PORT_MILVUS_MINIO_CONSOLE}}"
+  mb_start_apptainer_service_process "milvus-minio" "${minio_image}" "${minio_cmd}" minio_env minio_binds
+
+  local milvus_dir="${runtime_root}/milvus/data"
+  mkdir -p "${milvus_dir}"
+  local -a milvus_env=(
+    "ETCD_ENDPOINTS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_ETCD}"
+    "MINIO_ADDRESS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_MINIO}"
+    "MILVUS_PROXY_PORT=${MAXIONBENCH_PORT_MILVUS}"
+    "MILVUS_METRICS_PORT=${MAXIONBENCH_PORT_MILVUS_METRICS}"
+  )
+  local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
+  local milvus_cmd="${MAXIONBENCH_MILVUS_START_CMD:-milvus run standalone}"
+  mb_start_apptainer_service_process "milvus" "${milvus_image}" "${milvus_cmd}" milvus_env milvus_binds
+}
+
+mb_start_engine_services() {
+  local config_path="$1"
+  local runtime_mode
+  runtime_mode="$(mb_detect_engine_runtime_mode "${config_path}")"
+  local engine=""
+  local mode=""
+  IFS='|' read -r engine mode <<<"${runtime_mode}"
+
+  if [[ "${mode}" != "service" ]]; then
+    mb_log "engine ${engine} uses embedded/inproc mode; no managed service start needed"
+    return 0
+  fi
+
+  case "${engine}" in
+    qdrant)
+      mb_start_qdrant_service
+      ;;
+    pgvector)
+      mb_start_pgvector_service
+      ;;
+    opensearch)
+      mb_start_opensearch_service
+      ;;
+    weaviate)
+      mb_start_weaviate_service
+      ;;
+    milvus)
+      mb_start_milvus_services
+      ;;
+    lancedb-service)
+      mb_die "lancedb-service HTTP mode is not implemented for Slurm Apptainer jobs; set MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI or use lancedb-inproc"
+      ;;
+    *)
+      mb_log "engine ${engine} does not require a managed service"
+      ;;
+  esac
+}
+
+mb_stop_engine_services() {
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local pid_file="${runtime_root}/pids.tsv"
+  if [[ ! -f "${pid_file}" ]]; then
+    return 0
+  fi
+
+  tac "${pid_file}" 2>/dev/null | while IFS=$'\t' read -r name pid; do
+    if [[ -z "${pid:-}" ]]; then
+      continue
+    fi
+    if kill -0 "${pid}" >/dev/null 2>&1; then
+      mb_log "stopping engine service ${name} pid=${pid}"
+      kill "${pid}" >/dev/null 2>&1 || true
+      wait "${pid}" 2>/dev/null || true
+    fi
+  done
+  rm -f "${pid_file}"
+}
+
+mb_wait_engine_health() {
+  local config_path="$1"
+  local resolved
+  resolved="$(mb_resolve_config "${config_path}")"
+  mb_log "waiting for adapter health config=${resolved} timeout=${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}s"
+  mb_python -m maxionbench.cli wait-adapter \
+    --config "${resolved}" \
+    --timeout-s "${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}" \
+    --json
 }
 
 mb_stage_config_to_tmp() {

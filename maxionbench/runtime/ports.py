@@ -8,9 +8,10 @@ from typing import Sequence
 
 def allocate_port(base: int = 20000, span: int = 20000, offset: int = 0) -> int:
     job_id = int(os.environ.get("SLURM_JOB_ID", "0"))
+    task_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", "0"))
     if span <= 0:
         raise ValueError("span must be positive")
-    return base + (job_id % span) + offset
+    return base + (((job_id * 100) + task_id) % span) + offset
 
 
 def allocate_port_range(

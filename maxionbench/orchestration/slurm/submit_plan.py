@@ -5,6 +5,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from dataclasses import dataclass
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -12,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from maxionbench.orchestration.config_schema import expand_env_placeholders
 from maxionbench.orchestration.slurm.run_manifest import RunManifest, build_run_manifest
 
 
@@ -26,6 +28,7 @@ class SubmitStep:
 SLURM_PROFILE_OVERRIDES_ENV = "MAXIONBENCH_SLURM_PROFILE_OVERRIDES"
 DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH = Path(__file__).resolve().with_name("profiles_local.yaml")
 DEFAULT_TRACKED_PROFILES_PATH = Path(__file__).resolve().with_name("profiles_clusters.example.yaml")
+_LOG = logging.getLogger(__name__)
 
 
 def build_submit_steps(
@@ -212,6 +215,9 @@ def submit_steps(
         raise ValueError("container_runtime is required when container_image is set")
 
     resolved_dir = slurm_dir.resolve()
+    normalized_slurm_profile = str(slurm_profile).strip().lower() if slurm_profile else None
+    if normalized_slurm_profile:
+        _warn_unknown_step_override_keys(normalized_slurm_profile, valid_step_keys={step.key for step in steps})
     job_ids: dict[str, str] = {}
     submitted: list[dict[str, Any]] = []
     for step in steps:
@@ -418,7 +424,8 @@ def _normalize_flag_specs(raw_specs: Any, *, label: str) -> tuple[tuple[str, str
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             raise ValueError(f"{label}[{idx}] must be a [flag, value] pair")
         flag = str(item[0]).strip()
-        value = str(item[1]).strip()
+        expanded_value = expand_env_placeholders(item[1])
+        value = "" if expanded_value is None else str(expanded_value).strip()
         if not flag.startswith("--"):
             raise ValueError(f"{label}[{idx}] flag must start with '--'")
         if not value:
@@ -433,6 +440,29 @@ def _normalize_step_override_specs(raw_payload: Any, *, step_key: str, profile: 
     if not isinstance(raw_payload, dict):
         raise ValueError(f"{profile}.step_overrides must be a mapping of step_key -> [flag, value] pairs")
     return _normalize_flag_specs(raw_payload.get(step_key), label=f"{profile}.step_overrides.{step_key}")
+
+
+def _warn_unknown_step_override_keys(profile: str, *, valid_step_keys: set[str]) -> None:
+    profiles = _load_local_profile_overrides()
+    profile_payload = profiles.get(profile)
+    if profile_payload is None:
+        return
+    raw_payload = profile_payload.get("step_overrides")
+    if raw_payload in (None, "") or not isinstance(raw_payload, dict):
+        return
+    unknown = sorted(
+        key
+        for key in (str(item).strip() for item in raw_payload.keys())
+        if key and key not in valid_step_keys
+    )
+    if not unknown:
+        return
+    _LOG.warning(
+        "Ignoring unknown %s.step_overrides keys: %s. Known step keys: %s",
+        profile,
+        ", ".join(unknown),
+        ", ".join(sorted(valid_step_keys)),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
