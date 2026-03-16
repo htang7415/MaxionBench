@@ -10,11 +10,16 @@ export MAXIONBENCH_SKIP_PRE_RUN_GATE="${MAXIONBENCH_SKIP_PRE_RUN_GATE:-0}"
 export MAXIONBENCH_ALLOW_GPU_UNAVAILABLE="${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}"
 export MAXIONBENCH_CONFORMANCE_MATRIX="${MAXIONBENCH_CONFORMANCE_MATRIX:-${ROOT_DIR}/artifacts/conformance/conformance_matrix.csv}"
 export MAXIONBENCH_OUTPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/slurm}"
+export MAXIONBENCH_DATASET_ROOT="${MAXIONBENCH_DATASET_ROOT:-dataset}"
+export MAXIONBENCH_DATASET_CACHE_DIR="${MAXIONBENCH_DATASET_CACHE_DIR:-.cache}"
+export MAXIONBENCH_FIGURES_ROOT="${MAXIONBENCH_FIGURES_ROOT:-artifacts/figures}"
 export MAXIONBENCH_CONTAINER_RUNTIME="${MAXIONBENCH_CONTAINER_RUNTIME:-}"
 export MAXIONBENCH_CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE:-}"
 export MAXIONBENCH_CONTAINER_BIND="${MAXIONBENCH_CONTAINER_BIND:-}"
 export MAXIONBENCH_HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
 export MAXIONBENCH_DATASET_ENV_SH="${MAXIONBENCH_DATASET_ENV_SH:-${ROOT_DIR}/artifacts/prefetch/dataset_env.sh}"
+export MAXIONBENCH_D3_PARAMS_PATH="${MAXIONBENCH_D3_PARAMS_PATH:-}"
+export MAXIONBENCH_SLURM_RUN_MANIFEST="${MAXIONBENCH_SLURM_RUN_MANIFEST:-}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -96,10 +101,29 @@ mb_container_bind_specs() {
   local resolved_output_root
   resolved_output_root="$(mb_resolve_host_path "${MAXIONBENCH_OUTPUT_ROOT:-}")"
   if [[ -n "${resolved_output_root}" ]]; then
-    local output_parent
-    output_parent="$(dirname "${resolved_output_root}")"
-    mkdir -p "${output_parent}"
-    printf '%s\n' "${output_parent}:${output_parent}"
+    mkdir -p "${resolved_output_root}"
+    printf '%s\n' "${resolved_output_root}:${resolved_output_root}"
+  fi
+
+  local resolved_dataset_root
+  resolved_dataset_root="$(mb_resolve_host_path "${MAXIONBENCH_DATASET_ROOT:-}")"
+  if [[ -n "${resolved_dataset_root}" ]]; then
+    mkdir -p "${resolved_dataset_root}"
+    printf '%s\n' "${resolved_dataset_root}:${resolved_dataset_root}"
+  fi
+
+  local resolved_dataset_cache
+  resolved_dataset_cache="$(mb_resolve_host_path "${MAXIONBENCH_DATASET_CACHE_DIR:-}")"
+  if [[ -n "${resolved_dataset_cache}" ]]; then
+    mkdir -p "${resolved_dataset_cache}"
+    printf '%s\n' "${resolved_dataset_cache}:${resolved_dataset_cache}"
+  fi
+
+  local resolved_figures_root
+  resolved_figures_root="$(mb_resolve_host_path "${MAXIONBENCH_FIGURES_ROOT:-}")"
+  if [[ -n "${resolved_figures_root}" ]]; then
+    mkdir -p "${resolved_figures_root}"
+    printf '%s\n' "${resolved_figures_root}:${resolved_figures_root}"
   fi
 
   if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
@@ -118,6 +142,24 @@ mb_container_bind_specs() {
         printf '%s\n' "${bind_spec}"
       fi
     done
+  fi
+
+  if [[ -n "${MAXIONBENCH_D3_PARAMS_PATH:-}" ]]; then
+    local resolved_d3_params
+    resolved_d3_params="$(mb_resolve_host_path "${MAXIONBENCH_D3_PARAMS_PATH}")"
+    local d3_params_parent
+    d3_params_parent="$(dirname "${resolved_d3_params}")"
+    mkdir -p "${d3_params_parent}"
+    printf '%s\n' "${d3_params_parent}:${d3_params_parent}"
+  fi
+
+  if [[ -n "${MAXIONBENCH_SLURM_RUN_MANIFEST:-}" ]]; then
+    local resolved_run_manifest
+    resolved_run_manifest="$(mb_resolve_host_path "${MAXIONBENCH_SLURM_RUN_MANIFEST}")"
+    local run_manifest_parent
+    run_manifest_parent="$(dirname "${resolved_run_manifest}")"
+    mkdir -p "${run_manifest_parent}"
+    printf '%s\n' "${run_manifest_parent}:${run_manifest_parent}"
   fi
 }
 
@@ -238,12 +280,12 @@ mb_stage_config_to_tmp() {
   resolved="$(mb_resolve_config "${config_path}")"
   local staged="${SLURM_TMPDIR}/maxionbench_config_${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}.yaml"
   mb_python - <<'PY' "${resolved}" "${staged}" "${SLURM_TMPDIR}" "${MB_OUTPUT_TMP:-}" "${ROOT_DIR}"
-import os
 import pathlib
-import re
 import shutil
 import sys
 import yaml
+
+from maxionbench.orchestration.config_schema import expand_env_placeholders
 
 src = pathlib.Path(sys.argv[1]).resolve()
 dst = pathlib.Path(sys.argv[2]).resolve()
@@ -255,29 +297,7 @@ with src.open("r", encoding="utf-8") as handle:
     payload = yaml.safe_load(handle) or {}
 if not isinstance(payload, dict):
     raise ValueError(f"Expected mapping config: {src}")
-
-env_token_re = re.compile(r"^\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))$")
-
-
-def expand_env(value):
-    if isinstance(value, dict):
-        return {key: expand_env(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [expand_env(item) for item in value]
-    if not isinstance(value, str):
-        return value
-    token = value.strip()
-    match = env_token_re.fullmatch(token)
-    if match is not None:
-        env_name = match.group("braced") or match.group("plain") or ""
-        env_value = os.environ.get(env_name)
-        if env_value in {None, ""}:
-            return None
-        return env_value
-    return os.path.expandvars(value)
-
-
-payload = expand_env(payload)
+payload = expand_env_placeholders(payload)
 
 
 def resolve_source(raw_value: str) -> pathlib.Path:
@@ -309,6 +329,7 @@ def stage_any_path(key: str, bucket: str) -> None:
     payload[key] = str(target)
 
 stage_any_path("dataset_path", "dataset")
+stage_any_path("processed_dataset_path", "processed")
 stage_any_path("d2_base_fvecs_path", "d2")
 stage_any_path("d2_query_fvecs_path", "d2")
 stage_any_path("d2_gt_ivecs_path", "d2")
@@ -323,6 +344,26 @@ with dst.open("w", encoding="utf-8") as handle:
     yaml.safe_dump(payload, handle, sort_keys=True)
 PY
   echo "${staged}"
+}
+
+mb_read_config_field() {
+  local config_path="$1"
+  local field_name="$2"
+  local resolved
+  resolved="$(mb_resolve_config "${config_path}")"
+  mb_python - <<'PY' "${resolved}" "${field_name}"
+import sys
+import yaml
+
+cfg_path = sys.argv[1]
+field_name = sys.argv[2]
+with open(cfg_path, "r", encoding="utf-8") as handle:
+    payload = yaml.safe_load(handle) or {}
+if not isinstance(payload, dict):
+    raise ValueError(f"Expected mapping config: {cfg_path}")
+value = payload.get(field_name)
+print("" if value is None else str(value))
+PY
 }
 
 mb_prepare_output_paths() {

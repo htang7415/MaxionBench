@@ -59,6 +59,49 @@ def _make_processed_ann_dataset(root: Path, *, task_type: str = "ann") -> Path:
     return root
 
 
+def _make_processed_filtered_ann_dataset(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "filtered_ann",
+            "metric": "angular",
+        },
+    )
+    np.save(
+        root / "base.npy",
+        np.asarray(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.8, 0.2],
+                [0.2, 0.8],
+            ],
+            dtype=np.float32,
+        ),
+    )
+    np.save(root / "queries.npy", np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(root / "gt_ids.npy", np.asarray([[0, 2], [1, 3]], dtype=np.int32))
+    _write_jsonl(
+        root / "filters.jsonl",
+        [
+            {"query_id": 0, "must_have_tags": ["tag-a"]},
+            {"query_id": 1, "must_have_tags": ["tag-b"]},
+        ],
+    )
+    _write_jsonl(
+        root / "payloads.jsonl",
+        [
+            {"tenant_id": "tenant-000", "acl_bucket": 1, "time_bucket": 2, "tags": ["tag-a"]},
+            {"tenant_id": "tenant-001", "acl_bucket": 2, "time_bucket": 3, "tags": ["tag-b"]},
+            {"tenant_id": "tenant-002", "acl_bucket": 1, "time_bucket": 4, "tags": ["tag-a", "tag-b"]},
+            {"tenant_id": "tenant-003", "acl_bucket": 3, "time_bucket": 5, "tags": ["tag-c"]},
+        ],
+    )
+    return root
+
+
 def _make_processed_d4_root(root: Path) -> Path:
     beir = root / "beir" / "fiqa"
     beir.mkdir(parents=True, exist_ok=True)
@@ -197,7 +240,7 @@ def test_runner_s4_uses_processed_d4_bundle(tmp_path: Path) -> None:
 
 
 def test_runner_rejects_processed_d3_for_s2_until_scenario_migration_finishes(tmp_path: Path) -> None:
-    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M", task_type="filtered_ann")
+    processed = _make_processed_filtered_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M")
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
@@ -225,12 +268,12 @@ def test_runner_rejects_processed_d3_for_s2_until_scenario_migration_finishes(tm
     cfg_path = tmp_path / "cfg_d3.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
+    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2 filtered execution"):
         run_from_config(cfg_path, cli_overrides=None)
 
 
-def test_runner_rejects_processed_d3_for_s3_until_scenario_migration_finishes(tmp_path: Path) -> None:
-    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M", task_type="filtered_ann")
+def test_runner_s3_uses_processed_d3_dataset_when_baseline_missing_is_allowed(tmp_path: Path) -> None:
+    processed = _make_processed_filtered_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M")
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
@@ -247,7 +290,11 @@ def test_runner_rejects_processed_d3_for_s3_until_scenario_migration_finishes(tm
         "clients_read": 1,
         "clients_write": 1,
         "clients_grid": [1],
+        "allow_missing_s3_baseline": True,
         "search_sweep": [{"hnsw_ef": 32}],
+        "warmup_s": 0,
+        "steady_state_s": 1,
+        "s3_max_events": 1,
         "rpc_baseline_requests": 5,
         "sla_threshold_ms": 120.0,
         "vector_dim": 2,
@@ -258,12 +305,16 @@ def test_runner_rejects_processed_d3_for_s3_until_scenario_migration_finishes(tm
     cfg_path = tmp_path / "cfg_d3_s3.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
-        run_from_config(cfg_path, cli_overrides=None)
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1
+    payload = json.loads(frame.iloc[0]["search_params_json"])
+    assert payload["s1_baseline_missing"] is True
+    assert "p99_inflation_vs_s1_baseline" in payload
 
 
-def test_runner_rejects_processed_d3_for_s3b_until_scenario_migration_finishes(tmp_path: Path) -> None:
-    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M", task_type="filtered_ann")
+def test_runner_s3b_uses_processed_d3_dataset_when_baseline_missing_is_allowed(tmp_path: Path) -> None:
+    processed = _make_processed_filtered_ann_dataset(tmp_path / "processed" / "D3" / "yfcc-10M")
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
@@ -280,7 +331,11 @@ def test_runner_rejects_processed_d3_for_s3b_until_scenario_migration_finishes(t
         "clients_read": 1,
         "clients_write": 1,
         "clients_grid": [1],
+        "allow_missing_s3_baseline": True,
         "search_sweep": [{"hnsw_ef": 32}],
+        "warmup_s": 0,
+        "steady_state_s": 1,
+        "s3_max_events": 1,
         "rpc_baseline_requests": 5,
         "sla_threshold_ms": 120.0,
         "vector_dim": 2,
@@ -291,8 +346,12 @@ def test_runner_rejects_processed_d3_for_s3b_until_scenario_migration_finishes(t
     cfg_path = tmp_path / "cfg_d3_s3b.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="processed D3 datasets are not yet supported for S2/S3"):
-        run_from_config(cfg_path, cli_overrides=None)
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1
+    payload = json.loads(frame.iloc[0]["search_params_json"])
+    assert payload["mode"] == "s3_bursty"
+    assert payload["s1_baseline_missing"] is True
 
 
 def test_runner_enforces_processed_dataset_sha256(tmp_path: Path) -> None:
