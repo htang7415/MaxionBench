@@ -29,6 +29,8 @@ def test_readme_describes_study_scope_and_run_entrypoints() -> None:
     assert "| S6 | D4 | multi-index fusion | clients `16` | fusion budget `200/200`, RRF `k=60`; first deferrable scenario if schedule risk appears |" in text
     assert "bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif" in text
     assert "keep private cluster settings in your local Slurm profile" in text
+    assert "By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the directory where you launch the script." in text
+    assert "--shared-root /shared/path/maxionbench" in text
 
     assert "Mac mini" not in text
     assert "mac mini" not in text

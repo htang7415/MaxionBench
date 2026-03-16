@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 
@@ -24,6 +25,9 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "--container-runtime apptainer" in text
     assert "euler_apptainer" in text
     assert "nrel_apptainer" in text
+    assert "--shared-root <path>" in text
+    assert 'SUBMIT_ROOT="$(pwd -P)"' in text
+    assert 'printf \'%s\\n\' "${SUBMIT_ROOT}"' in text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -75,3 +79,129 @@ def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
             text=True,
         )
         assert completed.returncode == 0, f"{path}: {completed.stdout}{completed.stderr}"
+
+
+def test_run_slurm_pipeline_derives_cluster_storage_defaults(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = repo_dir / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+    submit_root = tmp_path / "submit_root"
+    submit_root.mkdir(parents=True, exist_ok=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "maxionbench_env.log"
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'DATASET=%s\\n' "${MAXIONBENCH_DATASET_ROOT:-}"
+  printf 'CACHE=%s\\n' "${MAXIONBENCH_DATASET_CACHE_DIR:-}"
+  printf 'OUTPUT=%s\\n' "${MAXIONBENCH_OUTPUT_ROOT:-}"
+  printf 'FIGURES=%s\\n' "${MAXIONBENCH_FIGURES_ROOT:-}"
+  printf 'HF=%s\\n' "${MAXIONBENCH_HF_CACHE_DIR:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+    env.pop("MAXIONBENCH_SHARED_ROOT", None)
+    env.pop("MAXIONBENCH_DATASET_ROOT", None)
+    env.pop("MAXIONBENCH_DATASET_CACHE_DIR", None)
+    env.pop("MAXIONBENCH_OUTPUT_ROOT", None)
+    env.pop("MAXIONBENCH_FIGURES_ROOT", None)
+    env.pop("MAXIONBENCH_HF_CACHE_DIR", None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "euler",
+            "--container-image",
+            "/shared/containers/maxionbench.sif",
+        ],
+        cwd=submit_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert f"DATASET={submit_root}/dataset" in log_text
+    assert f"CACHE={submit_root}/.cache" in log_text
+    assert f"OUTPUT={submit_root}/results" in log_text
+    assert f"FIGURES={submit_root}/figures" in log_text
+    assert f"HF={submit_root}/.cache/huggingface" in log_text
+    assert "ARGS=submit-slurm-plan" in log_text
+
+
+def test_run_slurm_pipeline_shared_root_override_derives_all_paths(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    stub_log = tmp_path / "maxionbench_env.log"
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'DATASET=%s\\n' "${MAXIONBENCH_DATASET_ROOT:-}"
+  printf 'CACHE=%s\\n' "${MAXIONBENCH_DATASET_CACHE_DIR:-}"
+  printf 'OUTPUT=%s\\n' "${MAXIONBENCH_OUTPUT_ROOT:-}"
+  printf 'FIGURES=%s\\n' "${MAXIONBENCH_FIGURES_ROOT:-}"
+  printf 'HF=%s\\n' "${MAXIONBENCH_HF_CACHE_DIR:-}"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "run_slurm_pipeline.sh",
+            "--cluster",
+            "nrel",
+            "--container-image",
+            "/shared/containers/maxionbench.sif",
+            "--shared-root",
+            "/projects/demo/maxionbench",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    log_text = stub_log.read_text(encoding="utf-8")
+    assert "DATASET=/projects/demo/maxionbench/dataset" in log_text
+    assert "CACHE=/projects/demo/maxionbench/.cache" in log_text
+    assert "OUTPUT=/projects/demo/maxionbench/results" in log_text
+    assert "FIGURES=/projects/demo/maxionbench/figures" in log_text
+    assert "HF=/projects/demo/maxionbench/.cache/huggingface" in log_text

@@ -8,9 +8,14 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
 
     assert "# MaxionBench Slurm Commands" in text
     assert "download_datasets -> preprocess_datasets -> benchmark arrays -> postprocess" in text
-    assert "cp .env.slurm.example .env.slurm" in text
-    assert "source .env.slurm" in text
     assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
+    assert "The script derives shared paths automatically from the directory where you launch it" in text
+    assert "- `dataset/`" in text
+    assert "- `.cache/`" in text
+    assert "- `results/`" in text
+    assert "- `figures/`" in text
+    assert "- `.cache/huggingface/`" in text
+    assert "--shared-root /shared/path/maxionbench" in text
     assert "bash run_slurm_pipeline.sh \\" in text
     assert "--cluster euler \\" in text
     assert "--cluster nrel \\" in text

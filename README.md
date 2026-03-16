@@ -76,6 +76,12 @@ bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/c
 bash run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
 ```
 
+By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the directory where you launch the script. To use a different shared base path, add:
+
+```bash
+--shared-root /shared/path/maxionbench
+```
+
 ## Validate and generate figures
 
 ```bash
