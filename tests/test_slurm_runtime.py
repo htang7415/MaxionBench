@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -177,6 +178,8 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_CONTAINER_IMAGE" in text
     assert "MAXIONBENCH_CONTAINER_BIND" in text
     assert "MAXIONBENCH_HF_CACHE_DIR" in text
+    assert "MAXIONBENCH_APPTAINER_MODULE" in text
+    assert "MAXIONBENCH_MODULE_INIT_SH" in text
     assert "MAXIONBENCH_DATASET_ENV_SH" in text
     assert "MAXIONBENCH_QDRANT_IMAGE" in text
     assert "MAXIONBENCH_PGVECTOR_IMAGE" in text
@@ -186,6 +189,8 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_MILVUS_MINIO_IMAGE" in text
     assert "MAXIONBENCH_MILVUS_IMAGE" in text
     assert "mb_source_dataset_env()" in text
+    assert "mb_ensure_apptainer()" in text
+    assert "module load" in text
     assert "apptainer exec" in text
     assert "mb_python()" in text
     assert "expand_env_placeholders" in text
@@ -216,8 +221,70 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_opensearch_service()" in text
     assert "mb_start_weaviate_service()" in text
     assert "mb_start_milvus_services()" in text
+    assert "mb_start_apptainer_service_process()" in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
     assert "MAXIONBENCH_PGVECTOR_DSN=" in text
+
+
+def test_slurm_common_loads_apptainer_module_when_binary_missing(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_log = tmp_path / "apptainer.log"
+    fake_image = tmp_path / "maxionbench.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    module_init = tmp_path / "modules.sh"
+    module_init.write_text(
+        f"""module() {{
+  if [[ "${{1:-}}" == "load" && "${{2:-}}" == "apptainer" ]]; then
+    export PATH="{fake_bin_dir}:$PATH"
+    return 0
+  fi
+  return 1
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'export PATH="/usr/bin:/bin"; '
+                f'export MAXIONBENCH_CONTAINER_IMAGE="{fake_image}"; '
+                'export MAXIONBENCH_CONTAINER_RUNTIME="apptainer"; '
+                'export MAXIONBENCH_APPTAINER_MODULE="apptainer"; '
+                f'export MAXIONBENCH_MODULE_INIT_SH="{module_init}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{fake_log}"; '
+                'mb_python -V'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "apptainer not found in PATH; attempting module bootstrap with apptainer" in completed.stdout
+    assert f"sourced module init {module_init}" in completed.stdout
+    assert "loading apptainer module apptainer" in completed.stdout
+    assert f"using apptainer binary {fake_apptainer}" in completed.stdout
+    logged_args = fake_log.read_text(encoding="utf-8")
+    assert "exec" in logged_args
+    assert str(fake_image) in logged_args
 
 
 def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:

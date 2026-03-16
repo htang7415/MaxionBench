@@ -17,6 +17,9 @@ export MAXIONBENCH_CONTAINER_RUNTIME="${MAXIONBENCH_CONTAINER_RUNTIME:-}"
 export MAXIONBENCH_CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE:-}"
 export MAXIONBENCH_CONTAINER_BIND="${MAXIONBENCH_CONTAINER_BIND:-}"
 export MAXIONBENCH_HF_CACHE_DIR="${MAXIONBENCH_HF_CACHE_DIR:-}"
+export MAXIONBENCH_APPTAINER_MODULE="${MAXIONBENCH_APPTAINER_MODULE:-apptainer}"
+export MAXIONBENCH_MODULE_INIT_SH="${MAXIONBENCH_MODULE_INIT_SH:-}"
+export MAXIONBENCH_APPTAINER_RUNTIME_LOGGED="${MAXIONBENCH_APPTAINER_RUNTIME_LOGGED:-0}"
 export MAXIONBENCH_DATASET_ENV_SH="${MAXIONBENCH_DATASET_ENV_SH:-${ROOT_DIR}/artifacts/prefetch/dataset_env.sh}"
 export MAXIONBENCH_D3_PARAMS_PATH="${MAXIONBENCH_D3_PARAMS_PATH:-}"
 export MAXIONBENCH_SLURM_RUN_MANIFEST="${MAXIONBENCH_SLURM_RUN_MANIFEST:-}"
@@ -86,6 +89,85 @@ mb_apptainer_use_nv() {
   fi
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
     return 0
+  fi
+  return 1
+}
+
+mb_log_apptainer_runtime_once() {
+  if [[ "${MAXIONBENCH_APPTAINER_RUNTIME_LOGGED:-0}" == "1" ]]; then
+    return 0
+  fi
+  local apptainer_path=""
+  apptainer_path="$(command -v apptainer || true)"
+  if [[ -z "${apptainer_path}" ]]; then
+    return 1
+  fi
+  mb_log "using apptainer binary ${apptainer_path}"
+  export MAXIONBENCH_APPTAINER_RUNTIME_LOGGED=1
+}
+
+mb_source_module_init() {
+  if command -v module >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local candidate=""
+  if [[ -n "${MAXIONBENCH_MODULE_INIT_SH:-}" ]]; then
+    candidate="$(mb_resolve_host_path "${MAXIONBENCH_MODULE_INIT_SH}")"
+    if [[ -f "${candidate}" ]]; then
+      # shellcheck disable=SC1090
+      source "${candidate}"
+      mb_log "sourced module init ${candidate}"
+      if command -v module >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+  fi
+
+  for candidate in \
+    /etc/profile.d/modules.sh \
+    /usr/share/Modules/init/bash \
+    /etc/profile.d/lmod.sh \
+    /usr/share/lmod/lmod/init/bash
+  do
+    if [[ ! -f "${candidate}" ]]; then
+      continue
+    fi
+    # shellcheck disable=SC1090
+    source "${candidate}"
+    mb_log "sourced module init ${candidate}"
+    if command -v module >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  mb_log "module command is unavailable; apptainer bootstrap could not source a module init script"
+  return 1
+}
+
+mb_ensure_apptainer() {
+  if command -v apptainer >/dev/null 2>&1; then
+    mb_log_apptainer_runtime_once
+    return 0
+  fi
+
+  local module_name="${MAXIONBENCH_APPTAINER_MODULE:-apptainer}"
+  mb_log "apptainer not found in PATH; attempting module bootstrap with ${module_name}"
+  if [[ -n "${module_name}" ]] && mb_source_module_init && command -v module >/dev/null 2>&1; then
+    mb_log "loading apptainer module ${module_name}"
+    local module_output=""
+    local module_status=0
+    set +e
+    module_output="$(module load "${module_name}" 2>&1)"
+    module_status=$?
+    set -e
+    if [[ -n "${module_output}" ]]; then
+      mb_log "module load ${module_name} output: ${module_output}"
+    fi
+    if [[ ${module_status} -eq 0 ]] && command -v apptainer >/dev/null 2>&1; then
+      mb_log_apptainer_runtime_once
+      return 0
+    fi
+    mb_log "module load ${module_name} did not make apptainer available (status=${module_status})"
   fi
   return 1
 }
@@ -179,8 +261,8 @@ mb_python() {
 
   case "${MAXIONBENCH_CONTAINER_RUNTIME}" in
     apptainer)
-      if ! command -v apptainer >/dev/null 2>&1; then
-        mb_die "MAXIONBENCH_CONTAINER_RUNTIME=apptainer requires `apptainer` in PATH"
+      if ! mb_ensure_apptainer; then
+        mb_die "MAXIONBENCH_CONTAINER_RUNTIME=apptainer requires apptainer in PATH or a loadable ${MAXIONBENCH_APPTAINER_MODULE} module"
       fi
       if [[ -z "${MAXIONBENCH_CONTAINER_IMAGE:-}" ]]; then
         mb_die "MAXIONBENCH_CONTAINER_IMAGE must be set when MAXIONBENCH_CONTAINER_RUNTIME=apptainer"
@@ -408,7 +490,7 @@ mb_start_apptainer_service_process() {
   local -n env_specs_ref="${env_array_name}"
   local -n bind_specs_ref="${bind_array_name}"
 
-  if ! command -v apptainer >/dev/null 2>&1; then
+  if ! mb_ensure_apptainer; then
     mb_die "Apptainer is required to start managed engine services"
   fi
 
