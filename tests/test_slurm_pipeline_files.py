@@ -56,6 +56,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
 
     env_text = env_example.read_text(encoding="utf-8")
     assert "MAXIONBENCH_SLURM_ACCOUNT=" in env_text
+    assert "MAXIONBENCH_APPTAINER_MODULE=" in env_text
     assert "MAXIONBENCH_CONTAINER_IMAGE=" in env_text
     assert "MAXIONBENCH_QDRANT_IMAGE=" in env_text
     assert "MAXIONBENCH_PGVECTOR_IMAGE=" in env_text
