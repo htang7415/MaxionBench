@@ -154,6 +154,11 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_ALLOW_GPU_UNAVAILABLE" in text
     assert "MAXIONBENCH_CONFORMANCE_MATRIX" in text
     assert "MAXIONBENCH_OUTPUT_ROOT" in text
+    assert "MAXIONBENCH_DATASET_ROOT" in text
+    assert "MAXIONBENCH_DATASET_CACHE_DIR" in text
+    assert "MAXIONBENCH_FIGURES_ROOT" in text
+    assert "MAXIONBENCH_D3_PARAMS_PATH" in text
+    assert "MAXIONBENCH_SLURM_RUN_MANIFEST" in text
     assert "MAXIONBENCH_CONTAINER_RUNTIME" in text
     assert "MAXIONBENCH_CONTAINER_IMAGE" in text
     assert "MAXIONBENCH_CONTAINER_BIND" in text
@@ -162,6 +167,8 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "mb_source_dataset_env()" in text
     assert "apptainer exec" in text
     assert "mb_python()" in text
+    assert "expand_env_placeholders" in text
+    assert "mb_read_config_field()" in text
     gate_marker = "pre-run-gate"
     runner_marker = "python -m maxionbench.orchestration.runner"
     assert gate_marker in text
@@ -177,9 +184,12 @@ def test_cpu_array_includes_d3_matched_s1_baseline_config() -> None:
 def test_cpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     text = Path("maxionbench/orchestration/slurm/cpu_array.sh").read_text(encoding="utf-8")
     assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
+    assert "MAXIONBENCH_SLURM_RUN_MANIFEST" in text
+    assert "run_manifest resolve" in text
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
     assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
     assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+    assert 'SCENARIO_KEY="$(mb_read_config_field "${CONFIG_PATH}" "scenario")"' in text
 
 
 def test_cpu_array_supports_skip_s6_env_flag() -> None:
@@ -192,9 +202,23 @@ def test_cpu_array_supports_skip_s6_env_flag() -> None:
 def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
     text = Path("maxionbench/orchestration/slurm/gpu_array.sh").read_text(encoding="utf-8")
     assert "MAXIONBENCH_SCENARIO_CONFIG_DIR" in text
+    assert "MAXIONBENCH_SLURM_RUN_MANIFEST" in text
+    assert "run_manifest resolve" in text
     assert 'CANDIDATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/$(basename "${DEFAULT_CONFIG_PATH}")"' in text
     assert 'if [[ -f "$(mb_resolve_config "${CANDIDATE_CONFIG_PATH}")" ]]; then' in text
     assert 'CONFIG_PATH="${DEFAULT_CONFIG_PATH}"' in text
+
+
+def test_new_slurm_pipeline_scripts_exist() -> None:
+    for path in (
+        Path("maxionbench/orchestration/slurm/download_datasets.sh"),
+        Path("maxionbench/orchestration/slurm/preprocess_datasets.sh"),
+        Path("maxionbench/orchestration/slurm/postprocess.sh"),
+        Path("run_slurm_pipeline.sh"),
+        Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml"),
+        Path(".env.slurm.example"),
+    ):
+        assert path.exists(), path
 
 
 def test_gpu_array_explicitly_lists_track_b_and_track_c_entries() -> None:

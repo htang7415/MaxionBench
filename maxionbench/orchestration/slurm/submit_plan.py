@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from maxionbench.orchestration.slurm.run_manifest import RunManifest, build_run_manifest
+
 
 @dataclass(frozen=True)
 class SubmitStep:
@@ -23,6 +25,7 @@ class SubmitStep:
 
 SLURM_PROFILE_OVERRIDES_ENV = "MAXIONBENCH_SLURM_PROFILE_OVERRIDES"
 DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH = Path(__file__).resolve().with_name("profiles_local.yaml")
+DEFAULT_TRACKED_PROFILES_PATH = Path(__file__).resolve().with_name("profiles_clusters.example.yaml")
 
 
 def build_submit_steps(
@@ -30,51 +33,148 @@ def build_submit_steps(
     include_gpu: bool = True,
     skip_s6: bool = False,
     prefetch_datasets: bool = False,
+    download_datasets: bool = False,
+    preprocess_datasets: bool = False,
+    include_postprocess: bool = False,
+    manifest: RunManifest | None = None,
 ) -> list[SubmitStep]:
-    cpu_non_d3_array = "0,5" if skip_s6 else "0,5-6"
-    calibrate_depends_on: tuple[str, ...] = ("prefetch_datasets",) if prefetch_datasets else ()
     steps: list[SubmitStep] = []
+    last_dataset_stage_key: str | None = None
+    if download_datasets:
+        steps.append(
+            SubmitStep(
+                key="download_datasets",
+                script_name="download_datasets.sh",
+            )
+        )
+        last_dataset_stage_key = "download_datasets"
+    if preprocess_datasets:
+        steps.append(
+            SubmitStep(
+                key="preprocess_datasets",
+                script_name="preprocess_datasets.sh",
+                depends_on=((last_dataset_stage_key,) if last_dataset_stage_key else ()),
+            )
+        )
+        last_dataset_stage_key = "preprocess_datasets"
     if prefetch_datasets:
         steps.append(
             SubmitStep(
                 key="prefetch_datasets",
                 script_name="prefetch_datasets.sh",
+                depends_on=((last_dataset_stage_key,) if last_dataset_stage_key else ()),
             )
         )
-    steps.extend(
-        [
+        last_dataset_stage_key = "prefetch_datasets"
+    calibrate_depends_on: tuple[str, ...] = ((last_dataset_stage_key,) if last_dataset_stage_key else ())
+
+    if manifest is None:
+        cpu_non_d3_array = "0,5" if skip_s6 else "0,5-6"
+        steps.extend(
+            [
+                SubmitStep(
+                    key="calibrate",
+                    script_name="calibrate_d3.sh",
+                    depends_on=calibrate_depends_on,
+                ),
+                SubmitStep(
+                    key="cpu_d3_baseline",
+                    script_name="cpu_array.sh",
+                    array="1",
+                    depends_on=("calibrate",),
+                ),
+                SubmitStep(
+                    key="cpu_d3_workloads",
+                    script_name="cpu_array.sh",
+                    array="2-4",
+                    depends_on=("calibrate", "cpu_d3_baseline"),
+                ),
+                SubmitStep(
+                    key="cpu_non_d3",
+                    script_name="cpu_array.sh",
+                    array=cpu_non_d3_array,
+                    depends_on=("calibrate",),
+                ),
+            ]
+        )
+        if include_gpu:
+            steps.append(
+                SubmitStep(
+                    key="gpu_all",
+                    script_name="gpu_array.sh",
+                    array="0-2",
+                    depends_on=("calibrate",),
+                )
+            )
+    else:
+        steps.append(
             SubmitStep(
                 key="calibrate",
                 script_name="calibrate_d3.sh",
                 depends_on=calibrate_depends_on,
-            ),
-            SubmitStep(
-                key="cpu_d3_baseline",
-                script_name="cpu_array.sh",
-                array="1",
-                depends_on=("calibrate",),
-            ),
-            SubmitStep(
-                key="cpu_d3_workloads",
-                script_name="cpu_array.sh",
-                array="2-4",
-                depends_on=("calibrate", "cpu_d3_baseline"),
-            ),
-            SubmitStep(
-                key="cpu_non_d3",
-                script_name="cpu_array.sh",
-                array=cpu_non_d3_array,
-                depends_on=("calibrate",),
-            ),
+            )
+        )
+        cpu_baseline = _manifest_indices(
+            rows=manifest.cpu_rows,
+            predicate=lambda row: row.scenario == "s1_ann_frontier" and row.dataset_bundle.upper() == "D3",
+        )
+        cpu_d3_workloads = _manifest_indices(
+            rows=manifest.cpu_rows,
+            predicate=lambda row: row.scenario in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"},
+        )
+        cpu_non_d3 = [
+            idx
+            for idx in range(len(manifest.cpu_rows))
+            if idx not in set(cpu_baseline) and idx not in set(cpu_d3_workloads)
         ]
-    )
-    if include_gpu:
+        if cpu_baseline:
+            steps.append(
+                SubmitStep(
+                    key="cpu_d3_baseline",
+                    script_name="cpu_array.sh",
+                    array=_indices_to_array_spec(cpu_baseline),
+                    depends_on=("calibrate",),
+                )
+            )
+        if cpu_d3_workloads:
+            workload_depends = ("calibrate", "cpu_d3_baseline") if cpu_baseline else ("calibrate",)
+            steps.append(
+                SubmitStep(
+                    key="cpu_d3_workloads",
+                    script_name="cpu_array.sh",
+                    array=_indices_to_array_spec(cpu_d3_workloads),
+                    depends_on=workload_depends,
+                )
+            )
+        if cpu_non_d3:
+            steps.append(
+                SubmitStep(
+                    key="cpu_non_d3",
+                    script_name="cpu_array.sh",
+                    array=_indices_to_array_spec(cpu_non_d3),
+                    depends_on=("calibrate",),
+                )
+            )
+        if include_gpu and manifest.gpu_rows:
+            steps.append(
+                SubmitStep(
+                    key="gpu_all",
+                    script_name="gpu_array.sh",
+                    array=_indices_to_array_spec(list(range(len(manifest.gpu_rows)))),
+                    depends_on=("calibrate",),
+                )
+            )
+    if include_postprocess:
+        benchmark_depends = tuple(
+            step.key
+            for step in steps
+            if step.key in {"cpu_d3_baseline", "cpu_d3_workloads", "cpu_non_d3", "gpu_all"}
+        )
         steps.append(
             SubmitStep(
-                key="gpu_all",
-                script_name="gpu_array.sh",
-                array="0-2",
-                depends_on=("calibrate",),
+                key="postprocess",
+                script_name="postprocess.sh",
+                depends_on=benchmark_depends,
             )
         )
     return steps
@@ -93,11 +193,16 @@ def submit_steps(
     container_bind: list[str] | None = None,
     hf_cache_dir: str | None = None,
     prefetch_datasets: bool = False,
+    download_datasets: bool = False,
+    preprocess_datasets: bool = False,
+    include_postprocess: bool = False,
+    run_manifest: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     normalized_container_runtime = str(container_runtime).strip().lower() if container_runtime else None
     normalized_container_image = str(container_image).strip() if container_image else None
     normalized_hf_cache_dir = str(hf_cache_dir).strip() if hf_cache_dir else None
+    normalized_run_manifest = str(run_manifest).strip() if run_manifest else None
     normalized_container_bind = [str(item).strip() for item in (container_bind or []) if str(item).strip()]
     if normalized_container_runtime and normalized_container_runtime != "apptainer":
         raise ValueError(f"unsupported container runtime: {normalized_container_runtime}")
@@ -125,6 +230,7 @@ def submit_steps(
             container_image=normalized_container_image,
             container_bind=normalized_container_bind,
             hf_cache_dir=normalized_hf_cache_dir,
+            run_manifest=normalized_run_manifest,
             dependencies=tuple(job_ids[key] for key in step.depends_on),
         )
         if dry_run:
@@ -155,6 +261,10 @@ def submit_steps(
         "container_bind": normalized_container_bind,
         "hf_cache_dir": normalized_hf_cache_dir,
         "prefetch_datasets": bool(prefetch_datasets),
+        "download_datasets": bool(download_datasets),
+        "preprocess_datasets": bool(preprocess_datasets),
+        "include_postprocess": bool(include_postprocess),
+        "run_manifest": normalized_run_manifest,
         "steps": submitted,
         "job_ids": job_ids,
     }
@@ -173,6 +283,7 @@ def _build_sbatch_command(
     container_image: str | None,
     container_bind: list[str],
     hf_cache_dir: str | None,
+    run_manifest: str | None,
     dependencies: tuple[str, ...],
 ) -> list[str]:
     cmd = ["sbatch", "--parsable"]
@@ -197,6 +308,8 @@ def _build_sbatch_command(
         export_vars.append(f"MAXIONBENCH_CONTAINER_BIND={'|'.join(container_bind)}")
     if hf_cache_dir:
         export_vars.append(f"MAXIONBENCH_HF_CACHE_DIR={hf_cache_dir}")
+    if run_manifest:
+        export_vars.append(f"MAXIONBENCH_SLURM_RUN_MANIFEST={run_manifest}")
     if len(export_vars) > 1:
         cmd.extend(["--export", ",".join(export_vars)])
     cmd.append(str(script_path))
@@ -222,8 +335,8 @@ def _profile_sbatch_args(slurm_profile: str, *, step_key: str) -> list[str]:
     if slurm_profile not in profiles:
         raise ValueError(
             "unknown slurm profile: "
-            f"{slurm_profile}. Define it in {DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH} "
-            f"or via {SLURM_PROFILE_OVERRIDES_ENV}"
+            f"{slurm_profile}. Define it in {DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH}, "
+            f"{DEFAULT_TRACKED_PROFILES_PATH}, or via {SLURM_PROFILE_OVERRIDES_ENV}"
         )
     local_profile = profiles[slurm_profile]
     base_specs = _normalize_flag_specs(local_profile.get("base"), label=f"{slurm_profile}.base")
@@ -235,10 +348,26 @@ def _profile_sbatch_args(slurm_profile: str, *, step_key: str) -> list[str]:
 
 
 def _load_local_profile_overrides() -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for candidate in _profile_override_candidates():
+        if not candidate.exists():
+            continue
+        payload = _load_profile_file(candidate)
+        normalized.update(payload)
+    return normalized
+
+
+def _profile_override_candidates() -> list[Path]:
     raw_path = os.environ.get(SLURM_PROFILE_OVERRIDES_ENV)
-    candidate = Path(raw_path).expanduser() if raw_path else DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH
-    if not candidate.exists():
-        return {}
+    candidates = [DEFAULT_TRACKED_PROFILES_PATH]
+    if raw_path:
+        candidates.append(Path(raw_path).expanduser())
+    else:
+        candidates.append(DEFAULT_LOCAL_PROFILE_OVERRIDES_PATH)
+    return candidates
+
+
+def _load_profile_file(candidate: Path) -> dict[str, dict[str, Any]]:
     with candidate.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle) or {}
     if not isinstance(payload, dict):
@@ -255,6 +384,28 @@ def _load_local_profile_overrides() -> dict[str, dict[str, Any]]:
             raise ValueError(f"Local Slurm profile override for {profile_key!r} must be a mapping")
         normalized[profile_key] = dict(profile_payload)
     return normalized
+
+
+def _manifest_indices(*, rows: list[Any], predicate) -> list[int]:  # type: ignore[no-untyped-def]
+    return [idx for idx, row in enumerate(rows) if predicate(row)]
+
+
+def _indices_to_array_spec(indices: list[int]) -> str:
+    if not indices:
+        raise ValueError("array spec requires at least one index")
+    ordered = sorted(set(int(item) for item in indices))
+    ranges: list[str] = []
+    start = ordered[0]
+    prev = ordered[0]
+    for item in ordered[1:]:
+        if item == prev + 1:
+            prev = item
+            continue
+        ranges.append(f"{start}-{prev}" if start != prev else str(start))
+        start = item
+        prev = item
+    ranges.append(f"{start}-{prev}" if start != prev else str(start))
+    return ",".join(ranges)
 
 
 def _normalize_flag_specs(raw_specs: Any, *, label: str) -> tuple[tuple[str, str], ...]:
@@ -310,6 +461,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--engine-config-dir",
+        default="configs/engines",
+        help="Engine config catalog used when --full-matrix builds an engine x scenario manifest.",
+    )
+    parser.add_argument(
+        "--run-manifest-dir",
+        default="artifacts/slurm_manifests/latest",
+        help="Directory used for generated Slurm run manifests and resolved config files in --full-matrix mode.",
+    )
+    parser.add_argument(
         "--output-root",
         default=None,
         help=(
@@ -353,6 +514,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Submit a dataset prefetch/cache job before calibration and benchmark arrays.",
     )
     parser.add_argument(
+        "--download-datasets",
+        action="store_true",
+        help="Submit a shared-storage dataset download job before preprocessing/calibration.",
+    )
+    parser.add_argument(
+        "--preprocess-datasets",
+        action="store_true",
+        help="Submit a shared-storage preprocessing job before calibration/benchmark arrays.",
+    )
+    parser.add_argument(
+        "--include-postprocess",
+        action="store_true",
+        help="Submit a postprocess/report-generation job after all benchmark arrays succeed.",
+    )
+    parser.add_argument(
+        "--full-matrix",
+        action="store_true",
+        help=(
+            "Build an engine x scenario manifest from --engine-config-dir and --scenario-config-dir, "
+            "then drive cpu_array/gpu_array from that manifest."
+        ),
+    )
+    parser.add_argument(
         "--skip-s6",
         action="store_true",
         help="Defer S6 by removing index 6 from cpu_non_d3 array submissions.",
@@ -361,10 +545,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    manifest: RunManifest | None = None
+    manifest_path: str | None = None
+    if args.full_matrix:
+        if not args.scenario_config_dir:
+            raise ValueError("--full-matrix requires --scenario-config-dir")
+        manifest = build_run_manifest(
+            repo_root=Path.cwd(),
+            scenario_config_dir=Path(str(args.scenario_config_dir)),
+            engine_config_dir=Path(str(args.engine_config_dir)),
+            out_dir=Path(str(args.run_manifest_dir)),
+            include_gpu=not bool(args.skip_gpu),
+            skip_s6=bool(args.skip_s6),
+        )
+        manifest_path = str((Path(args.run_manifest_dir).expanduser().resolve() / "run_manifest.json").resolve())
+
     steps = build_submit_steps(
         include_gpu=not bool(args.skip_gpu),
         skip_s6=bool(args.skip_s6),
         prefetch_datasets=bool(args.prefetch_datasets),
+        download_datasets=bool(args.download_datasets),
+        preprocess_datasets=bool(args.preprocess_datasets),
+        include_postprocess=bool(args.include_postprocess),
+        manifest=manifest,
     )
     summary = submit_steps(
         slurm_dir=Path(args.slurm_dir),
@@ -378,8 +581,19 @@ def main(argv: list[str] | None = None) -> int:
         container_bind=[str(item) for item in (args.container_bind or [])],
         hf_cache_dir=str(args.hf_cache_dir) if args.hf_cache_dir else None,
         prefetch_datasets=bool(args.prefetch_datasets),
+        download_datasets=bool(args.download_datasets),
+        preprocess_datasets=bool(args.preprocess_datasets),
+        include_postprocess=bool(args.include_postprocess),
+        run_manifest=manifest_path,
         dry_run=bool(args.dry_run),
     )
+    if manifest_path is not None:
+        summary["full_matrix"] = True
+        summary["run_manifest"] = manifest_path
+        summary["run_manifest_dir"] = str(Path(args.run_manifest_dir).expanduser().resolve())
+        summary["engine_config_dir"] = str(args.engine_config_dir)
+    else:
+        summary["full_matrix"] = False
 
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))

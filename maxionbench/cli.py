@@ -213,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     submit_slurm_plan_parser.add_argument("--seed", type=int, default=42)
     submit_slurm_plan_parser.add_argument("--slurm-profile", default=None)
     submit_slurm_plan_parser.add_argument("--scenario-config-dir", default=None)
+    submit_slurm_plan_parser.add_argument("--engine-config-dir", default="configs/engines")
+    submit_slurm_plan_parser.add_argument("--run-manifest-dir", default="artifacts/slurm_manifests/latest")
     submit_slurm_plan_parser.add_argument("--output-root", default=None)
     submit_slurm_plan_parser.add_argument("--container-runtime", default=None, choices=["apptainer"])
     submit_slurm_plan_parser.add_argument("--container-image", default=None)
@@ -220,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     submit_slurm_plan_parser.add_argument("--hf-cache-dir", default=None)
     submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
     submit_slurm_plan_parser.add_argument("--prefetch-datasets", action="store_true")
+    submit_slurm_plan_parser.add_argument("--download-datasets", action="store_true")
+    submit_slurm_plan_parser.add_argument("--preprocess-datasets", action="store_true")
+    submit_slurm_plan_parser.add_argument("--include-postprocess", action="store_true")
+    submit_slurm_plan_parser.add_argument("--full-matrix", action="store_true")
     submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
     submit_slurm_plan_parser.add_argument("--json", action="store_true")
 
@@ -588,6 +594,10 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.extend(["--slurm-profile", args.slurm_profile])
         if args.scenario_config_dir:
             submit_argv.extend(["--scenario-config-dir", args.scenario_config_dir])
+        if args.engine_config_dir:
+            submit_argv.extend(["--engine-config-dir", args.engine_config_dir])
+        if args.run_manifest_dir:
+            submit_argv.extend(["--run-manifest-dir", args.run_manifest_dir])
         if args.output_root:
             submit_argv.extend(["--output-root", args.output_root])
         if args.container_runtime:
@@ -602,6 +612,14 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.append("--skip-gpu")
         if args.prefetch_datasets:
             submit_argv.append("--prefetch-datasets")
+        if args.download_datasets:
+            submit_argv.append("--download-datasets")
+        if args.preprocess_datasets:
+            submit_argv.append("--preprocess-datasets")
+        if args.include_postprocess:
+            submit_argv.append("--include-postprocess")
+        if args.full_matrix:
+            submit_argv.append("--full-matrix")
         if args.dry_run:
             submit_argv.append("--dry-run")
         if args.json:

@@ -14,6 +14,10 @@ __pycache__/
 
 *.sh
 run_workstation.sh
+!run_slurm_pipeline.sh
+!maxionbench/orchestration/slurm/download_datasets.sh
+!maxionbench/orchestration/slurm/preprocess_datasets.sh
+!maxionbench/orchestration/slurm/postprocess.sh
 
 # Local generated benchmark outputs
 artifacts/ci/

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from maxionbench.orchestration.slurm.run_manifest import RunManifest, RunManifestRow
 from maxionbench.orchestration.slurm.submit_plan import build_submit_steps, submit_steps
 
 
@@ -247,3 +248,136 @@ def test_submit_steps_requires_container_image_when_runtime_enabled(tmp_path: Pa
         assert "container_image is required" in str(exc)
     else:
         raise AssertionError("expected submit_steps to reject missing container_image")
+
+
+def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/artifacts/slurm_manifests/latest/generated_configs",
+        cpu_rows=[
+            RunManifestRow(
+                group="cpu",
+                config_path="/repo/generated/s1_d3.yaml",
+                engine="qdrant",
+                scenario="s1_ann_frontier",
+                dataset_bundle="D3",
+                template_name="s1_ann_frontier_d3.yaml",
+            ),
+            RunManifestRow(
+                group="cpu",
+                config_path="/repo/generated/s3.yaml",
+                engine="qdrant",
+                scenario="s3_churn_smooth",
+                dataset_bundle="D3",
+                template_name="s3_churn_smooth.yaml",
+            ),
+            RunManifestRow(
+                group="cpu",
+                config_path="/repo/generated/s4.yaml",
+                engine="qdrant",
+                scenario="s4_hybrid",
+                dataset_bundle="D4",
+                template_name="s4_hybrid.yaml",
+            ),
+        ],
+        gpu_rows=[
+            RunManifestRow(
+                group="gpu",
+                config_path="/repo/generated/s5.yaml",
+                engine="faiss-gpu",
+                scenario="s5_rerank",
+                dataset_bundle="D4",
+                template_name="s5_rerank.yaml",
+            )
+        ],
+        selected_engines=["qdrant", "faiss-gpu"],
+        selected_templates=["s1_ann_frontier_d3.yaml", "s3_churn_smooth.yaml", "s4_hybrid.yaml", "s5_rerank.yaml"],
+    )
+
+    steps = build_submit_steps(
+        include_gpu=True,
+        download_datasets=True,
+        preprocess_datasets=True,
+        include_postprocess=True,
+        manifest=manifest,
+    )
+    by_key = {step.key: step for step in steps}
+
+    assert [step.key for step in steps] == [
+        "download_datasets",
+        "preprocess_datasets",
+        "calibrate",
+        "cpu_d3_baseline",
+        "cpu_d3_workloads",
+        "cpu_non_d3",
+        "gpu_all",
+        "postprocess",
+    ]
+    assert by_key["download_datasets"].depends_on == ()
+    assert by_key["preprocess_datasets"].depends_on == ("download_datasets",)
+    assert by_key["calibrate"].depends_on == ("preprocess_datasets",)
+    assert by_key["cpu_d3_baseline"].array == "0"
+    assert by_key["cpu_d3_workloads"].array == "1"
+    assert by_key["cpu_non_d3"].array == "2"
+    assert by_key["gpu_all"].array == "0"
+    assert by_key["postprocess"].depends_on == (
+        "cpu_d3_baseline",
+        "cpu_d3_workloads",
+        "cpu_non_d3",
+        "gpu_all",
+    )
+
+
+def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in (
+        "download_datasets.sh",
+        "preprocess_datasets.sh",
+        "calibrate_d3.sh",
+        "cpu_array.sh",
+        "gpu_array.sh",
+        "postprocess.sh",
+    ):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(
+            include_gpu=True,
+            download_datasets=True,
+            preprocess_datasets=True,
+            include_postprocess=True,
+        ),
+        seed=42,
+        run_manifest="artifacts/slurm_manifests/latest/run_manifest.json",
+        dry_run=True,
+    )
+
+    for step in summary["steps"]:
+        command = [str(item) for item in step["command"]]
+        assert "--export" in command
+        export_value = command[command.index("--export") + 1]
+        assert "MAXIONBENCH_SLURM_RUN_MANIFEST=artifacts/slurm_manifests/latest/run_manifest.json" in export_value
+
+
+def test_submit_steps_uses_tracked_cluster_profile_examples(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=True),
+        seed=42,
+        slurm_profile="euler_apptainer",
+        dry_run=True,
+    )
+    calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]
+    assert "--job-name" in calibrate_cmd
+    assert calibrate_cmd[calibrate_cmd.index("--job-name") + 1] == "maxion"
+    assert "--cpus-per-task" in calibrate_cmd
+    assert calibrate_cmd[calibrate_cmd.index("--cpus-per-task") + 1] == "96"
+    assert "--gres" in calibrate_cmd
+    assert calibrate_cmd[calibrate_cmd.index("--gres") + 1] == "gpu:1"

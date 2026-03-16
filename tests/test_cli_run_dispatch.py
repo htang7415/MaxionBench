@@ -204,6 +204,10 @@ def test_cli_submit_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: i
         "maxionbench/orchestration/slurm",
         "--seed",
         "123",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--skip-gpu",
         "--dry-run",
         "--json",
@@ -239,6 +243,10 @@ def test_cli_submit_slurm_plan_dispatches_scenario_config_dir(monkeypatch) -> No
         "42",
         "--scenario-config-dir",
         "configs/scenarios_paper",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--dry-run",
         "--json",
     ]
@@ -273,6 +281,10 @@ def test_cli_submit_slurm_plan_dispatches_slurm_profile(monkeypatch) -> None:  #
         "42",
         "--slurm-profile",
         "your_cluster",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--dry-run",
         "--json",
     ]
@@ -305,6 +317,10 @@ def test_cli_submit_slurm_plan_dispatches_output_root(monkeypatch) -> None:  # t
         "maxionbench/orchestration/slurm",
         "--seed",
         "42",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--output-root",
         "artifacts/workstation_runs/example/results/slurm",
         "--dry-run",
@@ -347,6 +363,10 @@ def test_cli_submit_slurm_plan_dispatches_container_runtime_flags(monkeypatch) -
         "maxionbench/orchestration/slurm",
         "--seed",
         "42",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--container-runtime",
         "apptainer",
         "--container-image",
@@ -388,7 +408,61 @@ def test_cli_submit_slurm_plan_dispatches_prefetch_flag(monkeypatch) -> None:  #
         "maxionbench/orchestration/slurm",
         "--seed",
         "42",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
         "--prefetch-datasets",
+        "--dry-run",
+        "--json",
+    ]
+
+
+def test_cli_submit_slurm_plan_dispatches_full_matrix_pipeline_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 245
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--scenario-config-dir",
+            "configs/scenarios_paper",
+            "--engine-config-dir",
+            "configs/engines",
+            "--run-manifest-dir",
+            "artifacts/slurm_manifests/latest",
+            "--download-datasets",
+            "--preprocess-datasets",
+            "--include-postprocess",
+            "--full-matrix",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 245
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--scenario-config-dir",
+        "configs/scenarios_paper",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
+        "--download-datasets",
+        "--preprocess-datasets",
+        "--include-postprocess",
+        "--full-matrix",
         "--dry-run",
         "--json",
     ]

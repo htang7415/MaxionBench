@@ -122,14 +122,16 @@ def run(
     d3_params: D3Params,
     burst_multiplier_fn: Callable[[float], float] | None = None,
     vectors: np.ndarray | None = None,
+    dataset: Any | None = None,
 ) -> S3Result:
-    if vectors is None:
-        vectors = generate_synthetic_vectors(
-            num_vectors=cfg.num_vectors,
-            dim=cfg.vector_dim,
-            seed=int(rng.integers(1, 1_000_000)),
-        )
-    dataset = generate_d3_dataset(vectors, d3_params)
+    if dataset is None:
+        if vectors is None:
+            vectors = generate_synthetic_vectors(
+                num_vectors=cfg.num_vectors,
+                dim=cfg.vector_dim,
+                seed=int(rng.integers(1, 1_000_000)),
+            )
+        dataset = generate_d3_dataset(vectors, d3_params)
     state = _OracleState.from_dataset(dataset)
     _ingest_state(adapter, state)
 

@@ -863,7 +863,8 @@ def _run_s3_like_rows(
     config_path: Path,
 ) -> list[ResultRow]:
     d3_params = _resolve_d3_params(cfg, d3_params_path)
-    d3_vectors = _maybe_load_d3_vectors(cfg, config_path=config_path)
+    d3_dataset = _maybe_load_processed_d3_dataset(cfg, config_path=config_path)
+    d3_vectors = None if d3_dataset is not None else _maybe_load_d3_vectors(cfg, config_path=config_path)
     baseline_missing = False
     baseline_error: str | None = None
     try:
@@ -919,6 +920,7 @@ def _run_s3_like_rows(
                 rng=np.random.default_rng(cfg.seed + repeat_idx),
                 d3_params=d3_params,
                 vectors=d3_vectors,
+                dataset=d3_dataset,
             )
             suffix = "s3b"
         else:
@@ -928,6 +930,7 @@ def _run_s3_like_rows(
                 rng=np.random.default_rng(cfg.seed + repeat_idx),
                 d3_params=d3_params,
                 vectors=d3_vectors,
+                dataset=d3_dataset,
             )
             suffix = "s3"
         info_payload = _parse_info_json(result.info_json)
@@ -1602,9 +1605,9 @@ def _maybe_load_d3_vectors(cfg: RunConfig, *, config_path: Path) -> np.ndarray |
     )
     if processed_dataset_path is not None:
         raise ValueError(
-            "processed D3 datasets are not yet supported for S2/S3 scenario execution: "
-            "the current workload code still expects generated correlated metadata rather than explicit per-query filters. "
-            "Use dataset_path for the legacy path or complete the D3 scenario migration first."
+            "processed D3 datasets are not yet supported for S2 filtered execution: "
+            "the current filtered workload code still expects generated correlated metadata rather than explicit per-query filters. "
+            "Use dataset_path for the legacy path until the S2 D3 scenario migration is complete."
         )
     resolved_dataset_path = _resolve_optional_config_value_path(value=cfg.dataset_path, config_path=config_path)
     if resolved_dataset_path is None:
@@ -1615,6 +1618,25 @@ def _maybe_load_d3_vectors(cfg: RunConfig, *, config_path: Path) -> np.ndarray |
         max_vectors=cfg.num_vectors,
         expected_dim=cfg.vector_dim,
         expected_sha256=expected_sha,
+    )
+
+
+def _maybe_load_processed_d3_dataset(cfg: RunConfig, *, config_path: Path) -> Any | None:
+    if str(cfg.dataset_bundle).upper() != "D3":
+        return None
+    if str(cfg.scenario).strip().lower() not in {"s3_churn_smooth", "s3b_churn_bursty"}:
+        return None
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is None:
+        return None
+    return load_processed_filtered_ann_dataset(
+        processed_dataset_path,
+        max_vectors=cfg.num_vectors,
+        max_queries=cfg.num_queries,
+        top_k=max(cfg.top_k, 10),
     )
 
 

@@ -28,6 +28,7 @@ def run(
     *,
     d3_params: D3Params,
     vectors: np.ndarray | None = None,
+    dataset: Any | None = None,
 ) -> S3Result:
     cycle = cfg.on_s + cfg.off_s
     normalizer = _mean_write_multiplier_normalizer(cfg)
@@ -45,6 +46,7 @@ def run(
         d3_params=d3_params,
         burst_multiplier_fn=burst_multiplier,
         vectors=vectors,
+        dataset=dataset,
     )
     info_payload = _parse_info_payload(result.info_json)
     info_payload["mode"] = "s3_bursty"
