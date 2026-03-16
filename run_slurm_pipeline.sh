@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SUBMIT_ROOT="$(pwd -P)"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
 
 CLUSTER=""
 SLURM_PROFILE=""
 CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE:-}"
+SHARED_ROOT="${MAXIONBENCH_SHARED_ROOT:-}"
 DATASET_ROOT="${MAXIONBENCH_DATASET_ROOT:-}"
 DATASET_CACHE_DIR="${MAXIONBENCH_DATASET_CACHE_DIR:-}"
 OUTPUT_ROOT="${MAXIONBENCH_OUTPUT_ROOT:-}"
@@ -30,6 +32,7 @@ Options:
   --cluster <name>               Cluster profile selector: euler or nrel
   --slurm-profile <name>         Explicit Slurm profile key override
   --container-image <path>       Apptainer image path for Slurm jobs
+  --shared-root <path>           Shared base directory; derives dataset/cache/results/figures/HF paths
   --dataset-root <path>          Shared dataset root (default: MAXIONBENCH_DATASET_ROOT)
   --dataset-cache-dir <path>     Shared dataset cache directory
   --output-root <path>           Shared run artifact root
@@ -59,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --container-image)
       CONTAINER_IMAGE="$2"
+      shift 2
+      ;;
+    --shared-root)
+      SHARED_ROOT="$2"
       shift 2
       ;;
     --dataset-root)
@@ -152,11 +159,22 @@ if ! command -v maxionbench >/dev/null 2>&1; then
   exit 127
 fi
 
-export MAXIONBENCH_DATASET_ROOT="${DATASET_ROOT:-${ROOT_DIR}/dataset}"
-export MAXIONBENCH_DATASET_CACHE_DIR="${DATASET_CACHE_DIR:-${ROOT_DIR}/.cache}"
-export MAXIONBENCH_OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/artifacts/runs/slurm_pipeline}"
-export MAXIONBENCH_FIGURES_ROOT="${FIGURES_ROOT:-${ROOT_DIR}/artifacts/figures}"
-export MAXIONBENCH_HF_CACHE_DIR="${HF_CACHE_DIR}"
+default_shared_root() {
+  if [[ -n "${SHARED_ROOT}" ]]; then
+    printf '%s\n' "${SHARED_ROOT}"
+    return 0
+  fi
+  printf '%s\n' "${SUBMIT_ROOT}"
+}
+
+DEFAULT_SHARED_ROOT="$(default_shared_root)"
+
+export MAXIONBENCH_SHARED_ROOT="${DEFAULT_SHARED_ROOT}"
+export MAXIONBENCH_DATASET_ROOT="${DATASET_ROOT:-${DEFAULT_SHARED_ROOT}/dataset}"
+export MAXIONBENCH_DATASET_CACHE_DIR="${DATASET_CACHE_DIR:-${DEFAULT_SHARED_ROOT}/.cache}"
+export MAXIONBENCH_OUTPUT_ROOT="${OUTPUT_ROOT:-${DEFAULT_SHARED_ROOT}/results}"
+export MAXIONBENCH_FIGURES_ROOT="${FIGURES_ROOT:-${DEFAULT_SHARED_ROOT}/figures}"
+export MAXIONBENCH_HF_CACHE_DIR="${HF_CACHE_DIR:-${DEFAULT_SHARED_ROOT}/.cache/huggingface}"
 export MAXIONBENCH_D3_DATASET_PATH="${MAXIONBENCH_DATASET_ROOT}/processed/D3/yfcc-10M/base.npy"
 
 CMD=(
