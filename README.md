@@ -2,23 +2,32 @@
 
 MaxionBench is a reproducible single-node benchmark study for vector databases and retrieval infrastructure used in RAG systems.
 
-## What this benchmark study covers
+## Benchmark study
 
 - Engines: Qdrant, Milvus, Weaviate, OpenSearch k-NN, PostgreSQL + pgvector, LanceDB-service, LanceDB-inproc, FAISS CPU, FAISS GPU
-- Datasets:
-  - D1: ann-benchmarks HDF5
-  - D2: BigANN 10M tier
-  - D3: `yfcc-10M`
-  - D4: BEIR subsets plus the CRAG slice
-- Scenarios:
-  - S1: ANN frontier
-  - S2: filtered ANN
-  - S3 / S3b: churn robustness
-  - S4: hybrid retrieval
-  - S5: rerank pipeline cost
-  - S6: fusion
 
 The study reports matched-quality tradeoffs, p99 latency, throughput, robustness inflation, and RHU-normalized cost.
+
+## Datasets
+
+| Bundle | Contents | Role |
+| --- | --- | --- |
+| D1 | ann-benchmarks HDF5 | ANN microbench set |
+| D2 | BigANN 10M tier | large ANN anchor |
+| D3 | `yfcc-10M` | filtered ANN and churn robustness |
+| D4 | BEIR subsets plus CRAG slice | retrieval and RAG utility |
+
+## Scenarios
+
+| Scenario | Goal | Dataset |
+| --- | --- | --- |
+| S1 | ANN frontier | D1, D2 |
+| S2 | filtered ANN | D3 |
+| S3 | churn robustness | D3 |
+| S3b | bursty churn robustness | D3 |
+| S4 | hybrid retrieval | D4 |
+| S5 | rerank pipeline cost | D4 |
+| S6 | fusion | D4 |
 
 ## Run artifacts
 
@@ -34,19 +43,9 @@ Figures are written to:
 - `artifacts/figures/milestones/Mx/`
 - `artifacts/figures/final/`
 
-## Source of truth
-
-Use these files in order:
-
-1. `project.md`
-2. `prompt.md`
-3. `document.md`
-4. `command.md`
-5. `command-mac.md`
-
 ## How to run this benchmark study
 
-### Local terminal workflow on Mac mini M4
+### Local terminal workflow
 
 Install, download, and preprocess:
 
@@ -56,25 +55,18 @@ python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --
 bash preprocess_all_datasets.sh
 ```
 
-Then follow the local end-to-end commands in [command-mac.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command-mac.md).
+Then run the local end-to-end workflow in [command-mac.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command-mac.md).
 
-### Slurm workflow on Euler or NREL
+### Slurm cluster workflow
 
 Use a prebuilt Apptainer image on shared storage, keep private cluster settings only in the gitignored local profile, and run:
 
 ```bash
-./run_slurm_pipeline.sh --cluster euler --container-image /shared/containers/maxionbench.sif
-./run_slurm_pipeline.sh --cluster euler --container-image /shared/containers/maxionbench.sif --launch
+./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif
+./run_slurm_pipeline.sh --slurm-profile <profile> --container-image /shared/containers/maxionbench.sif --launch
 ```
 
-or
-
-```bash
-./run_slurm_pipeline.sh --cluster nrel --container-image /shared/containers/maxionbench.sif
-./run_slurm_pipeline.sh --cluster nrel --container-image /shared/containers/maxionbench.sif --launch
-```
-
-Full Slurm commands live in [command.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command.md).
+Detailed Slurm commands live in [command.md](/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/command.md).
 
 Private cluster account and partition values belong only in:
 
