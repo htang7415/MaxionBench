@@ -1,0 +1,2 @@
+[maxionbench][2026-03-16T20:21:35Z] downloading datasets into /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset with cache /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/.cache
+[maxionbench][2026-03-16T20:21:35Z] ERROR: MAXIONBENCH_CONTAINER_RUNTIME=apptainer requires  in PATH
