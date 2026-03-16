@@ -67,3 +67,31 @@ def test_verify_dataset_manifests_cli_returns_nonzero_on_fail(tmp_path: Path) ->
 
     code = manifests_mod.main(["--manifest-dir", str(dst), "--json"])
     assert code == 2
+
+
+def test_verify_dataset_manifest_dir_fails_for_d4_subset_drift(tmp_path: Path) -> None:
+    src = Path("maxionbench/datasets/manifests")
+    dst = tmp_path / "manifests"
+    shutil.copytree(src, dst)
+    d4_path = dst / "d4.yaml"
+    payload = yaml.safe_load(d4_path.read_text(encoding="utf-8"))
+    payload["beir_subsets"] = ["scifact", "hotpotqa", "nfcorpus"]
+    d4_path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = manifests_mod.verify_dataset_manifest_dir(dst)
+    assert summary["pass"] is False
+    assert any("D4 beir_subsets" in item["message"] for item in summary["errors"])
+
+
+def test_verify_dataset_manifest_dir_fails_for_d4_crag_query_pin_drift(tmp_path: Path) -> None:
+    src = Path("maxionbench/datasets/manifests")
+    dst = tmp_path / "manifests"
+    shutil.copytree(src, dst)
+    d4_path = dst / "d4.yaml"
+    payload = yaml.safe_load(d4_path.read_text(encoding="utf-8"))
+    payload["crag_slice_queries"] = 499
+    d4_path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = manifests_mod.verify_dataset_manifest_dir(dst)
+    assert summary["pass"] is False
+    assert any("crag_slice_queries" in item["message"] for item in summary["errors"])
