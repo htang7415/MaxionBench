@@ -48,8 +48,12 @@ if [[ -z "${SCENARIO_KEY}" ]]; then
 fi
 SCENARIO_NAME="${SCENARIO_KEY}"
 
+export MAXIONBENCH_ENABLE_HF_RERANKER=1
+mb_require_gpu_fail_fast
 mb_require_tmpdir
+mb_require_visible_gpu
 mb_source_dataset_env
+mb_require_dataset_env_contract "${CONFIG_PATH}"
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "${SCENARIO_NAME}"

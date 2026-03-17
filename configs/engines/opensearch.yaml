@@ -5,4 +5,5 @@ adapter_options:
   port: ${MAXIONBENCH_OPENSEARCH_PORT:-9200}
   scheme: ${MAXIONBENCH_OPENSEARCH_SCHEME:-http}
   timeout_s: 30.0
+  healthcheck_timeout_s: 5.0
   verify_ssl: false

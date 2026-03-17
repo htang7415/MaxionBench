@@ -8,6 +8,7 @@ import pytest
 
 from maxionbench.conformance.matrix import main as conformance_matrix_main
 from maxionbench.conformance.matrix import run_conformance_matrix
+from maxionbench.conformance.provenance import conformance_provenance_path
 
 
 def test_conformance_matrix_smoke_with_mock_only(tmp_path: Path) -> None:
@@ -39,6 +40,10 @@ def test_conformance_matrix_smoke_with_mock_only(tmp_path: Path) -> None:
     assert len(frame) == 1
     assert frame.iloc[0]["status"] == "pass"
     assert (out_dir / "conformance_matrix.json").exists()
+    provenance_path = conformance_provenance_path(out_dir / "conformance_matrix.csv")
+    assert provenance_path.exists()
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    assert provenance["matrix_path"] == str((out_dir / "conformance_matrix.csv").resolve())
 
 
 def test_conformance_matrix_invalid_config_is_recorded(tmp_path: Path) -> None:

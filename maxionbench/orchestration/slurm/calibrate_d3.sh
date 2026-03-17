@@ -18,8 +18,10 @@ if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then
   mb_die "calibration config does not exist: ${CONFIG_PATH}"
 fi
 
+mb_require_gpu_fail_fast
 mb_require_tmpdir
 mb_source_dataset_env
+mb_require_dataset_env_contract "${CONFIG_PATH}"
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "calibrate_d3"

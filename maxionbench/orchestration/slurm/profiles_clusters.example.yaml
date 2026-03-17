@@ -18,6 +18,8 @@ cluster_a_apptainer:
       - ["--cpus-per-task", "32"]
       - ["--mem", "128G"]
       - ["--time", "08:00:00"]
+    conformance:
+      - ["--gres", "gpu:1"]
     calibrate:
       - ["--gres", "gpu:1"]
     gpu_all:
@@ -48,6 +50,8 @@ cluster_b_apptainer:
       - ["--cpus-per-task", "32"]
       - ["--mem", "128G"]
       - ["--time", "08:00:00"]
+    conformance:
+      - ["--gres", "gpu:1"]
     calibrate:
       - ["--gres", "gpu:1"]
     gpu_all:

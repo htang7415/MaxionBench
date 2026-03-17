@@ -13,6 +13,8 @@ from typing import Any
 
 import pandas as pd
 
+from maxionbench.conformance.provenance import build_conformance_provenance, conformance_provenance_path
+
 
 @dataclass(frozen=True)
 class ConformanceMatrixRow:
@@ -135,17 +137,22 @@ def _write_outputs(*, rows: list[ConformanceMatrixRow], out_dir: Path, config_di
 
     csv_path = out_dir / "conformance_matrix.csv"
     frame.to_csv(csv_path, index=False)
+    provenance = build_conformance_provenance(config_dir=config_dir, matrix_path=csv_path)
+    provenance_path = conformance_provenance_path(csv_path)
+    provenance_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     summary = {
         "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
         "config_dir": str(config_dir),
         "rows": int(len(frame)),
         "status_counts": frame["status"].value_counts(dropna=False).to_dict() if not frame.empty else {},
+        "provenance_path": str(provenance_path.resolve()),
     }
     json_path = out_dir / "conformance_matrix.json"
     with json_path.open("w", encoding="utf-8") as handle:
         json.dump(
             {
+                "provenance": provenance,
                 "summary": summary,
                 "rows": [asdict(row) for row in rows],
             },

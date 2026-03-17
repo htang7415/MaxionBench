@@ -174,6 +174,10 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_FIGURES_ROOT" in text
     assert "MAXIONBENCH_D3_PARAMS_PATH" in text
     assert "MAXIONBENCH_SLURM_RUN_MANIFEST" in text
+    assert "MAXIONBENCH_CONFORMANCE_TIMEOUT_S" in text
+    assert "MAXIONBENCH_SERVICE_START_GRACE_S" in text
+    assert "MAXIONBENCH_SERVICE_START_POLL_S" in text
+    assert "MAXIONBENCH_SERVICE_LOG_TAIL_LINES" in text
     assert "MAXIONBENCH_CONTAINER_RUNTIME" in text
     assert "MAXIONBENCH_CONTAINER_IMAGE" in text
     assert "MAXIONBENCH_CONTAINER_BIND" in text
@@ -190,6 +194,9 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_MILVUS_MINIO_IMAGE" in text
     assert "MAXIONBENCH_MILVUS_IMAGE" in text
     assert "mb_source_dataset_env()" in text
+    assert "mb_require_dataset_env_contract()" in text
+    assert "mb_require_gpu_fail_fast()" in text
+    assert "mb_require_visible_gpu()" in text
     assert "mb_ensure_apptainer()" in text
     assert "module load" in text
     assert "apptainer exec --cleanenv" in text
@@ -226,10 +233,15 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_weaviate_service()" in text
     assert "mb_start_milvus_services()" in text
     assert "mb_start_apptainer_service_process()" in text
+    assert "mb_validate_apptainer_service_image()" in text
+    assert "mb_wait_named_adapter_health()" in text
     assert "mb_capture_local_diagnostics()" in text
     assert "mb_finalize_job()" in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
     assert "MAXIONBENCH_PGVECTOR_DSN=" in text
+    assert "apptainer inspect" in text
+    assert "command -v" in text
+    assert "mb_log_file_tail" in text
 
 
 def test_slurm_common_loads_apptainer_module_when_binary_missing(tmp_path: Path) -> None:
@@ -324,6 +336,9 @@ def test_stage_config_command_substitution_stays_clean_with_apptainer(tmp_path: 
         """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
 args=("$@")
 index=0
 while [[ ${index} -lt ${#args[@]} ]]; do
@@ -426,6 +441,9 @@ if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
+if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == command\ -v* ]]; then
+  exit 0
+fi
 sleep 30
 """,
         encoding="utf-8",
@@ -586,6 +604,7 @@ def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:
     for rel_path in (
         "maxionbench/orchestration/slurm/download_datasets.sh",
         "maxionbench/orchestration/slurm/preprocess_datasets.sh",
+        "maxionbench/orchestration/slurm/conformance_matrix.sh",
         "maxionbench/orchestration/slurm/postprocess.sh",
         "maxionbench/orchestration/slurm/calibrate_d3.sh",
         "maxionbench/orchestration/slurm/prefetch_datasets.sh",
@@ -656,6 +675,7 @@ def test_new_slurm_pipeline_scripts_exist() -> None:
     for path in (
         Path("maxionbench/orchestration/slurm/download_datasets.sh"),
         Path("maxionbench/orchestration/slurm/preprocess_datasets.sh"),
+        Path("maxionbench/orchestration/slurm/conformance_matrix.sh"),
         Path("maxionbench/orchestration/slurm/postprocess.sh"),
         Path("run_slurm_pipeline.sh"),
         Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml"),

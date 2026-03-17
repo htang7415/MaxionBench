@@ -3,13 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from maxionbench.orchestration.slurm.run_manifest import RunManifest, RunManifestRow
-from maxionbench.orchestration.slurm.submit_plan import SubmitStep, build_submit_steps, submit_steps
+from maxionbench.orchestration.slurm.submit_plan import (
+    SubmitStep,
+    build_submit_steps,
+    submit_steps,
+    validate_full_matrix_contract,
+)
 
 
 def test_build_submit_steps_enforces_d3_dependency_chain() -> None:
     steps = build_submit_steps(include_gpu=True)
     by_key = {step.key: step for step in steps}
-    assert by_key["calibrate"].depends_on == ()
+    assert by_key["conformance"].depends_on == ()
+    assert by_key["calibrate"].depends_on == ("conformance",)
     assert by_key["cpu_d3_baseline"].depends_on == ("calibrate",)
     assert by_key["cpu_d3_workloads"].depends_on == ("calibrate", "cpu_d3_baseline")
     assert by_key["cpu_non_d3"].depends_on == ("calibrate",)
@@ -28,13 +34,14 @@ def test_build_submit_steps_can_prepend_dataset_prefetch() -> None:
     by_key = {step.key: step for step in steps}
     assert steps[0].key == "prefetch_datasets"
     assert by_key["prefetch_datasets"].depends_on == ()
-    assert by_key["calibrate"].depends_on == ("prefetch_datasets",)
+    assert by_key["conformance"].depends_on == ("prefetch_datasets",)
+    assert by_key["calibrate"].depends_on == ("conformance",)
 
 
 def test_submit_steps_dry_run_resolves_afterok_dependencies(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     summary = submit_steps(
@@ -45,6 +52,7 @@ def test_submit_steps_dry_run_resolves_afterok_dependencies(tmp_path: Path) -> N
     )
     by_key = {step["key"]: step for step in summary["steps"]}
 
+    assert by_key["calibrate"]["command"][2:4] == ["--dependency", "afterok:<CONFORMANCE_JOB_ID>"]
     assert by_key["cpu_d3_baseline"]["command"][2:4] == ["--dependency", "afterok:<CALIBRATE_JOB_ID>"]
     assert by_key["cpu_d3_workloads"]["command"][2:4] == [
         "--dependency",
@@ -57,7 +65,7 @@ def test_submit_steps_dry_run_resolves_afterok_dependencies(tmp_path: Path) -> N
 def test_submit_steps_dry_run_resolves_prefetch_dependency_when_enabled(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("prefetch_datasets.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("prefetch_datasets.sh", "conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     summary = submit_steps(
@@ -70,14 +78,15 @@ def test_submit_steps_dry_run_resolves_prefetch_dependency_when_enabled(tmp_path
     by_key = {step["key"]: step for step in summary["steps"]}
 
     assert by_key["prefetch_datasets"]["command"][-1] == str((slurm_dir / "prefetch_datasets.sh").resolve())
-    assert by_key["calibrate"]["command"][2:4] == ["--dependency", "afterok:<PREFETCH_DATASETS_JOB_ID>"]
+    assert by_key["conformance"]["command"][2:4] == ["--dependency", "afterok:<PREFETCH_DATASETS_JOB_ID>"]
+    assert by_key["calibrate"]["command"][2:4] == ["--dependency", "afterok:<CONFORMANCE_JOB_ID>"]
     assert summary["prefetch_datasets"] is True
 
 
 def test_submit_steps_exports_scenario_config_dir_when_provided(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     summary = submit_steps(
@@ -103,7 +112,7 @@ def test_submit_steps_rejects_unknown_local_slurm_profile(
 ) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
 
@@ -128,7 +137,7 @@ def test_submit_steps_applies_local_profile_override_flags(
 ) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     overrides_path = tmp_path / "profiles_local.yaml"
@@ -147,6 +156,8 @@ your_cluster:
     - ["--account", "private-account"]
     - ["--partition", "private-partition"]
   step_overrides:
+    conformance:
+      - ["--gres", "gpu:1"]
     calibrate:
       - ["--gres", "gpu:1"]
     gpu_all:
@@ -175,7 +186,7 @@ your_cluster:
     assert first_cmd[first_cmd.index("--gres") + 1] == "gpu:1"
     assert summary["slurm_profile"] == "your_cluster"
 
-    cpu_cmd = [str(item) for item in summary["steps"][1]["command"]]
+    cpu_cmd = [str(item) for item in summary["steps"][2]["command"]]
     assert "--partition" in cpu_cmd
     assert "--account" in cpu_cmd
     assert "--gres" not in cpu_cmd
@@ -188,7 +199,7 @@ def test_submit_steps_warns_on_unknown_step_override_keys(
 ) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh", "download_datasets.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh", "download_datasets.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     overrides_path = tmp_path / "profiles_local.yaml"
@@ -229,7 +240,7 @@ your_cluster:
 def test_submit_steps_exports_output_root_when_provided(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     summary = submit_steps(
@@ -250,7 +261,7 @@ def test_submit_steps_exports_output_root_when_provided(tmp_path: Path) -> None:
 def test_submit_steps_exports_container_runtime_settings_when_provided(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     summary = submit_steps(
@@ -278,10 +289,83 @@ def test_submit_steps_exports_container_runtime_settings_when_provided(tmp_path:
         assert "MAXIONBENCH_HF_CACHE_DIR=/shared/models/hf" in export_value
 
 
+def test_submit_steps_exports_conformance_matrix_path(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=False),
+        seed=42,
+        conformance_matrix_path="artifacts/slurm_manifests/latest/conformance/conformance_matrix.csv",
+        dry_run=True,
+    )
+    for step in summary["steps"]:
+        cmd = [str(item) for item in step["command"]]
+        export_value = cmd[cmd.index("--export") + 1]
+        assert "MAXIONBENCH_CONFORMANCE_MATRIX=artifacts/slurm_manifests/latest/conformance/conformance_matrix.csv" in export_value
+
+
+def test_validate_full_matrix_contract_rejects_gpu_omission() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/generated",
+        cpu_rows=[],
+        gpu_rows=[],
+        selected_engines=[],
+        selected_templates=[],
+    )
+    try:
+        validate_full_matrix_contract(
+            manifest=manifest,
+            skip_gpu=True,
+            prefetch_datasets=True,
+            allow_gpu_unavailable_env="0",
+        )
+    except ValueError as exc:
+        assert "--skip-gpu" in str(exc)
+    else:
+        raise AssertionError("expected validate_full_matrix_contract to reject GPU omission")
+
+
+def test_validate_full_matrix_contract_rejects_reduced_gpu_row_count() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/generated",
+        cpu_rows=[],
+        gpu_rows=[
+            RunManifestRow(
+                group="gpu",
+                config_path=f"/repo/generated/gpu_{idx}.yaml",
+                engine="faiss-gpu",
+                scenario="s5_rerank",
+                dataset_bundle="D4",
+                template_name=f"gpu_{idx}.yaml",
+            )
+            for idx in range(18)
+        ],
+        selected_engines=[],
+        selected_templates=[],
+    )
+    try:
+        validate_full_matrix_contract(
+            manifest=manifest,
+            skip_gpu=False,
+            prefetch_datasets=True,
+            allow_gpu_unavailable_env="0",
+        )
+    except ValueError as exc:
+        assert "19 GPU rows" in str(exc)
+    else:
+        raise AssertionError("expected validate_full_matrix_contract to reject a reduced GPU manifest")
+
+
 def test_submit_steps_requires_container_image_when_runtime_enabled(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     try:
@@ -354,6 +438,7 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
     assert [step.key for step in steps] == [
         "download_datasets",
         "preprocess_datasets",
+        "conformance",
         "calibrate",
         "cpu_d3_baseline",
         "cpu_d3_workloads",
@@ -363,7 +448,8 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
     ]
     assert by_key["download_datasets"].depends_on == ()
     assert by_key["preprocess_datasets"].depends_on == ("download_datasets",)
-    assert by_key["calibrate"].depends_on == ("preprocess_datasets",)
+    assert by_key["conformance"].depends_on == ("preprocess_datasets",)
+    assert by_key["calibrate"].depends_on == ("conformance",)
     assert by_key["cpu_d3_baseline"].array == "0"
     assert by_key["cpu_d3_workloads"].array == "1"
     assert by_key["cpu_non_d3"].array == "2"
@@ -415,12 +501,14 @@ def test_build_submit_steps_splits_gpu_manifest_d3_dependency_chain() -> None:
     by_key = {step.key: step for step in steps}
 
     assert [step.key for step in steps] == [
+        "conformance",
         "calibrate",
         "gpu_d3_baseline",
         "gpu_d3_workloads",
         "gpu_non_d3",
         "postprocess",
     ]
+    assert by_key["conformance"].depends_on == ()
     assert by_key["gpu_d3_baseline"].array == "0"
     assert by_key["gpu_d3_baseline"].depends_on == ("calibrate",)
     assert by_key["gpu_d3_workloads"].array == "1"
@@ -494,6 +582,7 @@ def test_submit_steps_step_overrides_replace_duplicate_base_flags(
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
     for script_name in (
+        "conformance_matrix.sh",
         "calibrate_d3.sh",
         "cpu_array.sh",
         "gpu_array.sh",
@@ -554,6 +643,7 @@ def test_submit_steps_dry_run_emits_no_duplicate_sbatch_flags_per_step(
     for script_name in (
         "download_datasets.sh",
         "preprocess_datasets.sh",
+        "conformance_matrix.sh",
         "calibrate_d3.sh",
         "cpu_array.sh",
         "gpu_array.sh",
@@ -584,6 +674,8 @@ your_cluster:
       - ["--cpus-per-task", "32"]
       - ["--mem", "128G"]
       - ["--time", "08:00:00"]
+    conformance:
+      - ["--gres", "gpu:1"]
     calibrate:
       - ["--gres", "gpu:1"]
     gpu_all:
@@ -624,6 +716,7 @@ def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None
     for script_name in (
         "download_datasets.sh",
         "preprocess_datasets.sh",
+        "conformance_matrix.sh",
         "calibrate_d3.sh",
         "cpu_array.sh",
         "gpu_array.sh",
@@ -658,7 +751,7 @@ def test_submit_steps_uses_tracked_cluster_profile_examples(
 ) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
@@ -671,13 +764,13 @@ def test_submit_steps_uses_tracked_cluster_profile_examples(
         slurm_profile="cluster_a_apptainer",
         dry_run=True,
     )
-    calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]
-    assert "--job-name" in calibrate_cmd
-    assert calibrate_cmd[calibrate_cmd.index("--job-name") + 1] == "maxion"
-    assert "--cpus-per-task" in calibrate_cmd
-    assert calibrate_cmd[calibrate_cmd.index("--cpus-per-task") + 1] == "96"
-    assert "--gres" in calibrate_cmd
-    assert calibrate_cmd[calibrate_cmd.index("--gres") + 1] == "gpu:1"
+    conformance_cmd = [str(item) for item in summary["steps"][0]["command"]]
+    assert "--job-name" in conformance_cmd
+    assert conformance_cmd[conformance_cmd.index("--job-name") + 1] == "maxion"
+    assert "--cpus-per-task" in conformance_cmd
+    assert conformance_cmd[conformance_cmd.index("--cpus-per-task") + 1] == "96"
+    assert "--gres" in conformance_cmd
+    assert conformance_cmd[conformance_cmd.index("--gres") + 1] == "gpu:1"
 
 
 def test_submit_steps_expands_env_placeholders_in_tracked_profiles(
@@ -686,7 +779,7 @@ def test_submit_steps_expands_env_placeholders_in_tracked_profiles(
 ) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
+    for script_name in ("conformance_matrix.sh", "calibrate_d3.sh", "cpu_array.sh", "gpu_array.sh"):
         (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
     monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(tmp_path / "missing_profiles_local.yaml"))
@@ -700,8 +793,8 @@ def test_submit_steps_expands_env_placeholders_in_tracked_profiles(
         slurm_profile="cluster_b_apptainer",
         dry_run=True,
     )
-    calibrate_cmd = [str(item) for item in summary["steps"][0]["command"]]
-    assert "--account" in calibrate_cmd
-    assert calibrate_cmd[calibrate_cmd.index("--account") + 1] == "tracked-account"
-    assert "--partition" in calibrate_cmd
-    assert calibrate_cmd[calibrate_cmd.index("--partition") + 1] == "tracked-partition"
+    conformance_cmd = [str(item) for item in summary["steps"][0]["command"]]
+    assert "--account" in conformance_cmd
+    assert conformance_cmd[conformance_cmd.index("--account") + 1] == "tracked-account"
+    assert "--partition" in conformance_cmd
+    assert conformance_cmd[conformance_cmd.index("--partition") + 1] == "tracked-partition"

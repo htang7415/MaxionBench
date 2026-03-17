@@ -12,11 +12,12 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     definition = Path("maxionbench.def")
     download = Path("maxionbench/orchestration/slurm/download_datasets.sh")
     preprocess = Path("maxionbench/orchestration/slurm/preprocess_datasets.sh")
+    conformance = Path("maxionbench/orchestration/slurm/conformance_matrix.sh")
     postprocess = Path("maxionbench/orchestration/slurm/postprocess.sh")
     profiles = Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml")
     env_example = Path(".env.slurm.example")
 
-    for path in (script, build_script, definition, download, preprocess, postprocess, profiles, env_example):
+    for path in (script, build_script, definition, download, preprocess, conformance, postprocess, profiles, env_example):
         assert path.exists(), path
 
     text = script.read_text(encoding="utf-8")
@@ -24,6 +25,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "CLI_CMD=()" in text
     assert "--download-datasets" in text
     assert "--preprocess-datasets" in text
+    assert "--prefetch-datasets" in text
     assert "--include-postprocess" in text
     assert "--full-matrix" in text
     assert "--container-runtime apptainer" in text
@@ -38,6 +40,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "prepare_shared_layout()" in text
     assert "prepare_container_images()" in text
     assert "scripts/build_containers.sh" in text
+    assert "full-matrix reruns require all GPU jobs" in text
 
     build_text = build_script.read_text(encoding="utf-8")
     assert "apptainer build" in build_text
@@ -52,7 +55,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "From: python:3.11-slim" in definition_text
     assert "%post" in definition_text
     assert "%runscript" in definition_text
-    assert 'python -m pip install ".[dev,engines,reporting,datasets]"' in definition_text
+    assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
+    assert 'python -m pip install ".[dev,engines,reporting,datasets,rerank]"' in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -65,6 +69,10 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "preprocess-datasets beir" in preprocess_text
     assert "preprocess-datasets crag" in preprocess_text
 
+    conformance_text = conformance.read_text(encoding="utf-8")
+    assert "mb_wait_named_adapter_health" in conformance_text
+    assert "maxionbench.cli conformance-matrix" in conformance_text
+
     postprocess_text = postprocess.read_text(encoding="utf-8")
     assert "maxionbench.cli validate" in postprocess_text
     assert "maxionbench.cli report" in postprocess_text
@@ -74,6 +82,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "cluster_b_apptainer:" in profiles_text
     assert "download_datasets:" in profiles_text
     assert "preprocess_datasets:" in profiles_text
+    assert "conformance:" in profiles_text
     assert "postprocess:" in profiles_text
 
     env_text = env_example.read_text(encoding="utf-8")
@@ -106,6 +115,7 @@ def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
         "scripts/build_containers.sh",
         "maxionbench/orchestration/slurm/download_datasets.sh",
         "maxionbench/orchestration/slurm/preprocess_datasets.sh",
+        "maxionbench/orchestration/slurm/conformance_matrix.sh",
         "maxionbench/orchestration/slurm/postprocess.sh",
     ):
         completed = subprocess.run(

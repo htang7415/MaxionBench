@@ -23,7 +23,11 @@ export MAXIONBENCH_APPTAINER_RUNTIME_LOGGED="${MAXIONBENCH_APPTAINER_RUNTIME_LOG
 export MAXIONBENCH_DATASET_ENV_SH="${MAXIONBENCH_DATASET_ENV_SH:-${ROOT_DIR}/artifacts/prefetch/dataset_env.sh}"
 export MAXIONBENCH_D3_PARAMS_PATH="${MAXIONBENCH_D3_PARAMS_PATH:-}"
 export MAXIONBENCH_SLURM_RUN_MANIFEST="${MAXIONBENCH_SLURM_RUN_MANIFEST:-}"
-export MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S="${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S:-120}"
+export MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S="${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S:-300}"
+export MAXIONBENCH_CONFORMANCE_TIMEOUT_S="${MAXIONBENCH_CONFORMANCE_TIMEOUT_S:-300}"
+export MAXIONBENCH_SERVICE_START_GRACE_S="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
+export MAXIONBENCH_SERVICE_START_POLL_S="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
+export MAXIONBENCH_SERVICE_LOG_TAIL_LINES="${MAXIONBENCH_SERVICE_LOG_TAIL_LINES:-80}"
 export MAXIONBENCH_QDRANT_IMAGE="${MAXIONBENCH_QDRANT_IMAGE:-}"
 export MAXIONBENCH_PGVECTOR_IMAGE="${MAXIONBENCH_PGVECTOR_IMAGE:-}"
 export MAXIONBENCH_OPENSEARCH_IMAGE="${MAXIONBENCH_OPENSEARCH_IMAGE:-}"
@@ -97,6 +101,114 @@ mb_source_dataset_env() {
     # shellcheck disable=SC1090
     source "${resolved_env}"
     mb_log "loaded dataset env: ${resolved_env}"
+  fi
+}
+
+mb_require_gpu_fail_fast() {
+  if [[ "${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}" == "1" ]]; then
+    mb_die "MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1 is not allowed for this GPU-required Slurm rerun"
+  fi
+}
+
+mb_require_visible_gpu() {
+  local gpu_count
+  gpu_count="$(mb_python - <<'PY'
+from maxionbench.runtime.system_info import collect_system_info
+
+try:
+    payload = collect_system_info()
+except Exception:
+    payload = {}
+print(int(payload.get("gpu_count", 0) or 0))
+PY
+)"
+  if [[ "${gpu_count}" -lt 1 ]]; then
+    mb_die "at least one visible GPU is required for this job"
+  fi
+  mb_log "visible GPUs=${gpu_count}"
+}
+
+mb_require_dataset_env_contract() {
+  local config_path="$1"
+  local resolved
+  resolved="$(mb_resolve_config "${config_path}")"
+  local dataset_env="${MAXIONBENCH_DATASET_ENV_SH:-}"
+  local resolved_dataset_env=""
+  if [[ -n "${dataset_env}" ]]; then
+    resolved_dataset_env="$(mb_resolve_host_path "${dataset_env}")"
+  fi
+  local summary
+  summary="$(mb_python - <<'PY' "${resolved}" "${resolved_dataset_env}"
+from pathlib import Path
+import json
+import shlex
+import sys
+
+import yaml
+
+cfg_path = Path(sys.argv[1]).resolve()
+env_path_raw = sys.argv[2]
+env_path = Path(env_path_raw).resolve() if env_path_raw else None
+payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+if not isinstance(payload, dict):
+    raise ValueError(f"Expected YAML mapping config: {cfg_path}")
+dataset_bundle = str(payload.get("dataset_bundle", "")).upper()
+need_d3 = bool(dataset_bundle == "D3" and (payload.get("dataset_path") or bool(payload.get("calibration_require_real_data", False))))
+need_d4_beir = bool(dataset_bundle == "D4" and bool(payload.get("d4_use_real_data", False)) and payload.get("d4_beir_root"))
+need_d4_crag = bool(
+    dataset_bundle == "D4"
+    and bool(payload.get("d4_use_real_data", False))
+    and bool(payload.get("d4_include_crag", False))
+    and payload.get("d4_crag_path")
+)
+required = need_d3 or need_d4_beir or need_d4_crag
+if not required:
+    print(json.dumps({"required": False}))
+    raise SystemExit(0)
+if env_path is None or not env_path.exists():
+    raise FileNotFoundError(f"required dataset env export file is missing: {env_path}")
+
+exports = {}
+for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line.startswith("export "):
+        continue
+    assignment = line[len("export ") :]
+    name, sep, value = assignment.partition("=")
+    if sep != "=":
+        continue
+    tokens = shlex.split(value, posix=True)
+    exports[name.strip()] = tokens[0] if tokens else ""
+
+required_exports = []
+if need_d3:
+    required_exports.extend(["MAXIONBENCH_D3_DATASET_PATH", "MAXIONBENCH_D3_DATASET_SHA256"])
+if need_d4_beir:
+    required_exports.append("MAXIONBENCH_D4_BEIR_ROOT")
+if need_d4_crag:
+    required_exports.extend(["MAXIONBENCH_D4_CRAG_PATH", "MAXIONBENCH_D4_CRAG_SHA256"])
+
+missing = [name for name in required_exports if not str(exports.get(name, "")).strip()]
+if missing:
+    raise ValueError(
+        f"dataset env `{env_path}` is missing required export(s) for {cfg_path.name}: {', '.join(sorted(missing))}"
+    )
+
+print(
+    json.dumps(
+        {
+            "required": True,
+            "config_path": str(cfg_path),
+            "env_sh_path": str(env_path),
+            "required_exports": sorted(required_exports),
+        },
+        sort_keys=True,
+    )
+)
+PY
+)"
+  if [[ "${summary}" != '{"required": false}' ]]; then
+    mb_log "validated dataset env contract ${summary}"
   fi
 }
 
@@ -457,6 +569,7 @@ mb_resolve_apptainer_image() {
 mb_require_apptainer_service_image() {
   local env_name="$1"
   local label="$2"
+  local expected_binary="${3:-}"
   local raw_path="${!env_name:-}"
   if [[ -z "${raw_path}" ]]; then
     mb_die "${env_name} must be set to a prebuilt Apptainer image for ${label}"
@@ -466,7 +579,37 @@ mb_require_apptainer_service_image() {
   if [[ ! -f "${resolved}" ]]; then
     mb_die "${label} Apptainer image not found: ${resolved}"
   fi
+  if [[ -n "${expected_binary}" ]]; then
+    mb_validate_apptainer_service_image "${resolved}" "${label}" "${expected_binary}"
+  fi
   echo "${resolved}"
+}
+
+mb_validate_apptainer_service_image() {
+  local image_path="$1"
+  local label="$2"
+  local expected_binary="$3"
+  if ! mb_ensure_apptainer; then
+    mb_die "Apptainer is required to validate ${label} image ${image_path}"
+  fi
+  if ! apptainer inspect "${image_path}" >/dev/null 2>&1; then
+    mb_die "${label} Apptainer image failed inspect: ${image_path}"
+  fi
+  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -lc "command -v ${expected_binary}" >/dev/null 2>&1; then
+    mb_die "${label} Apptainer image does not expose required binary `${expected_binary}`: ${image_path}"
+  fi
+}
+
+mb_log_file_tail() {
+  local label="$1"
+  local file_path="$2"
+  local tail_lines="${MAXIONBENCH_SERVICE_LOG_TAIL_LINES:-80}"
+  if [[ ! -f "${file_path}" ]]; then
+    mb_log "no log file available for ${label}: ${file_path}"
+    return 0
+  fi
+  mb_log "tail ${tail_lines} from ${label} log ${file_path}:"
+  tail -n "${tail_lines}" "${file_path}" || true
 }
 
 mb_detect_engine_runtime_mode() {
@@ -562,17 +705,28 @@ mb_start_apptainer_service_process() {
 
   "${container_cmd[@]}" >"${log_file}" 2>&1 &
   local pid=$!
-  sleep 1
-  if ! kill -0 "${pid}" >/dev/null 2>&1; then
-    mb_die "managed engine service ${name} exited early; see ${log_file}"
-  fi
+  local grace_s="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
+  local poll_s="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
+  local max_checks=1
+  max_checks="$(awk -v g="${grace_s}" -v p="${poll_s}" 'BEGIN { v=int((g / p)+0.999999); if (v < 1) v = 1; print v }')"
+  local check_idx=0
+  while [[ "${check_idx}" -lt "${max_checks}" ]]; do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      mb_log_file_tail "managed engine service ${name}" "${log_file}"
+      mb_die "managed engine service ${name} exited early; see ${log_file}"
+    fi
+    check_idx=$((check_idx + 1))
+    if [[ "${check_idx}" -lt "${max_checks}" ]]; then
+      sleep "${poll_s}"
+    fi
+  done
   mb_register_engine_pid "${name}" "${pid}"
   mb_log "started engine service ${name} pid=${pid} log=${log_file}"
 }
 
 mb_start_qdrant_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant" "qdrant")"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local storage_dir="${runtime_root}/qdrant/storage"
@@ -590,7 +744,7 @@ mb_start_qdrant_service() {
 
 mb_start_pgvector_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector" "docker-entrypoint.sh")"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/pgvector/data"
@@ -608,7 +762,7 @@ mb_start_pgvector_service() {
 
 mb_start_opensearch_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_OPENSEARCH_IMAGE" "opensearch")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_OPENSEARCH_IMAGE" "opensearch" "opensearch")"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/opensearch/data"
@@ -638,7 +792,7 @@ EOF
 
 mb_start_weaviate_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_WEAVIATE_IMAGE" "weaviate")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_WEAVIATE_IMAGE" "weaviate" "weaviate")"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/weaviate/data"
@@ -660,9 +814,9 @@ mb_start_milvus_services() {
   local etcd_image
   local minio_image
   local milvus_image
-  etcd_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_ETCD_IMAGE" "milvus-etcd")"
-  minio_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_MINIO_IMAGE" "milvus-minio")"
-  milvus_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_IMAGE" "milvus")"
+  etcd_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_ETCD_IMAGE" "milvus-etcd" "etcd")"
+  minio_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_MINIO_IMAGE" "milvus-minio" "minio")"
+  milvus_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_IMAGE" "milvus" "milvus")"
 
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
@@ -695,6 +849,17 @@ mb_start_milvus_services() {
   local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
   local milvus_cmd="${MAXIONBENCH_MILVUS_START_CMD:-milvus run standalone}"
   mb_start_apptainer_service_process "milvus" "${milvus_image}" "${milvus_cmd}" milvus_env milvus_binds
+}
+
+mb_wait_named_adapter_health() {
+  local adapter_name="$1"
+  local adapter_options_json="$2"
+  mb_log "waiting for adapter health adapter=${adapter_name} timeout=${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}s"
+  mb_python -m maxionbench.cli wait-adapter \
+    --adapter "${adapter_name}" \
+    --adapter-options-json "${adapter_options_json}" \
+    --timeout-s "${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}" \
+    --json
 }
 
 mb_start_engine_services() {
