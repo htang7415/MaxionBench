@@ -52,7 +52,7 @@ def test_load_processed_ann_dataset_reads_numeric_ground_truth(tmp_path: Path) -
 
     ds = load_processed_ann_dataset(root, top_k=2)
     assert ds.metric == "angular"
-    assert ds.ids == ["doc-0000000", "doc-0000001", "doc-0000002"]
+    assert list(ds.ids) == ["doc-0000000", "doc-0000001", "doc-0000002"]
     assert ds.ground_truth_ids == [["doc-0000000", "doc-0000002"]]
 
 

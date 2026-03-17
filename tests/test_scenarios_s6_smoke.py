@@ -6,7 +6,22 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from maxionbench.datasets.loaders.d4_synthetic import generate_d4_synthetic_dataset
 from maxionbench.orchestration.runner import run_from_config
+from maxionbench.scenarios.s6_fusion import _ingest_dataset as ingest_s6_dataset
+
+
+class _BulkSpyAdapter:
+    def __init__(self) -> None:
+        self.bulk_sizes: list[int] = []
+        self.flush_calls = 0
+
+    def bulk_upsert(self, records) -> int:  # type: ignore[no-untyped-def]
+        self.bulk_sizes.append(len(records))
+        return len(records)
+
+    def flush_or_commit(self) -> None:
+        self.flush_calls += 1
 
 
 def test_s6_fusion_smoke(tmp_path: Path) -> None:
@@ -50,3 +65,13 @@ def test_s6_fusion_smoke(tmp_path: Path) -> None:
         assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
         modes.add(payload["mode"])
     assert modes.issubset({"s6a_dense_dense_rrf", "s6b_dense_bm25_rrf"})
+
+
+def test_s6_ingest_batches_large_d4_dataset() -> None:
+    dataset = generate_d4_synthetic_dataset(num_docs=5_005, num_queries=4, vector_dim=12, seed=23)
+    adapter = _BulkSpyAdapter()
+
+    ingest_s6_dataset(adapter, dataset)
+
+    assert adapter.bulk_sizes == [5_000, 5]
+    assert adapter.flush_calls == 1

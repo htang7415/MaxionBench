@@ -11,6 +11,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from maxionbench.datasets.d3_generator import SequentialDocIdSequence
+
 from .d4_synthetic import D4RetrievalDataset, compute_idf, tokenize_text
 
 
@@ -20,7 +22,7 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProcessedAnnDataset:
-    ids: list[str]
+    ids: Sequence[str]
     vectors: np.ndarray
     queries: np.ndarray
     ground_truth_ids: list[list[str]]
@@ -30,12 +32,12 @@ class ProcessedAnnDataset:
 
 @dataclass(frozen=True)
 class ProcessedFilteredAnnDataset:
-    ids: list[str]
+    ids: Sequence[str]
     vectors: np.ndarray
     queries: np.ndarray
     ground_truth_ids: list[list[str]]
-    query_filters: list[dict[str, Any]]
-    payloads: list[dict[str, Any]]
+    query_filters: Sequence[dict[str, Any]]
+    payloads: Sequence[dict[str, Any]]
     metric: str
     meta: dict[str, Any]
 
@@ -66,9 +68,9 @@ def load_processed_ann_dataset(
     queries = _load_required_array(root / "queries.npy", mmap=True)
     gt_ids = _load_required_array(root / "gt_ids.npy", mmap=True)
 
-    vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors, dtype=np.float32)
-    queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries, dtype=np.float32)
-    ids = [f"doc-{idx:07d}" for idx in range(int(vectors_np.shape[0]))]
+    vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors).astype(np.float32, copy=False)
+    queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries).astype(np.float32, copy=False)
+    ids = SequentialDocIdSequence(int(vectors_np.shape[0]))
     gt_rows = _resolve_ground_truth_ids(
         gt_ids=gt_ids[: queries_np.shape[0]],
         ids=ids,
@@ -104,9 +106,9 @@ def load_processed_filtered_ann_dataset(
     payload_path = root / "payloads.jsonl"
     payloads = list(_read_jsonl(payload_path)) if payload_path.exists() else []
 
-    vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors, dtype=np.float32)
-    queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries, dtype=np.float32)
-    ids = [f"doc-{idx:07d}" for idx in range(int(vectors_np.shape[0]))]
+    vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors).astype(np.float32, copy=False)
+    queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries).astype(np.float32, copy=False)
+    ids = SequentialDocIdSequence(int(vectors_np.shape[0]))
     gt_rows = _resolve_ground_truth_ids(
         gt_ids=gt_ids[: queries_np.shape[0]],
         ids=ids,
@@ -124,15 +126,15 @@ def load_processed_filtered_ann_dataset(
             len(payloads),
             len(ids),
         )
-    padded_payloads = payloads[: len(ids)] if payloads else [{} for _ in ids]
+    padded_payloads = payloads[: len(ids)] if payloads else [{} for _ in range(len(ids))]
 
     return ProcessedFilteredAnnDataset(
         ids=ids,
         vectors=vectors_np,
         queries=queries_np,
         ground_truth_ids=gt_rows,
-        query_filters=[dict(row) for row in limited_filters],
-        payloads=[dict(row) for row in padded_payloads],
+        query_filters=list(limited_filters),
+        payloads=padded_payloads,
         metric=str(meta.get("metric", "ip")).lower(),
         meta=meta,
     )
@@ -213,7 +215,7 @@ def _load_required_array(path: Path, *, mmap: bool) -> np.ndarray:
 def _resolve_ground_truth_ids(
     *,
     gt_ids: np.ndarray,
-    ids: list[str],
+    ids: Sequence[str],
     top_k: int,
 ) -> list[list[str]]:
     rows: list[list[str]] = []

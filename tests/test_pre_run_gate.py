@@ -50,7 +50,7 @@ def test_pre_run_gate_skips_mock_engine_without_readiness_files(tmp_path: Path) 
     assert summary["skipped"] is True
 
 
-def test_pre_run_gate_fails_real_engine_without_full_readiness(tmp_path: Path) -> None:
+def test_pre_run_gate_passes_real_engine_with_target_readiness_only(tmp_path: Path) -> None:
     cfg_path = tmp_path / "qdrant.yaml"
     _write_config(cfg_path, engine="qdrant")
 
@@ -64,10 +64,33 @@ def test_pre_run_gate_fails_real_engine_without_full_readiness(tmp_path: Path) -
         conformance_matrix_path=matrix_path,
         behavior_dir=behavior_dir,
     )
-    assert summary["pass"] is False
+    assert summary["pass"] is True
     readiness = summary["readiness"]
     assert isinstance(readiness, dict)
-    assert int(readiness["error_count"]) >= 1
+    assert int(readiness["error_count"]) == 0
+
+
+def test_pre_run_gate_ignores_unrelated_failed_adapters(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "qdrant.yaml"
+    _write_config(cfg_path, engine="qdrant")
+
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame(
+        [
+            {"adapter": "qdrant", "status": "pass"},
+            {"adapter": "milvus", "status": "fail"},
+        ]
+    ).to_csv(matrix_path, index=False)
+
+    summary = evaluate_pre_run_gate(
+        config_path=cfg_path,
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+    )
+    assert summary["pass"] is True
+    assert summary["readiness"]["target_adapter"] == "qdrant"
 
 
 def test_pre_run_gate_passes_real_engine_with_full_readiness(tmp_path: Path) -> None:
@@ -96,6 +119,33 @@ def test_pre_run_gate_cli_reports_failure_json(tmp_path: Path, capsys) -> None: 
     shutil.copytree(Path("docs/behavior"), behavior_dir)
     matrix_path = tmp_path / "conformance_matrix.csv"
     _write_conformance_matrix(matrix_path, include_faiss_gpu=False)
+
+    code = cli_main(
+        [
+            "pre-run-gate",
+            "--config",
+            str(cfg_path),
+            "--conformance-matrix",
+            str(matrix_path),
+            "--behavior-dir",
+            str(behavior_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["pass"] is True
+    assert payload["readiness"]["target_adapter"] == "qdrant"
+
+
+def test_pre_run_gate_cli_reports_target_failure_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    cfg_path = tmp_path / "qdrant.yaml"
+    _write_config(cfg_path, engine="qdrant")
+
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame([{"adapter": "qdrant", "status": "fail"}]).to_csv(matrix_path, index=False)
 
     code = cli_main(
         [

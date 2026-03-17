@@ -47,4 +47,5 @@ def load_d3_vectors(
         raise ValueError(
             f"D3 dataset dimension mismatch: expected {int(expected_dim)}, got {int(array.shape[1])}"
         )
-    return np.asarray(array[:max_vectors], dtype=np.float32)
+    view = array[:max_vectors]
+    return np.asarray(view).astype(np.float32, copy=False)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import hashlib
 import json
 from pathlib import Path
@@ -9,7 +10,54 @@ import pandas as pd
 import pytest
 import yaml
 
+from maxionbench.datasets.d3_generator import default_d3_params, generate_d3_dataset, generate_synthetic_vectors
 from maxionbench.orchestration.runner import run_from_config
+from maxionbench.scenarios.s1_ann_frontier import S1Config, S1Data, run_with_data
+from maxionbench.scenarios.s2_filtered_ann import _ingest_dataset
+from maxionbench.scenarios.s3_churn_smooth import _OracleState, _ingest_state
+
+
+class _BulkSpyAdapter:
+    def __init__(self) -> None:
+        self.bulk_sizes: list[int] = []
+        self.flush_calls = 0
+
+    def bulk_upsert(self, records) -> int:  # type: ignore[no-untyped-def]
+        self.bulk_sizes.append(len(records))
+        return len(records)
+
+    def flush_or_commit(self) -> None:
+        self.flush_calls += 1
+
+
+class _IndexOnlyIds(Sequence[str]):
+    def __init__(self, size: int) -> None:
+        self._size = int(size)
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int | slice) -> str | list[str]:
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self._size)
+            return [f"doc-{position:07d}" for position in range(start, stop, step)]
+        value = int(index)
+        if value < 0:
+            value += self._size
+        if value < 0 or value >= self._size:
+            raise IndexError("id index out of range")
+        return f"doc-{value:07d}"
+
+    def __iter__(self):  # type: ignore[override]
+        raise AssertionError("run_with_data should not materialize ids via list()/iteration")
+
+
+class _S1SpyAdapter(_BulkSpyAdapter):
+    def set_search_params(self, params) -> None:  # type: ignore[no-untyped-def]
+        return None
+
+    def query(self, request):  # type: ignore[no-untyped-def]
+        return []
 
 
 def _run_cfg(tmp_path: Path, cfg: dict) -> Path:
@@ -236,6 +284,60 @@ def test_calibrate_d3_requires_real_dataset_when_flag_enabled(tmp_path: Path) ->
     }
     with pytest.raises(ValueError, match="requires a real D3 dataset_path"):
         _run_cfg(tmp_path, cfg)
+
+
+def test_s2_ingest_batches_large_d3_dataset() -> None:
+    vectors = generate_synthetic_vectors(num_vectors=10_005, dim=8, seed=31)
+    dataset = generate_d3_dataset(vectors, default_d3_params(scale="10m", seed=31))
+    adapter = _BulkSpyAdapter()
+
+    _ingest_dataset(adapter, dataset)
+
+    assert adapter.bulk_sizes == [10_000, 5]
+    assert adapter.flush_calls == 1
+
+
+def test_s3_oracle_state_and_ingest_avoid_copying_base_payloads() -> None:
+    vectors = generate_synthetic_vectors(num_vectors=10_005, dim=8, seed=37)
+    dataset = generate_d3_dataset(vectors, default_d3_params(scale="10m", seed=37))
+    state = _OracleState.from_dataset(dataset)
+    adapter = _BulkSpyAdapter()
+
+    assert state.base_ids is dataset.ids
+    assert state.base_payloads is dataset.payloads
+
+    _ingest_state(adapter, state)
+
+    assert adapter.bulk_sizes == [10_000, 5]
+    assert adapter.flush_calls == 1
+    assert state.base_payloads is None
+
+
+def test_s1_run_with_data_accepts_index_only_ids_without_materializing_list() -> None:
+    rng = np.random.default_rng(41)
+    vectors = generate_synthetic_vectors(num_vectors=24, dim=8, seed=41)
+    queries = vectors[:4]
+    adapter = _S1SpyAdapter()
+
+    result = run_with_data(
+        adapter=adapter,
+        cfg=S1Config(
+            vector_dim=8,
+            num_vectors=24,
+            num_queries=4,
+            top_k=5,
+            clients_read=1,
+            sla_threshold_ms=50.0,
+            warmup_s=0.0,
+            steady_state_s=0.0,
+            phase_max_requests_per_phase=4,
+        ),
+        rng=rng,
+        data=S1Data(ids=_IndexOnlyIds(24), vectors=vectors, queries=queries),
+    )
+
+    assert adapter.bulk_sizes == [24]
+    assert result.measured_requests == 4
 
 
 def test_s2_filtered_ann_scenario_smoke(tmp_path: Path) -> None:

@@ -62,6 +62,7 @@ def evaluate_pre_run_gate(
         conformance_matrix_path=conformance_matrix_path.resolve(),
         behavior_dir=behavior_dir.resolve(),
         allow_gpu_unavailable=allow_gpu_unavailable,
+        target_adapter=str(cfg.engine),
     )
     summary["readiness"] = readiness
     summary["pass"] = bool(readiness["pass"])

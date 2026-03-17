@@ -704,6 +704,38 @@ def test_cli_verify_engine_readiness_dispatches_require_mock_pass(monkeypatch) -
     ]
 
 
+def test_cli_verify_engine_readiness_dispatches_target_adapter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 61
+
+    monkeypatch.setattr(verify_engine_readiness_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            "artifacts/conformance/conformance_matrix.csv",
+            "--behavior-dir",
+            "docs/behavior",
+            "--target-adapter",
+            "qdrant",
+            "--json",
+        ]
+    )
+    assert code == 61
+    assert captured["argv"] == [
+        "--conformance-matrix",
+        "artifacts/conformance/conformance_matrix.csv",
+        "--behavior-dir",
+        "docs/behavior",
+        "--target-adapter",
+        "qdrant",
+        "--json",
+    ]
+
+
 def test_cli_verify_promotion_gate_dispatches_conformance_matrix(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 

@@ -518,8 +518,10 @@ mb_start_apptainer_service_process() {
   local service_cmd="$3"
   local env_array_name="$4"
   local bind_array_name="$5"
-  local -n env_specs_ref="${env_array_name}"
-  local -n bind_specs_ref="${bind_array_name}"
+  local -a env_specs_ref=()
+  local -a bind_specs_ref=()
+  eval "env_specs_ref=(\"\${${env_array_name}[@]}\")"
+  eval "bind_specs_ref=(\"\${${bind_array_name}[@]}\")"
 
   if ! mb_ensure_apptainer; then
     mb_die "Apptainer is required to start managed engine services"
@@ -531,14 +533,7 @@ mb_start_apptainer_service_process() {
   mkdir -p "${log_dir}"
   local log_file="${log_dir}/${name}.log"
 
-  local -a container_cmd=(env)
-  local env_spec=""
-  for env_spec in "${env_specs_ref[@]}"; do
-    if [[ -n "${env_spec}" ]]; then
-      container_cmd+=("${env_spec}")
-    fi
-  done
-  container_cmd+=(apptainer exec --cleanenv)
+  local -a container_cmd=(apptainer exec --cleanenv)
   if mb_apptainer_use_nv; then
     container_cmd+=(--nv)
   fi
@@ -556,7 +551,14 @@ mb_start_apptainer_service_process() {
     fi
   done
 
-  container_cmd+=("${image_path}" /bin/sh -lc "exec ${service_cmd}")
+  container_cmd+=("${image_path}" env)
+  local env_spec=""
+  for env_spec in "${env_specs_ref[@]}"; do
+    if [[ -n "${env_spec}" ]]; then
+      container_cmd+=("${env_spec}")
+    fi
+  done
+  container_cmd+=(/bin/sh -lc "exec ${service_cmd}")
 
   "${container_cmd[@]}" >"${log_file}" 2>&1 &
   local pid=$!
@@ -741,7 +743,7 @@ mb_stop_engine_services() {
     return 0
   fi
 
-  tac "${pid_file}" 2>/dev/null | while IFS=$'\t' read -r name pid; do
+  awk '{ lines[NR] = $0 } END { for (idx = NR; idx >= 1; idx--) print lines[idx] }' "${pid_file}" | while IFS=$'\t' read -r name pid; do
     if [[ -z "${pid:-}" ]]; then
       continue
     fi
@@ -887,6 +889,27 @@ mb_copy_back_output() {
   mb_log "copied artifacts to ${MB_OUTPUT_FINAL}"
 }
 
+mb_capture_local_diagnostics() {
+  if [[ -z "${MB_OUTPUT_TMP:-}" ]]; then
+    return 0
+  fi
+
+  local capture_root="${MB_OUTPUT_TMP}/logs/local_runtime"
+  mkdir -p "${capture_root}"
+
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  if [[ -e "${runtime_root}" ]]; then
+    cp -R "${runtime_root}" "${capture_root}/engine_runtime"
+    mb_log "captured engine runtime diagnostics to ${capture_root}/engine_runtime"
+  fi
+
+  if [[ -n "${MB_STAGE_ROOT:-}" && -e "${MB_STAGE_ROOT}" ]]; then
+    cp -R "${MB_STAGE_ROOT}" "${capture_root}/stage_root"
+    mb_log "captured staged config diagnostics to ${capture_root}/stage_root"
+  fi
+}
+
 mb_cleanup_local_path() {
   local target="$1"
   if [[ -z "${target}" ]]; then
@@ -919,6 +942,23 @@ mb_cleanup_local_runtime() {
   mb_cleanup_local_path "$(mb_engine_runtime_root)"
   mb_cleanup_local_path "${MB_STAGE_ROOT:-}"
   mb_cleanup_local_path "${MB_OUTPUT_TMP:-}"
+}
+
+mb_finalize_job() {
+  local status="${1:-0}"
+  local service_started="${2:-0}"
+
+  set +e
+  if [[ "${service_started}" == "1" ]]; then
+    mb_stop_engine_services
+  fi
+  mb_capture_local_diagnostics
+  if [[ -n "${MB_OUTPUT_TMP:-}" && -d "${MB_OUTPUT_TMP:-}" && -n "${MB_OUTPUT_FINAL:-}" ]]; then
+    mb_copy_back_output
+  fi
+  mb_cleanup_local_runtime
+  set -e
+  return 0
 }
 
 mb_run_benchmark() {

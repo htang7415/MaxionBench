@@ -54,3 +54,24 @@ def test_load_d1_ann_hdf5_enforces_expected_sha256(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="sha256 mismatch"):
         load_d1_ann_hdf5(path, top_k=1, expected_sha256=("0" * 64))
+
+
+def test_load_d1_ann_hdf5_exact_ground_truth_without_neighbors(tmp_path: Path) -> None:
+    path = tmp_path / "d1_no_neighbors.hdf5"
+    train = np.asarray(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.8, 0.2],
+        ],
+        dtype=np.float32,
+    )
+    test = np.asarray([[1.0, 0.0]], dtype=np.float32)
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("train", data=train)
+        handle.create_dataset("test", data=test)
+        handle.attrs["distance"] = "ip"
+
+    data = load_d1_ann_hdf5(path, top_k=2)
+    assert list(data.ids[:3]) == ["doc-0000000", "doc-0000001", "doc-0000002"]
+    assert data.ground_truth_ids == [["doc-0000000", "doc-0000002"]]
