@@ -1,5 +1,4 @@
-[maxionbench][2026-03-17T05:34:35Z] preprocessing datasets from /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset into /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed
-[maxionbench][2026-03-17T05:34:35Z] using apptainer binary /nopt/nrel/apps/software/apptainer/1.3.3/082324_t/opt/linux-rhel8-sapphirerapids/gcc-13.1.0/apptainer-1.3.3-gaihzin7yggjclpbihmvdgd7lauupb4y/bin/apptainer
+[maxionbench][2026-03-17T06:41:24Z] preprocessing datasets from /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset into /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed
 {
   "dataset_name": "glove-100-angular",
   "dim": 100,

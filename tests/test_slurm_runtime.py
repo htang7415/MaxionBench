@@ -282,16 +282,112 @@ printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "apptainer not found in PATH; attempting module bootstrap with apptainer" in completed.stdout
-    assert f"sourced module init {module_init}" in completed.stdout
-    assert "loading apptainer module apptainer" in completed.stdout
-    assert f"using apptainer binary {fake_apptainer}" in completed.stdout
+    assert "apptainer not found in PATH; attempting module bootstrap with apptainer" in completed.stderr
+    assert f"sourced module init {module_init}" in completed.stderr
+    assert "loading apptainer module apptainer" in completed.stderr
+    assert f"using apptainer binary {fake_apptainer}" in completed.stderr
     logged_args = fake_log.read_text(encoding="utf-8")
     assert "exec" in logged_args
     assert "--cleanenv" in logged_args
     assert str(fake_image) in logged_args
     assert "PYTHONNOUSERSITE=1" in logged_args
     assert "python -s -V" in logged_args
+
+
+def test_stage_config_command_substitution_stays_clean_with_apptainer(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_log = tmp_path / "apptainer_stage.log"
+    fake_image = tmp_path / "maxionbench.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+    dataset_source = tmp_path / "real_d3.npy"
+    dataset_source.write_bytes(b"vectors\n")
+    config_path = tmp_path / "stage_config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "scenario": "cleanup_probe",
+                "dataset_bundle": "D3",
+                "dataset_path": "${MAXIONBENCH_D3_DATASET_PATH}",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -ge ${#args[@]} ]]; then
+  exit 0
+fi
+index=$((index + 1))
+exec "${args[@]:${index}}"
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_CONTAINER_IMAGE="{fake_image}"; '
+                'export MAXIONBENCH_CONTAINER_RUNTIME="apptainer"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{fake_log}"; '
+                f'export MAXIONBENCH_D3_DATASET_PATH="{dataset_source}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                f'STAGED_CONFIG="$(mb_stage_config_to_tmp "{config_path}")"; '
+                'printf "STAGED=%s\\n" "${STAGED_CONFIG}"; '
+                'test -f "${STAGED_CONFIG}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    stdout_lines = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    staged_path = Path(stdout_lines["STAGED"])
+    assert staged_path == slurm_tmpdir / "maxionbench_stage" / "4242_7" / "config.yaml"
+    assert staged_path.exists()
+    assert "[maxionbench]" not in stdout_lines["STAGED"]
+    staged_payload = yaml.safe_load(staged_path.read_text(encoding="utf-8"))
+    assert staged_payload["dataset_path"] == str(
+        slurm_tmpdir / "maxionbench_stage" / "4242_7" / "datasets" / "dataset" / dataset_source.name
+    )
+    assert Path(staged_payload["dataset_path"]).exists()
+    assert f"using apptainer binary {fake_apptainer}" in completed.stderr
 
 
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:

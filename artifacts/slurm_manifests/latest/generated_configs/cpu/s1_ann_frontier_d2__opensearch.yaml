@@ -1,0 +1,41 @@
+adapter_options:
+  host: ${MAXIONBENCH_OPENSEARCH_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_OPENSEARCH_PORT:-9200}
+  scheme: ${MAXIONBENCH_OPENSEARCH_SCHEME:-http}
+  timeout_s: 30.0
+  verify_ssl: false
+clients_grid:
+- 1
+- 8
+- 32
+- 64
+clients_read: 1
+clients_write: 0
+dataset_bundle: D2
+dataset_hash: ann-benchmarks-deep-image-96-angular
+engine: opensearch
+engine_version: 2.x
+no_retry: true
+num_queries: 10000
+num_vectors: 10000000
+output_dir: ${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/paper_matrix}/s1_ann_frontier_d2/opensearch
+phase_timing_mode: strict
+processed_dataset_path: ${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D2/deep-image-96-angular
+quality_target: 0.8
+quality_targets:
+- 0.8
+- 0.9
+- 0.95
+repeats: 3
+rpc_baseline_requests: 1000
+scenario: s1_ann_frontier
+search_sweep:
+- hnsw_ef: 64
+- hnsw_ef: 128
+- hnsw_ef: 256
+seed: 42
+sla_threshold_ms: 50.0
+steady_state_s: 300
+top_k: 10
+vector_dim: 96
+warmup_s: 120

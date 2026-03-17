@@ -37,6 +37,10 @@ mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
 }
 
+mb_log_stderr() {
+  echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >&2
+}
+
 mb_die() {
   mb_log "ERROR: $*"
   exit 1
@@ -115,7 +119,7 @@ mb_log_apptainer_runtime_once() {
   if [[ -z "${apptainer_path}" ]]; then
     return 1
   fi
-  mb_log "using apptainer binary ${apptainer_path}"
+  mb_log_stderr "using apptainer binary ${apptainer_path}"
   export MAXIONBENCH_APPTAINER_RUNTIME_LOGGED=1
 }
 
@@ -130,7 +134,7 @@ mb_source_module_init() {
     if [[ -f "${candidate}" ]]; then
       # shellcheck disable=SC1090
       source "${candidate}"
-      mb_log "sourced module init ${candidate}"
+      mb_log_stderr "sourced module init ${candidate}"
       if command -v module >/dev/null 2>&1; then
         return 0
       fi
@@ -148,12 +152,12 @@ mb_source_module_init() {
     fi
     # shellcheck disable=SC1090
     source "${candidate}"
-    mb_log "sourced module init ${candidate}"
+    mb_log_stderr "sourced module init ${candidate}"
     if command -v module >/dev/null 2>&1; then
       return 0
     fi
   done
-  mb_log "module command is unavailable; apptainer bootstrap could not source a module init script"
+  mb_log_stderr "module command is unavailable; apptainer bootstrap could not source a module init script"
   return 1
 }
 
@@ -164,9 +168,9 @@ mb_ensure_apptainer() {
   fi
 
   local module_name="${MAXIONBENCH_APPTAINER_MODULE:-apptainer}"
-  mb_log "apptainer not found in PATH; attempting module bootstrap with ${module_name}"
+  mb_log_stderr "apptainer not found in PATH; attempting module bootstrap with ${module_name}"
   if [[ -n "${module_name}" ]] && mb_source_module_init && command -v module >/dev/null 2>&1; then
-    mb_log "loading apptainer module ${module_name}"
+    mb_log_stderr "loading apptainer module ${module_name}"
     local module_output=""
     local module_status=0
     local module_log_file=""
@@ -180,13 +184,13 @@ mb_ensure_apptainer() {
       rm -f "${module_log_file}"
     fi
     if [[ -n "${module_output}" ]]; then
-      mb_log "module load ${module_name} output: ${module_output}"
+      mb_log_stderr "module load ${module_name} output: ${module_output}"
     fi
     if [[ ${module_status} -eq 0 ]] && command -v apptainer >/dev/null 2>&1; then
       mb_log_apptainer_runtime_once
       return 0
     fi
-    mb_log "module load ${module_name} did not make apptainer available (status=${module_status})"
+    mb_log_stderr "module load ${module_name} did not make apptainer available (status=${module_status})"
   fi
   return 1
 }
@@ -303,6 +307,14 @@ mb_python() {
         fi
       done < <(mb_container_bind_specs)
       container_cmd+=("${resolved_image}" env "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}" "PYTHONNOUSERSITE=1")
+      local env_name=""
+      while IFS='=' read -r env_name _; do
+        case "${env_name}" in
+          MAXIONBENCH_*)
+            container_cmd+=("${env_name}=${!env_name}")
+            ;;
+        esac
+      done < <(env)
 
       if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
         local resolved_hf_cache
