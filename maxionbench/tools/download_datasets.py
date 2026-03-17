@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 import bz2
+from importlib import metadata as importlib_metadata
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,6 @@ import tempfile
 from typing import Any
 from urllib.request import Request, urlopen
 import zipfile
-import re
 
 from maxionbench.tools.download_d1 import DEFAULT_HTTP_HEADERS, download_d1_dataset
 
@@ -32,8 +32,20 @@ CRAG_TASK12_URL = (
     "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/"
     "data/crag_task_1_and_2_dev_v4.jsonl.bz2?download="
 )
-_REQUIREMENTS_VERSION_RE = re.compile(r"^requirements_py(?:(?P<major>\d)\.(?P<minor>\d+)|(?P<compact>\d{2,}))\.txt$")
 _YFCC_DIR_CANDIDATES = ("yfcc100M", "yfcc-10M")
+_BIGANN_RUNTIME_DISTRIBUTIONS = (
+    "ansicolors",
+    "docker",
+    "h5py",
+    "jinja2",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "psutil",
+    "pyyaml",
+    "scikit-learn",
+    "scipy",
+)
 
 
 def run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -111,6 +123,10 @@ def _locate_bigann_snapshot_root(extracted_root: Path) -> Path | None:
     return None
 
 
+def _bigann_snapshot_repo_is_usable(repo_dir: Path) -> bool:
+    return (repo_dir / "create_dataset.py").is_file() and (repo_dir / "benchmark").is_dir()
+
+
 def stage_bigann_snapshot(
     *,
     snapshot_url: str,
@@ -121,7 +137,9 @@ def stage_bigann_snapshot(
 ) -> dict[str, str]:
     _validate_timeout(timeout_s)
     if repo_dir.exists() and not force:
-        return {"path": str(repo_dir.resolve()), "source": "cache_hit"}
+        if _bigann_snapshot_repo_is_usable(repo_dir):
+            return {"path": str(repo_dir.resolve()), "source": "cache_hit"}
+        shutil.rmtree(repo_dir)
 
     archive_path = (cache_dir / f"{BIGANN_SNAPSHOT_ROOT_NAME}.tar.gz").resolve()
     archive_meta = download_file(url=snapshot_url, dest=archive_path, timeout_s=timeout_s, force=force)
@@ -146,6 +164,23 @@ def download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool) -> dic
             timeout_s=timeout_s,
         )
     return fetched
+
+
+def _ensure_bigann_runtime_dependencies() -> None:
+    missing: list[str] = []
+    for dist_name in _BIGANN_RUNTIME_DISTRIBUTIONS:
+        try:
+            importlib_metadata.version(dist_name)
+        except importlib_metadata.PackageNotFoundError:
+            missing.append(dist_name)
+    if missing:
+        joined = ", ".join(sorted(missing))
+        raise RuntimeError(
+            "Missing big-ann runtime dependencies: "
+            f"{joined}. Install MaxionBench with the datasets extra "
+            '(`python -m pip install -e ".[datasets]"`) or rebuild the '
+            "MaxionBench container image so D3 preparation runs without job-time pip installs."
+        )
 
 
 def download_bigann_yfcc(
@@ -174,14 +209,7 @@ def download_bigann_yfcc(
         timeout_s=timeout_s,
         force=force,
     )
-
-    req_path = _select_bigann_requirements_file(repo_dir=repo_dir, requested=requirements_file)
-    if req_path.exists():
-        run([sys.executable, "-m", "pip", "install", "-r", str(req_path)])
-    else:
-        fallback_req = repo_dir / "requirements.txt"
-        if fallback_req.exists():
-            run([sys.executable, "-m", "pip", "install", "-r", str(fallback_req)])
+    _ensure_bigann_runtime_dependencies()
 
     run([sys.executable, "create_dataset.py", "--dataset", "yfcc-10M"], cwd=repo_dir)
     src = _find_existing_yfcc_dir(repo_dir)
@@ -207,45 +235,6 @@ def _find_existing_yfcc_dir(repo_dir: Path) -> Path | None:
         if found is not None:
             return found
     return None
-
-
-def _select_bigann_requirements_file(*, repo_dir: Path, requested: str | None) -> Path:
-    if requested:
-        return repo_dir / requested
-
-    versioned: list[tuple[tuple[int, int], Path]] = []
-    for path in repo_dir.glob("requirements_py*.txt"):
-        parsed = _parse_bigann_requirements_version(path.name)
-        if parsed is not None:
-            versioned.append((parsed, path))
-    if not versioned:
-        return repo_dir / "requirements.txt"
-
-    current = (sys.version_info.major, sys.version_info.minor)
-    versioned.sort(key=lambda item: item[0])
-    for version, path in versioned:
-        if version == current:
-            return path
-    newer = [(version, path) for version, path in versioned if version > current]
-    if newer:
-        return min(newer, key=lambda item: item[0])[1]
-    return max(versioned, key=lambda item: item[0])[1]
-
-
-def _parse_bigann_requirements_version(filename: str) -> tuple[int, int] | None:
-    match = _REQUIREMENTS_VERSION_RE.fullmatch(filename)
-    if match is None:
-        return None
-    compact = match.group("compact")
-    if compact:
-        if len(compact) < 2:
-            return None
-        return (int(compact[0]), int(compact[1:]))
-    major = match.group("major")
-    minor = match.group("minor")
-    if major is None or minor is None:
-        return None
-    return (int(major), int(minor))
 
 
 def _extract_archive(*, archive_path: Path, workdir: Path) -> Path:

@@ -3,9 +3,7 @@ from __future__ import annotations
 import bz2
 import json
 from pathlib import Path
-import sys
 import tarfile
-import types
 import zipfile
 
 import pytest
@@ -138,6 +136,7 @@ def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypat
     root = tmp_path / "dataset"
     cache_dir = tmp_path / ".cache"
     commands: list[list[str]] = []
+    deps_checked: list[bool] = []
 
     def _fake_stage_bigann_snapshot(
         *,
@@ -157,13 +156,18 @@ def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypat
         del cwd
         commands.append(list(cmd))
 
+    def _fake_ensure_bigann_runtime_dependencies() -> None:
+        deps_checked.append(True)
+
     monkeypatch.setattr(download_datasets_mod, "stage_bigann_snapshot", _fake_stage_bigann_snapshot)
     monkeypatch.setattr(download_datasets_mod, "run", _fake_run)
+    monkeypatch.setattr(download_datasets_mod, "_ensure_bigann_runtime_dependencies", _fake_ensure_bigann_runtime_dependencies)
     summary = download_datasets_mod.download_bigann_yfcc(root=root, cache_dir=cache_dir, timeout_s=30.0, force=False)
 
     assert (root / "D3" / "yfcc-10M" / "vectors.bin").exists()
     assert summary["source"] == "copied_from_bigann_snapshot"
-    assert any("pip" in cmd for cmd in commands)
+    assert deps_checked == [True]
+    assert not any("pip" in cmd for cmd in commands)
     assert any("create_dataset.py" in cmd for cmd in commands)
 
 
@@ -176,33 +180,16 @@ def test_find_existing_yfcc_dir_accepts_upstream_yfcc100m_name(tmp_path: Path) -
     assert found == upstream_dir
 
 
-def test_select_bigann_requirements_prefers_newer_compatible_file_for_python_311(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    repo_dir = tmp_path / "big-ann-benchmarks"
-    repo_dir.mkdir(parents=True)
-    (repo_dir / "requirements_py3.10.txt").write_text("matplotlib==3.3.4\n", encoding="utf-8")
-    (repo_dir / "requirements_py3.12.txt").write_text("matplotlib==3.10.*\n", encoding="utf-8")
+def test_ensure_bigann_runtime_dependencies_reports_missing_dists(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_version(dist_name: str) -> str:
+        if dist_name in {"docker", "scikit-learn"}:
+            raise download_datasets_mod.importlib_metadata.PackageNotFoundError(dist_name)
+        return "1.0"
 
-    fake_version = types.SimpleNamespace(major=3, minor=11)
-    monkeypatch.setattr(download_datasets_mod.sys, "version_info", fake_version)
+    monkeypatch.setattr(download_datasets_mod.importlib_metadata, "version", _fake_version)
 
-    selected = download_datasets_mod._select_bigann_requirements_file(repo_dir=repo_dir, requested=None)
-    assert selected.name == "requirements_py3.12.txt"
-
-
-def test_select_bigann_requirements_parses_compact_py38_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo_dir = tmp_path / "big-ann-benchmarks"
-    repo_dir.mkdir(parents=True)
-    (repo_dir / "requirements_py38.txt").write_text("numpy\n", encoding="utf-8")
-    (repo_dir / "requirements_py3.10.txt").write_text("numpy\n", encoding="utf-8")
-
-    fake_version = types.SimpleNamespace(major=3, minor=8)
-    monkeypatch.setattr(download_datasets_mod.sys, "version_info", fake_version)
-
-    selected = download_datasets_mod._select_bigann_requirements_file(repo_dir=repo_dir, requested=None)
-    assert selected.name == "requirements_py38.txt"
+    with pytest.raises(RuntimeError, match="docker, scikit-learn"):
+        download_datasets_mod._ensure_bigann_runtime_dependencies()
 
 
 def test_download_bigann_yfcc_uses_existing_dst_cache_before_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -242,6 +229,7 @@ def test_stage_bigann_snapshot_extracts_repo_archive(tmp_path: Path, monkeypatch
     payload_root = tmp_path / "payload" / download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME
     payload_root.mkdir(parents=True, exist_ok=True)
     (payload_root / "create_dataset.py").write_text("print('ok')\n", encoding="utf-8")
+    (payload_root / "benchmark").mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_source, "w:gz") as archive:
         archive.add(payload_root, arcname=download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME)
 
@@ -262,6 +250,39 @@ def test_stage_bigann_snapshot_extracts_repo_archive(tmp_path: Path, monkeypatch
     )
 
     assert summary["source"] == "download"
+    assert (repo_dir / "create_dataset.py").exists()
+
+
+def test_stage_bigann_snapshot_refreshes_incomplete_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive_source = tmp_path / "bigann_snapshot.tar.gz"
+    payload_root = tmp_path / "payload" / download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME
+    payload_root.mkdir(parents=True, exist_ok=True)
+    (payload_root / "create_dataset.py").write_text("print('ok')\n", encoding="utf-8")
+    (payload_root / "benchmark").mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive_source, "w:gz") as archive:
+        archive.add(payload_root, arcname=download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME)
+
+    def _fake_download_file(*, url: str, dest: Path, timeout_s: float, force: bool) -> dict[str, str]:
+        del url, timeout_s, force
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(archive_source.read_bytes())
+        return {"url": "https://example.com/bigann.tar.gz", "path": str(dest), "source": "download"}
+
+    monkeypatch.setattr(download_datasets_mod, "download_file", _fake_download_file)
+    repo_dir = tmp_path / ".cache" / "big-ann-benchmarks"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    (repo_dir / "partial.txt").write_text("partial\n", encoding="utf-8")
+
+    summary = download_datasets_mod.stage_bigann_snapshot(
+        snapshot_url="https://example.com/bigann.tar.gz",
+        repo_dir=repo_dir,
+        cache_dir=tmp_path / ".cache",
+        timeout_s=30.0,
+        force=False,
+    )
+
+    assert summary["source"] == "download"
+    assert not (repo_dir / "partial.txt").exists()
     assert (repo_dir / "create_dataset.py").exists()
 
 

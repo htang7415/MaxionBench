@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ARG MAXIONBENCH_PIP_EXTRAS=dev,engines,reporting
+ARG MAXIONBENCH_PIP_EXTRAS=dev,engines,reporting,datasets
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

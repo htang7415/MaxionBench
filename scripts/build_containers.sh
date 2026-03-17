@@ -166,7 +166,30 @@ main_image_is_valid() {
   if [[ ! -f "${target}" ]]; then
     return 1
   fi
-  apptainer exec "${target}" python -c "import faiss, maxionbench.cli" >/dev/null 2>&1
+  apptainer exec "${target}" python - <<'PY'
+import sys
+
+modules = (
+    "docker",
+    "faiss",
+    "h5py",
+    "jinja2",
+    "maxionbench.cli",
+    "numpy",
+    "pandas",
+    "psutil",
+    "pytz",
+    "scipy",
+    "sklearn",
+)
+
+for module_name in modules:
+    try:
+        __import__(module_name)
+    except Exception as exc:
+        print(f"main image validation failed while importing {module_name}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        raise
+PY
 }
 
 build_main_image() {
@@ -181,7 +204,7 @@ build_main_image() {
     return 0
   fi
   if [[ "${ONLY_MISSING}" -eq 1 && -f "${target}" ]]; then
-    printf '%s\n' "+ rebuilding stale ${target}; required runtime tools are missing"
+    printf '%s\n' "+ rebuilding stale ${target}; required runtime imports are missing"
     rm -f "${target}"
   fi
 
@@ -198,7 +221,7 @@ build_main_image() {
   printf '%s\n' "+ ${cmd[*]}"
   "${cmd[@]}"
   if ! main_image_is_valid "${target}"; then
-    echo "error: built ${target} is missing required runtime imports (expected faiss and maxionbench.cli imports to succeed)" >&2
+    echo "error: built ${target} is missing required runtime imports for MaxionBench and D3 dataset preparation" >&2
     exit 2
   fi
   printf '%s\n' "+ validated ${target} contains required runtime imports"

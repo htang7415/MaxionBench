@@ -23,7 +23,7 @@ From: python:3.11-slim
     rm -rf /var/lib/apt/lists/*
     cd /opt/maxionbench
     python -m pip install --upgrade pip setuptools wheel
-    python -m pip install ".[dev,engines,reporting]"
+    python -m pip install ".[dev,engines,reporting,datasets]"
 
 %runscript
     exec maxionbench "$@"

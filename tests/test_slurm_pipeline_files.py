@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 
 
 def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
@@ -49,6 +50,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "From: python:3.11-slim" in definition_text
     assert "%post" in definition_text
     assert "%runscript" in definition_text
+    assert 'python -m pip install ".[dev,engines,reporting,datasets]"' in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -88,6 +90,12 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "MAXIONBENCH_MILVUS_IMAGE=" in env_text
     assert "MAXIONBENCH_DATASET_ROOT=" in env_text
     assert "MAXIONBENCH_OUTPUT_ROOT=" in env_text
+
+
+def test_datasets_extra_pins_known_good_pytz() -> None:
+    payload = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    extras = payload["project"]["optional-dependencies"]["datasets"]
+    assert "pytz==2023.3.post1" in extras
 
 
 def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:

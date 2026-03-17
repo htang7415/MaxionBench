@@ -62,7 +62,7 @@ Figures are written to:
 Install, download, and preprocess:
 
 ```bash
-python -m pip install -e ".[dev,engines,reporting]"
+python -m pip install -e ".[dev,engines,reporting,datasets]"
 python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json
 bash preprocess_all_datasets.sh
 ```
