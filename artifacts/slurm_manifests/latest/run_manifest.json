@@ -1,0 +1,824 @@
+{
+  "cpu_rows": [
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__faiss_cpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__lancedb_inproc.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__lancedb_service.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__milvus.yaml",
+      "dataset_bundle": "D1",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__opensearch.yaml",
+      "dataset_bundle": "D1",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__pgvector.yaml",
+      "dataset_bundle": "D1",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__qdrant.yaml",
+      "dataset_bundle": "D1",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__weaviate.yaml",
+      "dataset_bundle": "D1",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__faiss_cpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__lancedb_inproc.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__lancedb_service.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__milvus.yaml",
+      "dataset_bundle": "D1",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__opensearch.yaml",
+      "dataset_bundle": "D1",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__pgvector.yaml",
+      "dataset_bundle": "D1",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__qdrant.yaml",
+      "dataset_bundle": "D1",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_sift__weaviate.yaml",
+      "dataset_bundle": "D1",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__faiss_cpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__lancedb_inproc.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__lancedb_service.yaml",
+      "dataset_bundle": "D1",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__milvus.yaml",
+      "dataset_bundle": "D1",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__opensearch.yaml",
+      "dataset_bundle": "D1",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__pgvector.yaml",
+      "dataset_bundle": "D1",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__qdrant.yaml",
+      "dataset_bundle": "D1",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_gist__weaviate.yaml",
+      "dataset_bundle": "D1",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__faiss_cpu.yaml",
+      "dataset_bundle": "D2",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__lancedb_inproc.yaml",
+      "dataset_bundle": "D2",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__lancedb_service.yaml",
+      "dataset_bundle": "D2",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__milvus.yaml",
+      "dataset_bundle": "D2",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__opensearch.yaml",
+      "dataset_bundle": "D2",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__pgvector.yaml",
+      "dataset_bundle": "D2",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__qdrant.yaml",
+      "dataset_bundle": "D2",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d2__weaviate.yaml",
+      "dataset_bundle": "D2",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__faiss_cpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__lancedb_inproc.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__lancedb_service.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__milvus.yaml",
+      "dataset_bundle": "D3",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__opensearch.yaml",
+      "dataset_bundle": "D3",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__pgvector.yaml",
+      "dataset_bundle": "D3",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__qdrant.yaml",
+      "dataset_bundle": "D3",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d3__weaviate.yaml",
+      "dataset_bundle": "D3",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__faiss_cpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__lancedb_inproc.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__lancedb_service.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__milvus.yaml",
+      "dataset_bundle": "D3",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__opensearch.yaml",
+      "dataset_bundle": "D3",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__pgvector.yaml",
+      "dataset_bundle": "D3",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__qdrant.yaml",
+      "dataset_bundle": "D3",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s2_filtered_ann__weaviate.yaml",
+      "dataset_bundle": "D3",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__faiss_cpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__lancedb_inproc.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__lancedb_service.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__milvus.yaml",
+      "dataset_bundle": "D3",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__opensearch.yaml",
+      "dataset_bundle": "D3",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__pgvector.yaml",
+      "dataset_bundle": "D3",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__qdrant.yaml",
+      "dataset_bundle": "D3",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3_churn_smooth__weaviate.yaml",
+      "dataset_bundle": "D3",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__faiss_cpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__lancedb_inproc.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__lancedb_service.yaml",
+      "dataset_bundle": "D3",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__milvus.yaml",
+      "dataset_bundle": "D3",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__opensearch.yaml",
+      "dataset_bundle": "D3",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__pgvector.yaml",
+      "dataset_bundle": "D3",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__qdrant.yaml",
+      "dataset_bundle": "D3",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s3b_churn_bursty__weaviate.yaml",
+      "dataset_bundle": "D3",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__faiss_cpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__lancedb_inproc.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__lancedb_service.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__milvus.yaml",
+      "dataset_bundle": "D4",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__opensearch.yaml",
+      "dataset_bundle": "D4",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__pgvector.yaml",
+      "dataset_bundle": "D4",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__qdrant.yaml",
+      "dataset_bundle": "D4",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s4_hybrid__weaviate.yaml",
+      "dataset_bundle": "D4",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__faiss_cpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__lancedb_inproc.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-inproc",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__lancedb_service.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-service",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__milvus.yaml",
+      "dataset_bundle": "D4",
+      "engine": "milvus",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__opensearch.yaml",
+      "dataset_bundle": "D4",
+      "engine": "opensearch",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__pgvector.yaml",
+      "dataset_bundle": "D4",
+      "engine": "pgvector",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__qdrant.yaml",
+      "dataset_bundle": "D4",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s6_fusion__weaviate.yaml",
+      "dataset_bundle": "D4",
+      "engine": "weaviate",
+      "group": "cpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    }
+  ],
+  "generated_config_dir": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs",
+  "gpu_rows": [
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s1_ann_frontier_d1_glove__faiss_gpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_glove.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s1_ann_frontier_d1_sift__faiss_gpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_sift.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s1_ann_frontier_d1_gist__faiss_gpu.yaml",
+      "dataset_bundle": "D1",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d1_gist.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s1_ann_frontier_d2__faiss_gpu.yaml",
+      "dataset_bundle": "D2",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d2.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s1_ann_frontier_d3__faiss_gpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s1_ann_frontier",
+      "template_name": "s1_ann_frontier_d3.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s2_filtered_ann__faiss_gpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s2_filtered_ann",
+      "template_name": "s2_filtered_ann.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s3_churn_smooth__faiss_gpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s3_churn_smooth",
+      "template_name": "s3_churn_smooth.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s3b_churn_bursty__faiss_gpu.yaml",
+      "dataset_bundle": "D3",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s3b_churn_bursty",
+      "template_name": "s3b_churn_bursty.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s4_hybrid__faiss_gpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s4_hybrid",
+      "template_name": "s4_hybrid.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__faiss_cpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-cpu",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__faiss_gpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__lancedb_inproc.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-inproc",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__lancedb_service.yaml",
+      "dataset_bundle": "D4",
+      "engine": "lancedb-service",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__milvus.yaml",
+      "dataset_bundle": "D4",
+      "engine": "milvus",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__opensearch.yaml",
+      "dataset_bundle": "D4",
+      "engine": "opensearch",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__pgvector.yaml",
+      "dataset_bundle": "D4",
+      "engine": "pgvector",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__qdrant.yaml",
+      "dataset_bundle": "D4",
+      "engine": "qdrant",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__weaviate.yaml",
+      "dataset_bundle": "D4",
+      "engine": "weaviate",
+      "group": "gpu",
+      "scenario": "s5_rerank",
+      "template_name": "s5_rerank.yaml"
+    },
+    {
+      "config_path": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s6_fusion__faiss_gpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-gpu",
+      "group": "gpu",
+      "scenario": "s6_fusion",
+      "template_name": "s6_fusion.yaml"
+    }
+  ],
+  "repo_root": "/Users/haotang/Library/CloudStorage/OneDrive-UW-Madison/MAX/Al/Research/MaxionBench",
+  "selected_engines": [
+    "faiss-cpu",
+    "faiss-gpu",
+    "lancedb-inproc",
+    "lancedb-service",
+    "milvus",
+    "opensearch",
+    "pgvector",
+    "qdrant",
+    "weaviate"
+  ],
+  "selected_templates": [
+    "s1_ann_frontier_d1_glove.yaml",
+    "s1_ann_frontier_d1_sift.yaml",
+    "s1_ann_frontier_d1_gist.yaml",
+    "s1_ann_frontier_d2.yaml",
+    "s1_ann_frontier_d3.yaml",
+    "s2_filtered_ann.yaml",
+    "s3_churn_smooth.yaml",
+    "s3b_churn_bursty.yaml",
+    "s4_hybrid.yaml",
+    "s5_rerank.yaml",
+    "s6_fusion.yaml"
+  ]
+}

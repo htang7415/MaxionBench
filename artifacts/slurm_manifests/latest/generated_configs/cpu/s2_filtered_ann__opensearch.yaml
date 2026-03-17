@@ -1,0 +1,39 @@
+adapter_options:
+  host: ${MAXIONBENCH_OPENSEARCH_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_OPENSEARCH_PORT:-9200}
+  scheme: ${MAXIONBENCH_OPENSEARCH_SCHEME:-http}
+  timeout_s: 30.0
+  verify_ssl: false
+clients_grid:
+- 32
+clients_read: 32
+clients_write: 0
+dataset_bundle: D3
+dataset_hash: laion-subset-d3-10m
+dataset_path: ${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D3/yfcc-10M/base.npy
+engine: opensearch
+engine_version: 2.x
+no_retry: true
+num_queries: 200
+num_vectors: 10000000
+output_dir: ${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/paper_matrix}/s2_filtered_ann/opensearch
+phase_timing_mode: strict
+quality_target: 0.8
+quality_targets:
+- 0.8
+repeats: 3
+rpc_baseline_requests: 1000
+s2_selectivities:
+- 0.001
+- 0.01
+- 0.1
+- 0.5
+scenario: s2_filtered_ann
+search_sweep:
+- hnsw_ef: 128
+seed: 42
+sla_threshold_ms: 80.0
+steady_state_s: 300
+top_k: 10
+vector_dim: 64
+warmup_s: 120

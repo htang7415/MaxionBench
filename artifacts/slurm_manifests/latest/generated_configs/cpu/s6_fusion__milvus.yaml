@@ -1,0 +1,46 @@
+adapter_options:
+  host: ${MAXIONBENCH_MILVUS_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_MILVUS_PORT:-19530}
+clients_grid:
+- 16
+clients_read: 16
+clients_write: 0
+d4_beir_root: data/beir
+d4_beir_split: test
+d4_beir_subsets:
+- scifact
+- fiqa
+- nfcorpus
+d4_crag_path: data/crag_task_1_and_2_dev_v4.jsonl.bz2
+d4_crag_sha256: ${MAXIONBENCH_D4_CRAG_SHA256}
+d4_crag_source: facebookresearch/CRAG
+d4_include_crag: true
+d4_max_docs: 200000
+d4_max_queries: 5000
+d4_use_real_data: true
+dataset_bundle: D4
+dataset_hash: d4-paper-bundles-v1
+engine: milvus
+engine_version: 2.x
+no_retry: true
+num_queries: 200
+num_vectors: 5000
+output_dir: ${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/paper_matrix}/s6_fusion/milvus
+phase_timing_mode: strict
+processed_dataset_path: ${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D4
+quality_target: 0.35
+repeats: 3
+rpc_baseline_requests: 1000
+rrf_k: 60
+s6_bm25_candidates: 200
+s6_dense_a_candidates: 200
+s6_dense_b_candidates: 200
+scenario: s6_fusion
+search_sweep:
+- hnsw_ef: 128
+seed: 42
+sla_threshold_ms: 180.0
+steady_state_s: 300
+top_k: 10
+vector_dim: 64
+warmup_s: 120
