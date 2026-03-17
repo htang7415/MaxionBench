@@ -1,4 +1,0 @@
-[maxionbench][2026-03-17T16:54:37Z] SLURM_TMPDIR is not set; falling back to /tmp
-[maxionbench][2026-03-17T16:54:38Z] preflight={"config_path": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/cpu/s1_ann_frontier_d1_glove__opensearch.yaml", "dataset_bundle": "D1", "dataset_bytes": 2147483648, "engine_bytes": 4294967296, "fallback_config": null, "free_bytes": 540527009792, "integrity_checked_files": 0, "integrity_error_count": 0, "integrity_errors": [], "integrity_ok": true, "manifest_error": null, "manifest_ok": true, "ok": true, "required_bytes": 13529146982, "safety_factor": 1.8, "temp_bytes": 1073741824, "tmpdir": "/tmp"}
-[maxionbench][2026-03-17T16:54:40Z] started engine service opensearch pid=862662 log=/tmp/maxionbench_engine_runtime/13118121_4/logs/opensearch.log
-[maxionbench][2026-03-17T16:54:40Z] waiting for adapter health config=/tmp/maxionbench_stage/13118121_4/config.yaml timeout=120s

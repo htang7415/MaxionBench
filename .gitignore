@@ -33,3 +33,4 @@ artifacts/workstation_runs/
 ci_s1_smoke_local.yaml
 maxionbench/orchestration/slurm/profiles_local.yaml
 .claude/settings.local.json
+logs
