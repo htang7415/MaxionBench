@@ -42,6 +42,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     build_text = build_script.read_text(encoding="utf-8")
     assert "apptainer build" in build_text
     assert "apptainer pull" in build_text
+    assert "apptainer exec --cleanenv" in build_text
+    assert "python -s" in build_text
     assert "--output-dir" in build_text
     assert "--only-missing" in build_text
 
@@ -606,7 +608,11 @@ if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" ]]; then
-  target="${2:-}"
+  if [[ "${2:-}" == "--cleanenv" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
   if grep -q 'runtime-ok' "${target}"; then
     exit 0
   fi
@@ -744,7 +750,11 @@ if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" ]]; then
-  target="${2:-}"
+  if [[ "${2:-}" == "--cleanenv" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
   if grep -q 'runtime-ok' "${target}"; then
     exit 0
   fi

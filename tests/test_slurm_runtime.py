@@ -192,7 +192,9 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "mb_source_dataset_env()" in text
     assert "mb_ensure_apptainer()" in text
     assert "module load" in text
-    assert "apptainer exec" in text
+    assert "apptainer exec --cleanenv" in text
+    assert "PYTHONNOUSERSITE=1" in text
+    assert "python -s" in text
     assert "mb_python()" in text
     assert "mb_cleanup_local_runtime()" in text
     assert "expand_env_placeholders" in text
@@ -286,7 +288,10 @@ printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
     assert f"using apptainer binary {fake_apptainer}" in completed.stdout
     logged_args = fake_log.read_text(encoding="utf-8")
     assert "exec" in logged_args
+    assert "--cleanenv" in logged_args
     assert str(fake_image) in logged_args
+    assert "PYTHONNOUSERSITE=1" in logged_args
+    assert "python -s -V" in logged_args
 
 
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:
