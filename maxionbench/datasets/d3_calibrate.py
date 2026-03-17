@@ -16,6 +16,7 @@ from maxionbench.datasets.d3_generator import (
     cluster_spread_at_one_percent,
     generate_d3_dataset,
     tenant_top10_concentration,
+    topk_masked_indices,
 )
 from maxionbench.metrics.latency import percentile_ms
 from maxionbench.metrics.quality import recall_at_k
@@ -302,13 +303,9 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
-def _exact_topk_ids(dataset: D3Dataset, query_vec: np.ndarray, mask: np.ndarray, *, top_k: int) -> list[str]:
-    idx = np.where(mask)[0]
-    if idx.size == 0:
-        return []
-    scores = dataset.vectors[idx] @ query_vec
-    order = np.argsort(-scores, kind="stable")[:top_k]
-    return [dataset.ids[int(idx[o])] for o in order]
+def _exact_topk_ids(dataset: D3Dataset, query_vec: np.ndarray, mask: np.ndarray, *, top_k: int) -> list[int]:
+    top_indices = topk_masked_indices(dataset.vectors, query_vec, top_k=top_k, mask=mask)
+    return [int(index) for index in top_indices.tolist()]
 
 
 def _approx_topk_ids(
@@ -318,7 +315,7 @@ def _approx_topk_ids(
     *,
     query_cluster: int,
     top_k: int,
-) -> list[str]:
+) -> list[int]:
     idx = np.where(mask)[0]
     if idx.size == 0:
         return []
@@ -334,6 +331,10 @@ def _approx_topk_ids(
             candidate_idx = np.concatenate([same_cluster, sampled_other], axis=0)
         else:
             candidate_idx = same_cluster
-    scores = dataset.vectors[candidate_idx] @ query_vec
-    order = np.argsort(-scores, kind="stable")[:top_k]
-    return [dataset.ids[int(candidate_idx[o])] for o in order]
+    top_indices = topk_masked_indices(
+        dataset.vectors,
+        query_vec,
+        top_k=top_k,
+        candidate_indices=np.asarray(candidate_idx, dtype=np.int64),
+    )
+    return [int(index) for index in top_indices.tolist()]

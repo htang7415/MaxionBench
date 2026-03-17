@@ -55,7 +55,7 @@ def test_load_d2_bigann_uses_provided_ground_truth(tmp_path: Path) -> None:
     _write_ivecs(gt_path, gt)
 
     ds = load_d2_bigann(base_fvecs=base_path, query_fvecs=query_path, gt_ivecs=gt_path, top_k=2)
-    assert ds.ids == ["doc-0000000", "doc-0000001", "doc-0000002"]
+    assert list(ds.ids) == ["doc-0000000", "doc-0000001", "doc-0000002"]
     assert ds.ground_truth_ids[0] == ["doc-0000000", "doc-0000001"]
     assert ds.ground_truth_ids[1] == ["doc-0000002", "doc-0000001"]
 
@@ -86,3 +86,17 @@ def test_load_d2_bigann_enforces_expected_sha256(tmp_path: Path) -> None:
             top_k=1,
             base_expected_sha256=("0" * 64),
         )
+
+
+def test_load_d2_bigann_exact_ground_truth_without_ivecs(tmp_path: Path) -> None:
+    base = np.array([[0.0, 0.0], [1.0, 0.0], [5.0, 5.0]], dtype=np.float32)
+    queries = np.array([[0.1, 0.0], [4.9, 5.1]], dtype=np.float32)
+    base_path = tmp_path / "base_exact.fvecs"
+    query_path = tmp_path / "query_exact.fvecs"
+    _write_fvecs(base_path, base)
+    _write_fvecs(query_path, queries)
+
+    ds = load_d2_bigann(base_fvecs=base_path, query_fvecs=query_path, top_k=2)
+
+    assert ds.ground_truth_ids[0] == ["doc-0000000", "doc-0000001"]
+    assert ds.ground_truth_ids[1] == ["doc-0000002", "doc-0000001"]

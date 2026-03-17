@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import time
 from typing import Any, Mapping
@@ -32,7 +33,7 @@ class S1Config:
 
 @dataclass(frozen=True)
 class S1Data:
-    ids: list[str]
+    ids: Sequence[str]
     vectors: np.ndarray
     queries: np.ndarray
     ground_truth_ids: list[list[str]] | None = None
@@ -82,15 +83,24 @@ def run_with_data(
         queries = vectors[rng.choice(cfg.num_vectors, size=cfg.num_queries, replace=False)]
         gt_ids_by_query: list[list[str]] | None = None
     else:
-        ids = list(data.ids)
+        ids = data.ids
         vectors = np.asarray(data.vectors, dtype=np.float32)
         queries = np.asarray(data.queries, dtype=np.float32)[: cfg.num_queries]
         gt_ids_by_query = data.ground_truth_ids[: cfg.num_queries] if data.ground_truth_ids else None
 
-    payloads = [{"tenant_id": f"tenant-{idx % 100:03d}", "acl_bucket": idx % 16} for idx in range(vectors.shape[0])]
-    records = [UpsertRecord(id=doc_id, vector=vectors[idx].tolist(), payload=payloads[idx]) for idx, doc_id in enumerate(ids)]
-
-    adapter.bulk_upsert(records)
+    batch_size = 10_000
+    total = int(vectors.shape[0])
+    for start in range(0, total, batch_size):
+        stop = min(total, start + batch_size)
+        records = [
+            UpsertRecord(
+                id=ids[idx],
+                vector=vectors[idx].tolist(),
+                payload={"tenant_id": f"tenant-{idx % 100:03d}", "acl_bucket": idx % 16},
+            )
+            for idx in range(start, stop)
+        ]
+        adapter.bulk_upsert(records)
     adapter.flush_or_commit()
     adapter.set_search_params(cfg.search_params or {})
 
@@ -175,7 +185,7 @@ def run_with_data(
 def _ground_truth_rows(
     *,
     vectors: np.ndarray,
-    ids: list[str],
+    ids: Sequence[str],
     query_vectors: np.ndarray,
     top_k: int,
     precomputed: list[list[str]] | None,

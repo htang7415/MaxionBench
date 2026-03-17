@@ -4,10 +4,13 @@ import numpy as np
 
 from maxionbench.datasets.d3_generator import (
     D3Params,
+    SequentialDocIdSequence,
     cluster_spread_at_one_percent,
     generate_d3_dataset,
     generate_synthetic_vectors,
     tenant_top10_concentration,
+    topk_masked_indices,
+    _nearest_centroid,
 )
 
 
@@ -28,6 +31,10 @@ def test_generate_d3_dataset_shapes() -> None:
     assert len(d3.ids) == 300
     assert len(d3.payloads) == 300
     assert d3.cluster_ids.shape[0] == 300
+    assert isinstance(d3.ids, SequentialDocIdSequence)
+    assert not isinstance(d3.payloads, list)
+    assert d3.ids[0] == "doc-0000000"
+    assert d3.payloads[0]["tenant_id"].startswith("tenant-")
 
 
 def test_d3_metrics_return_finite_values() -> None:
@@ -49,3 +56,30 @@ def test_d3_metrics_return_finite_values() -> None:
     test_b = cluster_spread_at_one_percent(d3, num_queries=30, top_k=40, seed=3)
     assert 0.0 <= test_a <= 1.0
     assert np.isfinite(test_b)
+
+
+def test_nearest_centroid_chunked_matches_reference() -> None:
+    rng = np.random.default_rng(19)
+    points = rng.standard_normal((257, 12), dtype=np.float32)
+    centroids = rng.standard_normal((17, 12), dtype=np.float32)
+    reference = np.argmin(
+        np.sum(points * points, axis=1, keepdims=True)
+        + np.sum(centroids * centroids, axis=1)[None, :]
+        - 2.0 * (points @ centroids.T),
+        axis=1,
+    )
+    actual = _nearest_centroid(points, centroids)
+    assert np.array_equal(actual, reference)
+
+
+def test_topk_masked_indices_matches_reference() -> None:
+    rng = np.random.default_rng(23)
+    vectors = rng.standard_normal((500, 16), dtype=np.float32)
+    query = rng.standard_normal(16, dtype=np.float32)
+    mask = rng.random(500) < 0.35
+    expected_idx = np.where(mask)[0]
+    expected_scores = vectors[expected_idx] @ query
+    expected_order = np.argsort(-expected_scores, kind="stable")[:10]
+    expected = expected_idx[expected_order]
+    actual = topk_masked_indices(vectors, query, top_k=10, mask=mask)
+    assert np.array_equal(actual, expected)

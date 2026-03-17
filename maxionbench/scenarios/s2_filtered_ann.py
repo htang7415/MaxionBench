@@ -9,7 +9,13 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from maxionbench.datasets.d3_generator import D3Dataset, D3Params, generate_d3_dataset, generate_synthetic_vectors
+from maxionbench.datasets.d3_generator import (
+    D3Dataset,
+    D3Params,
+    generate_d3_dataset,
+    generate_synthetic_vectors,
+    topk_masked_indices,
+)
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import p99_inflation, sla_violation_rate
@@ -119,11 +125,15 @@ def run(
 
 
 def _ingest_dataset(adapter: Any, dataset: D3Dataset) -> None:
-    records = [
-        UpsertRecord(id=dataset.ids[i], vector=dataset.vectors[i].tolist(), payload=dataset.payloads[i])
-        for i in range(dataset.vectors.shape[0])
-    ]
-    adapter.bulk_upsert(records)
+    batch_size = 10_000
+    total = int(dataset.vectors.shape[0])
+    for start in range(0, total, batch_size):
+        stop = min(total, start + batch_size)
+        records = [
+            UpsertRecord(id=dataset.ids[i], vector=dataset.vectors[i].tolist(), payload=dict(dataset.payloads[i]))
+            for i in range(start, stop)
+        ]
+        adapter.bulk_upsert(records)
     adapter.flush_or_commit()
 
 
@@ -211,27 +221,21 @@ def _exact_filtered_topk(
     top_k: int,
     filt: Mapping[str, Any] | None,
 ) -> list[str]:
-    if not filt:
-        idx = np.arange(dataset.vectors.shape[0])
-    else:
-        idx = _filter_indices(dataset, filt)
-    if idx.size == 0:
-        return []
-    scores = dataset.vectors[idx] @ query_vec
-    order = np.argsort(-scores, kind="stable")[:top_k]
-    return [dataset.ids[int(idx[o])] for o in order]
+    mask = _filter_mask(dataset, filt) if filt else None
+    top_indices = topk_masked_indices(dataset.vectors, query_vec, top_k=top_k, mask=mask)
+    return [dataset.ids[int(index)] for index in top_indices]
 
 
-def _filter_indices(dataset: D3Dataset, filt: Mapping[str, Any]) -> np.ndarray:
+def _filter_mask(dataset: D3Dataset, filt: Mapping[str, Any]) -> np.ndarray:
     if "tenant_id" in filt:
         tenant_str = str(filt["tenant_id"])
         tenant_num = int(tenant_str.split("-")[-1])
-        return np.where(dataset.tenant_ids == tenant_num)[0]
+        return dataset.tenant_ids == tenant_num
     if "acl_bucket" in filt:
-        return np.where(dataset.acl_buckets == int(filt["acl_bucket"]))[0]
+        return dataset.acl_buckets == int(filt["acl_bucket"])
     if "time_bucket" in filt:
-        return np.where(dataset.time_buckets == int(filt["time_bucket"]))[0]
-    return np.arange(dataset.vectors.shape[0])
+        return dataset.time_buckets == int(filt["time_bucket"])
+    return np.ones(dataset.vectors.shape[0], dtype=bool)
 
 
 def _pick_filter_for_selectivity(dataset: D3Dataset, *, selectivity: float) -> Mapping[str, Any] | None:

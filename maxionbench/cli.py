@@ -193,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     verify_engine_readiness_parser.add_argument("--allow-gpu-unavailable", action="store_true")
     verify_engine_readiness_parser.add_argument("--allow-nonpass-status", action="store_true")
     verify_engine_readiness_parser.add_argument("--require-mock-pass", action="store_true")
+    verify_engine_readiness_parser.add_argument("--target-adapter", default=None)
     verify_engine_readiness_parser.add_argument("--json", action="store_true")
 
     pre_run_gate_parser = subparsers.add_parser(
@@ -567,6 +568,8 @@ def main(argv: list[str] | None = None) -> int:
             verify_argv.append("--allow-nonpass-status")
         if args.require_mock_pass:
             verify_argv.append("--require-mock-pass")
+        if args.target_adapter:
+            verify_argv.extend(["--target-adapter", args.target_adapter])
         if args.json:
             verify_argv.append("--json")
         return verify_engine_readiness_main(verify_argv)

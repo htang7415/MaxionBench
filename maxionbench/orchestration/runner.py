@@ -20,7 +20,7 @@ from maxionbench.datasets.cache_integrity import (
     verify_file_sha256,
 )
 from maxionbench.datasets.d3_calibrate import PAPER_MIN_CALIBRATION_VECTORS, paper_calibration_issues
-from maxionbench.datasets.d3_generator import D3Params, params_from_mapping
+from maxionbench.datasets.d3_generator import D3Params, SequentialDocIdSequence, params_from_mapping
 from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_hdf5
 from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
 from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
@@ -1526,10 +1526,10 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 top_k=max(cfg.top_k, 10),
             )
             return S1Data(
-                ids=list(processed.ids),
+                ids=processed.ids,
                 vectors=np.asarray(processed.vectors, dtype=np.float32),
                 queries=np.asarray(processed.queries, dtype=np.float32),
-                ground_truth_ids=list(processed.ground_truth_ids),
+                ground_truth_ids=processed.ground_truth_ids,
             )
         if bundle == "D3":
             processed = load_processed_filtered_ann_dataset(
@@ -1539,10 +1539,10 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 top_k=max(cfg.top_k, 10),
             )
             return S1Data(
-                ids=list(processed.ids),
+                ids=processed.ids,
                 vectors=np.asarray(processed.vectors, dtype=np.float32),
                 queries=np.asarray(processed.queries, dtype=np.float32),
-                ground_truth_ids=list(processed.ground_truth_ids),
+                ground_truth_ids=processed.ground_truth_ids,
             )
     if bundle != "D1":
         if bundle == "D2":
@@ -1571,7 +1571,7 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 expected_dim=cfg.vector_dim,
                 expected_sha256=expected_sha,
             )
-            ids = [f"doc-{idx:07d}" for idx in range(vectors.shape[0])]
+            ids = SequentialDocIdSequence(int(vectors.shape[0]))
             query_count = min(int(cfg.num_queries), int(vectors.shape[0]))
             query_idx = np.random.default_rng(cfg.seed).choice(vectors.shape[0], size=query_count, replace=False)
             queries = np.asarray(vectors[query_idx], dtype=np.float32)
@@ -1678,19 +1678,19 @@ def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalData
 
 def _to_s1_data(dataset: D1AnnDataset) -> S1Data:
     return S1Data(
-        ids=list(dataset.ids),
+        ids=dataset.ids,
         vectors=np.asarray(dataset.vectors, dtype=np.float32),
         queries=np.asarray(dataset.queries, dtype=np.float32),
-        ground_truth_ids=list(dataset.ground_truth_ids),
+        ground_truth_ids=dataset.ground_truth_ids,
     )
 
 
 def _to_s1_data_d2(dataset: D2BigAnnDataset) -> S1Data:
     return S1Data(
-        ids=list(dataset.ids),
+        ids=dataset.ids,
         vectors=np.asarray(dataset.vectors, dtype=np.float32),
         queries=np.asarray(dataset.queries, dtype=np.float32),
-        ground_truth_ids=list(dataset.ground_truth_ids),
+        ground_truth_ids=dataset.ground_truth_ids,
     )
 
 

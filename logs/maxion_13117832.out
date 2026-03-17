@@ -1,0 +1,21 @@
+[maxionbench][2026-03-17T16:18:18Z] SLURM_TMPDIR is not set; falling back to /tmp
+[maxionbench][2026-03-17T16:18:21Z] preflight={"config_path": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/configs/scenarios_paper/calibrate_d3.yaml", "dataset_bundle": "D3", "dataset_bytes": 32212254720, "engine_bytes": 51539607552, "fallback_config": "configs/scenarios/s2_filtered_ann.yaml", "free_bytes": 798479253504, "integrity_checked_files": 0, "integrity_error_count": 0, "integrity_errors": [], "integrity_ok": true, "manifest_error": null, "manifest_ok": true, "ok": true, "required_bytes": 173946175488, "safety_factor": 1.8, "temp_bytes": 12884901888, "tmpdir": "/tmp"}
+[maxionbench][2026-03-17T16:18:24Z] staged config: /tmp/maxionbench_stage/13117832_0/config.yaml
+[maxionbench][2026-03-17T16:18:24Z] running pre-run readiness gate for config=/tmp/maxionbench_stage/13117832_0/config.yaml
+{
+  "allow_gpu_unavailable": false,
+  "allow_mock": true,
+  "config_path": "/tmp/maxionbench_stage/13117832_0/config.yaml",
+  "dataset_bundle": "D3",
+  "engine": "mock",
+  "pass": true,
+  "reason": "mock engine is exempt from readiness gate",
+  "scenario": "calibrate_d3",
+  "skipped": true
+}
+[maxionbench][2026-03-17T16:18:28Z] running scenario config=/tmp/maxionbench_stage/13117832_0/config.yaml
+[maxionbench][2026-03-17T16:29:02Z] wrote calibration params to /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/artifacts/calibration/d3_params.yaml
+[maxionbench][2026-03-17T16:29:02Z] copied artifacts to /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/results/13117832_0_calibrate_d3_20260317T161821Z
+[maxionbench][2026-03-17T16:29:02Z] removed local scratch /tmp/lancedb/service
+[maxionbench][2026-03-17T16:29:02Z] removed local scratch /tmp/maxionbench_stage/13117832_0
+[maxionbench][2026-03-17T16:29:02Z] removed local scratch /tmp/maxionbench/13117832_0_calibrate_d3_20260317T161821Z

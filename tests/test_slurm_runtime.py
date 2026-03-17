@@ -226,6 +226,8 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_weaviate_service()" in text
     assert "mb_start_milvus_services()" in text
     assert "mb_start_apptainer_service_process()" in text
+    assert "mb_capture_local_diagnostics()" in text
+    assert "mb_finalize_job()" in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
     assert "MAXIONBENCH_PGVECTOR_DSN=" in text
 
@@ -390,6 +392,81 @@ exec "${args[@]:${index}}"
     assert f"using apptainer binary {fake_apptainer}" in completed.stderr
 
 
+def test_slurm_common_passes_service_env_inside_apptainer_exec(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "qdrant.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    full_log = tmp_path / "apptainer_service.log"
+    post_image_log = tmp_path / "apptainer_service_post_image.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
+sleep 30
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_QDRANT_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{full_log}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_qdrant_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    post_image_args = post_image_log.read_text(encoding="utf-8")
+    assert post_image_args.startswith("env\n")
+    assert "QDRANT__SERVICE__HOST=0.0.0.0" in post_image_args
+    assert "QDRANT__SERVICE__HTTP_PORT=" in post_image_args
+    assert "QDRANT__SERVICE__GRPC_PORT=" in post_image_args
+    assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in post_image_args
+    assert "/bin/sh" in post_image_args
+
+
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:
     common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
     config_path = tmp_path / "cleanup_config.yaml"
@@ -458,6 +535,53 @@ def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_outp
     assert stdout_lines["LANCEDB_EXISTS"] == "0"
 
 
+def test_slurm_common_finalize_job_captures_runtime_logs_before_cleanup(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    scratch_dir = tmp_path / "scratch"
+    output_root = tmp_path / "results"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                f'export SLURM_TMPDIR="{scratch_dir}"; '
+                f'export MAXIONBENCH_OUTPUT_ROOT="{output_root}"; '
+                'export MAXIONBENCH_CLEANUP_LOCAL_SCRATCH="1"; '
+                'mb_require_tmpdir; '
+                'mb_prepare_output_paths "finalize_probe"; '
+                'mkdir -p "$(mb_engine_runtime_root)/logs" "${MB_OUTPUT_TMP}"; '
+                'printf "service\\n" > "$(mb_engine_runtime_root)/logs/service.log"; '
+                'printf "result\\n" > "${MB_OUTPUT_TMP}/results.parquet"; '
+                'mb_finalize_job 9 0; '
+                'printf "FINAL=%s\\n" "${MB_OUTPUT_FINAL}"; '
+                'printf "RUNTIME_EXISTS=%s\\n" "$(test -e "$(mb_engine_runtime_root)" && echo 1 || echo 0)"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    stdout_lines = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    final_output = Path(stdout_lines["FINAL"])
+    assert final_output.exists()
+    assert (final_output / "results.parquet").read_text(encoding="utf-8") == "result\n"
+    service_logs = list(final_output.glob("logs/local_runtime/engine_runtime/**/service.log"))
+    assert service_logs, list(final_output.rglob("*"))
+    assert service_logs[0].read_text(encoding="utf-8") == "service\n"
+    assert stdout_lines["RUNTIME_EXISTS"] == "0"
+
+
 def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:
     for rel_path in (
         "maxionbench/orchestration/slurm/download_datasets.sh",
@@ -501,12 +625,10 @@ def test_cpu_array_starts_and_stops_managed_engine_services() -> None:
     assert 'if mb_engine_requires_service "${STAGED_CONFIG}"; then' in text
     assert "mb_start_engine_services" in text
     assert "mb_wait_engine_health" in text
-    assert "trap 'mb_stop_engine_services' EXIT" in text
+    assert 'trap \'status=$?; trap - EXIT; mb_finalize_job "${status}" "${SERVICE_STARTED:-0}"; exit "${status}"\' EXIT' in text
     assert "SERVICE_STARTED=1" in text
-    assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
-    assert "mb_stop_engine_services" in text
     assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
-    assert "mb_cleanup_local_runtime" in text
+    assert "mb_finalize_job" in text
 
 
 def test_gpu_array_supports_partial_scenario_dir_override_fallback() -> None:
@@ -524,12 +646,10 @@ def test_gpu_array_starts_and_stops_managed_engine_services() -> None:
     assert 'if mb_engine_requires_service "${STAGED_CONFIG}"; then' in text
     assert "mb_start_engine_services" in text
     assert "mb_wait_engine_health" in text
-    assert "trap 'mb_stop_engine_services' EXIT" in text
+    assert 'trap \'status=$?; trap - EXIT; mb_finalize_job "${status}" "${SERVICE_STARTED:-0}"; exit "${status}"\' EXIT' in text
     assert "SERVICE_STARTED=1" in text
-    assert 'if [[ "${SERVICE_STARTED}" -eq 1 ]]; then' in text
-    assert "mb_stop_engine_services" in text
     assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
-    assert "mb_cleanup_local_runtime" in text
+    assert "mb_finalize_job" in text
 
 
 def test_new_slurm_pipeline_scripts_exist() -> None:
@@ -559,7 +679,7 @@ def test_calibrate_d3_supports_scenario_dir_override_with_explicit_override_prec
     assert 'if [[ ! -f "$(mb_resolve_config "${CONFIG_PATH}")" ]]; then' in text
     assert "mb_source_dataset_env" in text
     assert 'export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"' in text
-    assert "mb_cleanup_local_runtime" in text
+    assert "mb_finalize_job" in text
 
 
 def test_prefetch_datasets_script_exists_and_uses_prefetch_helper() -> None:

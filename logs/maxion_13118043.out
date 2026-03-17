@@ -1,0 +1,4 @@
+[maxionbench][2026-03-17T16:36:23Z] SLURM_TMPDIR is not set; falling back to /tmp
+[maxionbench][2026-03-17T16:36:24Z] preflight={"config_path": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/artifacts/slurm_manifests/latest/generated_configs/gpu/s5_rerank__weaviate.yaml", "dataset_bundle": "D4", "dataset_bytes": 6442450944, "engine_bytes": 12884901888, "fallback_config": null, "free_bytes": 392623587328, "integrity_checked_files": 0, "integrity_error_count": 0, "integrity_errors": [], "integrity_ok": true, "manifest_error": null, "manifest_ok": true, "ok": true, "required_bytes": 40587440947, "safety_factor": 1.8, "temp_bytes": 3221225472, "tmpdir": "/tmp"}
+[maxionbench][2026-03-17T16:36:27Z] started engine service weaviate pid=3463314 log=/tmp/maxionbench_engine_runtime/13118043_17/logs/weaviate.log
+[maxionbench][2026-03-17T16:36:27Z] waiting for adapter health config=/tmp/maxionbench_stage/13118043_17/config.yaml timeout=120s

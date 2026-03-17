@@ -217,6 +217,53 @@ def test_verify_engine_readiness_allows_mixed_status_when_allow_nonpass_enabled(
     assert int(summary["error_count"]) == 0
 
 
+def test_verify_engine_readiness_target_adapter_ignores_unrelated_failures(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [
+        {"adapter": "qdrant", "status": "pass"},
+        {"adapter": "milvus", "status": "fail"},
+        {"adapter": "faiss-gpu", "status": "fail"},
+    ]
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=False,
+        target_adapter="qdrant",
+    )
+    assert summary["pass"] is True
+    assert summary["target_adapter"] == "qdrant"
+    assert summary["required_adapters"] == ["qdrant"]
+
+
+def test_verify_engine_readiness_target_adapter_rejects_target_failure(tmp_path: Path) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    rows = [
+        {"adapter": "qdrant", "status": "fail"},
+        {"adapter": "milvus", "status": "pass"},
+    ]
+    _write_matrix(matrix_path, rows)
+
+    summary = verify_engine_readiness(
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+        allow_gpu_unavailable=False,
+        allow_nonpass_status=False,
+        target_adapter="qdrant",
+    )
+    assert summary["pass"] is False
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("qdrant" in message.lower() for message in messages)
+
+
 def test_verify_engine_readiness_rejects_nonpass_row_outside_required_adapters_in_strict_mode(tmp_path: Path) -> None:
     behavior_dir = tmp_path / "behavior"
     shutil.copytree(Path("docs/behavior"), behavior_dir)
@@ -335,6 +382,40 @@ def test_verify_engine_readiness_cli_dispatch_supports_require_mock_pass(
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["pass"] is True
     assert parsed["require_mock_pass"] is True
+
+
+def test_verify_engine_readiness_cli_scopes_to_target_adapter(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    _write_matrix(
+        matrix_path,
+        [
+            {"adapter": "qdrant", "status": "pass"},
+            {"adapter": "milvus", "status": "fail"},
+        ],
+    )
+
+    code = cli_main(
+        [
+            "verify-engine-readiness",
+            "--conformance-matrix",
+            str(matrix_path),
+            "--behavior-dir",
+            str(behavior_dir),
+            "--target-adapter",
+            "qdrant",
+            "--json",
+        ]
+    )
+    assert code == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["pass"] is True
+    assert parsed["target_adapter"] == "qdrant"
 
 
 def test_verify_engine_readiness_cli_missing_matrix_returns_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

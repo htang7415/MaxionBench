@@ -43,6 +43,7 @@ def verify_engine_readiness(
     allow_gpu_unavailable: bool = False,
     allow_nonpass_status: bool = False,
     require_mock_pass: bool = False,
+    target_adapter: str | None = None,
 ) -> dict[str, Any]:
     matrix_path = conformance_matrix_path.resolve()
     if not matrix_path.exists():
@@ -88,8 +89,9 @@ def verify_engine_readiness(
             payload["source"] = "behavior_cards"
             errors.append(payload)
 
-    required_adapters = list(REQUIRED_ADAPTERS)
-    if allow_gpu_unavailable:
+    resolved_target_adapter = str(target_adapter).strip() if target_adapter is not None else ""
+    required_adapters = [resolved_target_adapter] if resolved_target_adapter else list(REQUIRED_ADAPTERS)
+    if allow_gpu_unavailable and not resolved_target_adapter:
         required_adapters = [name for name in required_adapters if name != "faiss-gpu"]
 
     for adapter in required_adapters:
@@ -150,7 +152,12 @@ def verify_engine_readiness(
 
     if not allow_nonpass_status:
         strict_frame = normalized
-        if allow_gpu_unavailable:
+        if resolved_target_adapter:
+            strict_scope_adapters = list(required_adapters)
+            if require_mock_pass:
+                strict_scope_adapters.append("mock")
+            strict_frame = strict_frame[strict_frame["adapter"].isin(strict_scope_adapters)]
+        elif allow_gpu_unavailable:
             strict_frame = strict_frame[strict_frame["adapter"] != "faiss-gpu"]
         non_pass = strict_frame[strict_frame["status"] != "pass"]
         if not non_pass.empty:
@@ -158,7 +165,12 @@ def verify_engine_readiness(
             for value in non_pass["status"].tolist():
                 key = str(value)
                 status_counts[key] = status_counts.get(key, 0) + 1
-            strict_scope = "excluding `faiss-gpu` rows" if allow_gpu_unavailable else "across all rows"
+            if resolved_target_adapter:
+                strict_scope = f"for target adapter `{resolved_target_adapter}`"
+                if require_mock_pass:
+                    strict_scope = f"{strict_scope} + mock"
+            else:
+                strict_scope = "excluding `faiss-gpu` rows" if allow_gpu_unavailable else "across all rows"
             errors.append(
                 {
                     "source": "conformance_matrix",
@@ -210,6 +222,7 @@ def verify_engine_readiness(
         "allow_gpu_unavailable": allow_gpu_unavailable,
         "allow_nonpass_status": allow_nonpass_status,
         "require_mock_pass": require_mock_pass,
+        "target_adapter": resolved_target_adapter or None,
         "required_adapters": required_adapters,
         "conformance_rows": int(len(normalized)),
         "conformance_status_counts": dict(sorted(status_counts.items())),
@@ -239,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Require a `mock` adapter row with pass status to prevent false-green structural checks.",
     )
+    parser.add_argument(
+        "--target-adapter",
+        default=None,
+        help="Optional adapter name to scope readiness checks to a single engine instead of all adapters.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -249,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_gpu_unavailable=bool(args.allow_gpu_unavailable),
             allow_nonpass_status=bool(args.allow_nonpass_status),
             require_mock_pass=bool(args.require_mock_pass),
+            target_adapter=args.target_adapter,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"verify-engine-readiness failed: {exc}", file=sys.stderr)

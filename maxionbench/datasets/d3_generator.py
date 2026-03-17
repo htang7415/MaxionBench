@@ -5,10 +5,85 @@ Implements the pinned correlation model described in document.md Section 4.2.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 import numpy as np
+
+
+_NEAREST_CENTROID_WORKING_SET_BYTES = 64 * 1024 * 1024
+_TOPK_SCORE_CHUNK_ROWS = 65_536
+
+
+class SequentialDocIdSequence(Sequence[str]):
+    def __init__(self, size: int, *, prefix: str = "doc") -> None:
+        self._size = int(size)
+        self._prefix = str(prefix)
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int | slice) -> str | list[str]:
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self._size)
+            return [self._format_id(position) for position in range(start, stop, step)]
+        normalized = self._normalize_index(index)
+        return self._format_id(normalized)
+
+    def _normalize_index(self, index: int) -> int:
+        value = int(index)
+        if value < 0:
+            value += self._size
+        if value < 0 or value >= self._size:
+            raise IndexError("doc id index out of range")
+        return value
+
+    def _format_id(self, position: int) -> str:
+        return f"{self._prefix}-{position:07d}"
+
+
+class GeneratedPayloadSequence(Sequence[dict[str, Any]]):
+    def __init__(
+        self,
+        *,
+        tenant_ids: np.ndarray,
+        acl_buckets: np.ndarray,
+        time_buckets: np.ndarray,
+        cluster_ids: np.ndarray,
+    ) -> None:
+        self._tenant_ids = tenant_ids
+        self._acl_buckets = acl_buckets
+        self._time_buckets = time_buckets
+        self._cluster_ids = cluster_ids
+
+    def __len__(self) -> int:
+        return int(self._tenant_ids.shape[0])
+
+    def __getitem__(self, index: int | slice) -> dict[str, Any] | list[dict[str, Any]]:
+        if isinstance(index, slice):
+            start, stop, step = index.indices(len(self))
+            return [self._payload_at(position) for position in range(start, stop, step)]
+        normalized = self._normalize_index(index)
+        return self._payload_at(normalized)
+
+    def _normalize_index(self, index: int) -> int:
+        value = int(index)
+        size = len(self)
+        if value < 0:
+            value += size
+        if value < 0 or value >= size:
+            raise IndexError("payload index out of range")
+        return value
+
+    def _payload_at(self, position: int) -> dict[str, Any]:
+        return {
+            "tenant_id": f"tenant-{int(self._tenant_ids[position]):03d}",
+            "tenant": f"tenant-{int(self._tenant_ids[position]):03d}",
+            "acl_bucket": int(self._acl_buckets[position]),
+            "time_bucket": int(self._time_buckets[position]),
+            "cluster_id": int(self._cluster_ids[position]),
+        }
 
 
 @dataclass(frozen=True)
@@ -37,13 +112,13 @@ class D3Params:
 
 @dataclass(frozen=True)
 class D3Dataset:
-    ids: list[str]
+    ids: Sequence[str]
     vectors: np.ndarray
     cluster_ids: np.ndarray
     tenant_ids: np.ndarray
     acl_buckets: np.ndarray
     time_buckets: np.ndarray
-    payloads: list[dict[str, Any]]
+    payloads: Sequence[dict[str, Any]]
     params: D3Params
 
 
@@ -125,26 +200,19 @@ def generate_d3_dataset(
         rng=rng,
     )
 
-    ids = [f"{id_prefix}-{index:07d}" for index in range(n_rows)]
-    payloads: list[dict[str, Any]] = []
-    for index in range(n_rows):
-        payloads.append(
-            {
-                "tenant_id": f"tenant-{int(tenant_ids[index]):03d}",
-                "tenant": f"tenant-{int(tenant_ids[index]):03d}",
-                "acl_bucket": int(acl_buckets[index]),
-                "time_bucket": int(time_buckets[index]),
-                "cluster_id": int(cluster_ids[index]),
-            }
-        )
     return D3Dataset(
-        ids=ids,
+        ids=SequentialDocIdSequence(n_rows, prefix=id_prefix),
         vectors=vectors_np,
         cluster_ids=cluster_ids,
         tenant_ids=tenant_ids,
         acl_buckets=acl_buckets,
         time_buckets=time_buckets,
-        payloads=payloads,
+        payloads=GeneratedPayloadSequence(
+            tenant_ids=tenant_ids,
+            acl_buckets=acl_buckets,
+            time_buckets=time_buckets,
+            cluster_ids=cluster_ids,
+        ),
         params=params,
     )
 
@@ -196,12 +264,15 @@ def cluster_spread_at_one_percent(
     spreads: list[float] = []
     for q_idx in query_indices:
         tenant = int(dataset.tenant_ids[q_idx])
-        filtered_idx = np.where(dataset.tenant_ids == tenant)[0]
-        if filtered_idx.size == 0:
+        filtered_mask = dataset.tenant_ids == tenant
+        if not np.any(filtered_mask):
             continue
-        scores = dataset.vectors[filtered_idx] @ dataset.vectors[q_idx]
-        order = np.argsort(-scores, kind="stable")[:top_k]
-        result_idx = filtered_idx[order]
+        result_idx = topk_masked_indices(
+            dataset.vectors,
+            dataset.vectors[q_idx],
+            top_k=top_k,
+            mask=filtered_mask,
+        )
         unique_clusters = np.unique(dataset.cluster_ids[result_idx]).size
         spreads.append(float(unique_clusters))
     if not spreads:
@@ -252,7 +323,105 @@ def _cluster_vectors(vectors: np.ndarray, *, k_clusters: int, seed: int) -> np.n
 
 
 def _nearest_centroid(points: np.ndarray, centroids: np.ndarray) -> np.ndarray:
-    points_norm = np.sum(points * points, axis=1, keepdims=True)
-    centroids_norm = np.sum(centroids * centroids, axis=1)[None, :]
-    dists = points_norm + centroids_norm - 2.0 * (points @ centroids.T)
-    return np.argmin(dists, axis=1)
+    n_points = int(points.shape[0])
+    if n_points == 0:
+        return np.empty(0, dtype=np.int64)
+    k_clusters = int(centroids.shape[0])
+    bytes_per_score_row = max(1, k_clusters * np.dtype(np.float32).itemsize)
+    batch_rows = max(1, min(n_points, _NEAREST_CENTROID_WORKING_SET_BYTES // bytes_per_score_row))
+    labels = np.empty(n_points, dtype=np.int64)
+    centroids_norm = np.sum(centroids * centroids, axis=1, dtype=np.float32)[None, :]
+    for start in range(0, n_points, batch_rows):
+        stop = min(n_points, start + batch_rows)
+        chunk = np.asarray(points[start:stop], dtype=np.float32)
+        scores = np.asarray(chunk @ centroids.T, dtype=np.float32)
+        scores *= -2.0
+        scores += centroids_norm
+        scores += np.sum(chunk * chunk, axis=1, dtype=np.float32, keepdims=True)
+        labels[start:stop] = np.argmin(scores, axis=1)
+    return labels
+
+
+def topk_masked_indices(
+    vectors: np.ndarray,
+    query_vec: np.ndarray,
+    *,
+    top_k: int,
+    mask: np.ndarray | None = None,
+    candidate_indices: np.ndarray | None = None,
+    chunk_rows: int = _TOPK_SCORE_CHUNK_ROWS,
+) -> np.ndarray:
+    if top_k < 1:
+        return np.empty(0, dtype=np.int64)
+    if mask is not None and candidate_indices is not None:
+        raise ValueError("mask and candidate_indices are mutually exclusive")
+    if vectors.ndim != 2:
+        raise ValueError("vectors must be 2D")
+    if query_vec.ndim != 1:
+        raise ValueError("query_vec must be 1D")
+    if vectors.shape[1] != query_vec.shape[0]:
+        raise ValueError("query_vec dimension mismatch")
+
+    best_scores = np.empty(0, dtype=np.float32)
+    best_indices = np.empty(0, dtype=np.int64)
+    if candidate_indices is not None:
+        candidate_indices = np.asarray(candidate_indices, dtype=np.int64)
+        total = int(candidate_indices.shape[0])
+        for start in range(0, total, max(1, int(chunk_rows))):
+            stop = min(total, start + max(1, int(chunk_rows)))
+            idx_chunk = candidate_indices[start:stop]
+            if idx_chunk.size == 0:
+                continue
+            score_chunk = np.asarray(vectors[idx_chunk] @ query_vec, dtype=np.float32)
+            best_scores, best_indices = _merge_topk_indices(
+                best_scores=best_scores,
+                best_indices=best_indices,
+                new_scores=score_chunk,
+                new_indices=idx_chunk,
+                top_k=top_k,
+            )
+    else:
+        total = int(vectors.shape[0])
+        for start in range(0, total, max(1, int(chunk_rows))):
+            stop = min(total, start + max(1, int(chunk_rows)))
+            score_chunk = np.asarray(vectors[start:stop] @ query_vec, dtype=np.float32)
+            if mask is None:
+                idx_chunk = np.arange(start, stop, dtype=np.int64)
+            else:
+                mask_chunk = np.asarray(mask[start:stop], dtype=bool)
+                if not np.any(mask_chunk):
+                    continue
+                local_indices = np.flatnonzero(mask_chunk).astype(np.int64, copy=False)
+                idx_chunk = local_indices + start
+                score_chunk = score_chunk[mask_chunk]
+            best_scores, best_indices = _merge_topk_indices(
+                best_scores=best_scores,
+                best_indices=best_indices,
+                new_scores=score_chunk,
+                new_indices=idx_chunk,
+                top_k=top_k,
+            )
+    if best_indices.size == 0:
+        return best_indices
+    order = np.lexsort((best_indices, -best_scores.astype(np.float64, copy=False)))
+    return best_indices[order[:top_k]]
+
+
+def _merge_topk_indices(
+    *,
+    best_scores: np.ndarray,
+    best_indices: np.ndarray,
+    new_scores: np.ndarray,
+    new_indices: np.ndarray,
+    top_k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if new_scores.size == 0:
+        return best_scores, best_indices
+    combined_scores = np.concatenate([best_scores, np.asarray(new_scores, dtype=np.float32)], axis=0)
+    combined_indices = np.concatenate([best_indices, np.asarray(new_indices, dtype=np.int64)], axis=0)
+    if combined_scores.size > top_k:
+        keep = np.argpartition(-combined_scores, top_k - 1)[:top_k]
+        combined_scores = combined_scores[keep]
+        combined_indices = combined_indices[keep]
+    order = np.lexsort((combined_indices, -combined_scores.astype(np.float64, copy=False)))
+    return combined_scores[order], combined_indices[order]

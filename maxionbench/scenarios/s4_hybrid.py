@@ -243,15 +243,19 @@ def _aggregate(
 
 
 def _ingest_dataset(adapter: Any, dataset: D4SyntheticDataset) -> None:
-    records = [
-        UpsertRecord(
-            id=doc_id,
-            vector=dataset.doc_vectors[idx].tolist(),
-            payload={"text": dataset.doc_texts[idx]},
-        )
-        for idx, doc_id in enumerate(dataset.doc_ids)
-    ]
-    adapter.bulk_upsert(records)
+    batch_size = 5_000
+    total = len(dataset.doc_ids)
+    for start in range(0, total, batch_size):
+        stop = min(total, start + batch_size)
+        records = [
+            UpsertRecord(
+                id=dataset.doc_ids[idx],
+                vector=dataset.doc_vectors[idx].tolist(),
+                payload={"text": dataset.doc_texts[idx]},
+            )
+            for idx in range(start, stop)
+        ]
+        adapter.bulk_upsert(records)
     adapter.flush_or_commit()
 
 

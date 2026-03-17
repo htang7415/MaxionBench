@@ -23,6 +23,7 @@ mb_source_dataset_env
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "calibrate_d3"
+trap 'status=$?; trap - EXIT; mb_finalize_job "${status}" "0"; exit "${status}"' EXIT
 
 STAGED_CONFIG="$(mb_stage_config_to_tmp "${MB_PREFLIGHT_CONFIG}")"
 export MB_STAGE_ROOT="$(dirname "${STAGED_CONFIG}")"
@@ -34,6 +35,3 @@ if [[ -f "${MB_OUTPUT_TMP}/d3_params.yaml" ]]; then
   cp "${MB_OUTPUT_TMP}/d3_params.yaml" "${ROOT_DIR}/artifacts/calibration/d3_params.yaml"
   mb_log "wrote calibration params to ${ROOT_DIR}/artifacts/calibration/d3_params.yaml"
 fi
-
-mb_copy_back_output
-mb_cleanup_local_runtime

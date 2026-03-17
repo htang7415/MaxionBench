@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 from queue import Empty, Full, Queue
@@ -512,114 +513,142 @@ def _effective_total_rate(cfg: S3Config, *, write_multiplier: float) -> float:
     )
 
 
+_OracleToken = int | str
+
+
 class _OracleState:
-    def __init__(self, ids: list[str], vectors: np.ndarray, payloads: dict[str, dict[str, Any]], next_id: int) -> None:
-        self.base_ids = list(ids)
+    def __init__(self, ids: Sequence[str], vectors: np.ndarray, payloads: Sequence[dict[str, Any]], next_id: int) -> None:
+        self.base_ids = ids
         self.base_vectors = np.asarray(vectors, dtype=np.float32)
-        self.base_id_to_index = {doc_id: idx for idx, doc_id in enumerate(self.base_ids)}
-        self.base_payloads = {doc_id: dict(payloads[doc_id]) for doc_id in self.base_ids}
-        self.active_ids = list(ids)
-        self.id_to_slot = {doc_id: idx for idx, doc_id in enumerate(ids)}
-        self.updated_vectors: dict[str, np.ndarray] = {}
+        self.base_payloads: Sequence[dict[str, Any]] | None = payloads
+        self.base_active = np.ones(self.base_vectors.shape[0], dtype=bool)
+        self.base_active_count = int(self.base_vectors.shape[0])
+        self.updated_vectors: dict[int, np.ndarray] = {}
+        self.inserted_ids: list[str] = []
+        self.inserted_id_to_slot: dict[str, int] = {}
         self.inserted_vectors: dict[str, np.ndarray] = {}
-        self.payloads = {doc_id: dict(payloads[doc_id]) for doc_id in ids}
-        self.deleted_ids: set[str] = set()
+        self.inserted_payloads: dict[str, dict[str, Any]] = {}
         self.next_id = next_id
         self.last_inserted_id: str | None = None
 
     @classmethod
     def from_dataset(cls, dataset) -> "_OracleState":  # type: ignore[no-untyped-def]
-        ids = list(dataset.ids)
         vectors = np.asarray(dataset.vectors, dtype=np.float32)
-        payloads = {ids[i]: dict(dataset.payloads[i]) for i in range(len(ids))}
-        return cls(ids=ids, vectors=vectors, payloads=payloads, next_id=len(ids))
+        return cls(ids=dataset.ids, vectors=vectors, payloads=dataset.payloads, next_id=int(vectors.shape[0]))
 
-    def sample_id(self, rng: np.random.Generator) -> str | None:
-        if not self.active_ids:
+    def sample_token(self, rng: np.random.Generator) -> _OracleToken | None:
+        total_active = int(self.base_active_count) + len(self.inserted_ids)
+        if total_active < 1:
             return None
-        return self.active_ids[int(rng.integers(0, len(self.active_ids)))]
+        draw = int(rng.integers(0, total_active))
+        if draw >= self.base_active_count:
+            return self.inserted_ids[draw - self.base_active_count]
+        if self.base_active_count >= self.base_vectors.shape[0]:
+            return draw
+        for _ in range(128):
+            candidate = int(rng.integers(0, self.base_vectors.shape[0]))
+            if self.base_active[candidate]:
+                return candidate
+        active_indices = np.flatnonzero(self.base_active)
+        if active_indices.size == 0:
+            return self.inserted_ids[0] if self.inserted_ids else None
+        return int(active_indices[int(rng.integers(0, active_indices.size))])
+
+    def sample_record_target(self, rng: np.random.Generator) -> tuple[_OracleToken, str] | None:
+        token = self.sample_token(rng)
+        if token is None:
+            return None
+        return token, self.doc_id_for_token(token)
 
     def sample_query_vector(self, rng: np.random.Generator) -> np.ndarray | None:
-        doc_id = self.sample_id(rng)
-        if doc_id is None:
+        token = self.sample_token(rng)
+        if token is None:
             return None
-        return self.vector_for(doc_id).copy()
+        return self.vector_for_token(token).copy()
 
-    def vector_for(self, doc_id: str) -> np.ndarray:
-        if doc_id in self.inserted_vectors:
-            return self.inserted_vectors[doc_id]
-        if doc_id in self.updated_vectors:
-            return self.updated_vectors[doc_id]
-        return self.base_vectors[self.base_id_to_index[doc_id]]
+    def doc_id_for_token(self, token: _OracleToken) -> str:
+        if isinstance(token, str):
+            return token
+        return self.base_ids[int(token)]
 
-    def insert_one(self, rng: np.random.Generator) -> UpsertRecord:
-        new_id = f"doc-{self.next_id:07d}"
-        self.next_id += 1
-        vec = _random_unit_vector(self.base_vectors.shape[1], rng)
-        payload = {
-            "tenant_id": f"tenant-{int(rng.integers(0, 100)):03d}",
-            "acl_bucket": int(rng.integers(0, 16)),
-            "time_bucket": int(rng.integers(0, 52)),
-        }
-        self.active_ids.append(new_id)
-        self.id_to_slot[new_id] = len(self.active_ids) - 1
-        self.inserted_vectors[new_id] = vec
-        self.payloads[new_id] = payload
-        self.last_inserted_id = new_id
-        return UpsertRecord(id=new_id, vector=vec.tolist(), payload=payload)
+    def vector_for_token(self, token: _OracleToken) -> np.ndarray:
+        if isinstance(token, str):
+            return self.inserted_vectors[token]
+        base_index = int(token)
+        if base_index in self.updated_vectors:
+            return self.updated_vectors[base_index]
+        return self.base_vectors[base_index]
 
-    def update_vector(self, doc_id: str, vec: np.ndarray) -> None:
-        if doc_id not in self.id_to_slot:
+    def update_token(self, token: _OracleToken, vec: np.ndarray) -> None:
+        if isinstance(token, str):
+            if token not in self.inserted_id_to_slot:
+                return
+            self.inserted_vectors[token] = vec
             return
-        if doc_id in self.inserted_vectors:
-            self.inserted_vectors[doc_id] = vec
+        base_index = int(token)
+        if base_index < 0 or base_index >= self.base_vectors.shape[0] or not self.base_active[base_index]:
             return
-        self.updated_vectors[doc_id] = vec
+        self.updated_vectors[base_index] = vec
 
-    def delete_id(self, doc_id: str) -> None:
-        if doc_id not in self.id_to_slot:
+    def delete_token(self, token: _OracleToken) -> None:
+        if isinstance(token, str):
+            if token not in self.inserted_id_to_slot:
+                return
+            slot = self.inserted_id_to_slot[token]
+            last_id = self.inserted_ids[-1]
+            if slot != len(self.inserted_ids) - 1:
+                self.inserted_ids[slot] = last_id
+                self.inserted_id_to_slot[last_id] = slot
+            self.inserted_ids.pop()
+            self.inserted_id_to_slot.pop(token, None)
+            self.inserted_vectors.pop(token, None)
+            self.inserted_payloads.pop(token, None)
             return
-        idx = self.id_to_slot[doc_id]
-        last_id = self.active_ids[-1]
-        if idx != len(self.active_ids) - 1:
-            self.active_ids[idx] = last_id
-            self.id_to_slot[last_id] = idx
-        self.active_ids.pop()
-        self.id_to_slot.pop(doc_id, None)
-        self.payloads.pop(doc_id, None)
-        if doc_id in self.inserted_vectors:
-            self.inserted_vectors.pop(doc_id, None)
+        base_index = int(token)
+        if base_index < 0 or base_index >= self.base_vectors.shape[0] or not self.base_active[base_index]:
             return
-        self.updated_vectors.pop(doc_id, None)
-        self.deleted_ids.add(doc_id)
+        self.base_active[base_index] = False
+        self.base_active_count -= 1
+        self.updated_vectors.pop(base_index, None)
 
     def exact_topk(self, query_vec: np.ndarray, top_k: int) -> list[str]:
-        if not self.active_ids or top_k < 1:
+        if (self.base_active_count + len(self.inserted_ids)) < 1 or top_k < 1:
             return []
-        invalid = self.deleted_ids | set(self.updated_vectors.keys())
         base_candidates: list[tuple[float, str]] = []
-        if self.base_ids:
+        if self.base_vectors.shape[0] > 0:
             base_scores = self.base_vectors @ query_vec
-            candidate_k = min(len(self.base_ids), max(top_k, top_k + len(invalid)))
-            if candidate_k >= len(self.base_ids):
-                indices = np.arange(len(self.base_ids), dtype=np.int64)
+            invalid_count = int(self.base_vectors.shape[0] - self.base_active_count) + len(self.updated_vectors)
+            candidate_k = min(self.base_vectors.shape[0], max(top_k, top_k + invalid_count))
+            if candidate_k >= self.base_vectors.shape[0]:
+                indices = np.arange(self.base_vectors.shape[0], dtype=np.int64)
             else:
                 indices = np.argpartition(-base_scores, candidate_k - 1)[:candidate_k]
-            ordered = sorted((int(idx) for idx in indices.tolist()), key=lambda idx: (-float(base_scores[idx]), self.base_ids[idx]))
+            ordered = sorted(
+                (int(idx) for idx in indices.tolist()),
+                key=lambda idx: (-float(base_scores[idx]), self.base_ids[idx]),
+            )
             for idx in ordered:
-                doc_id = self.base_ids[idx]
-                if doc_id in invalid:
+                if not self.base_active[idx] or idx in self.updated_vectors:
                     continue
-                base_candidates.append((float(base_scores[idx]), doc_id))
+                base_candidates.append((float(base_scores[idx]), self.base_ids[idx]))
                 if len(base_candidates) >= top_k:
                     break
         extras: list[tuple[float, str]] = []
-        for mapping in (self.updated_vectors, self.inserted_vectors):
-            for doc_id, vec in mapping.items():
-                extras.append((float(np.dot(vec, query_vec)), doc_id))
+        for idx, vec in self.updated_vectors.items():
+            extras.append((float(np.dot(vec, query_vec)), self.base_ids[idx]))
+        for doc_id, vec in self.inserted_vectors.items():
+            extras.append((float(np.dot(vec, query_vec)), doc_id))
         merged = base_candidates + extras
         merged.sort(key=lambda item: (-item[0], item[1]))
         return [doc_id for _, doc_id in merged[:top_k]]
+
+    def payload_for_base_index(self, index: int) -> dict[str, Any]:
+        if self.base_payloads is None:
+            raise RuntimeError("base payloads are no longer available")
+        return dict(self.base_payloads[index])
+
+    def release_base_payloads(self) -> None:
+        self.base_payloads = None
 
 
 def _prepare_write_task(
@@ -643,29 +672,30 @@ def _prepare_write_task(
 
         def apply_insert() -> None:
             state.next_id += 1
-            state.active_ids.append(inserted_id)
-            state.id_to_slot[inserted_id] = len(state.active_ids) - 1
+            state.inserted_ids.append(inserted_id)
+            state.inserted_id_to_slot[inserted_id] = len(state.inserted_ids) - 1
             state.inserted_vectors[inserted_id] = inserted_vec
-            state.payloads[inserted_id] = inserted_payload
+            state.inserted_payloads[inserted_id] = inserted_payload
             state.last_inserted_id = inserted_id
 
         return _WriteTask(scheduled_at=scheduled_at, phase=phase, op="insert", record=record), apply_insert
 
-    target = state.sample_id(rng)
+    target = state.sample_record_target(rng)
     if target is None:
         return None, None
+    target_token, target_id = target
     if op == "update":
         new_vec = _random_unit_vector(cfg.vector_dim, rng)
 
         def apply_update() -> None:
-            state.update_vector(target, new_vec)
+            state.update_token(target_token, new_vec)
 
         return (
             _WriteTask(
                 scheduled_at=scheduled_at,
                 phase=phase,
                 op="update",
-                ids=[target],
+                ids=[target_id],
                 vectors=[new_vec.tolist()],
             ),
             apply_update,
@@ -673,19 +703,28 @@ def _prepare_write_task(
     if op == "delete":
 
         def apply_delete() -> None:
-            state.delete_id(target)
+            state.delete_token(target_token)
 
-        return _WriteTask(scheduled_at=scheduled_at, phase=phase, op="delete", ids=[target]), apply_delete
+        return _WriteTask(scheduled_at=scheduled_at, phase=phase, op="delete", ids=[target_id]), apply_delete
     return None, None
 
 
 def _ingest_state(adapter: Any, state: _OracleState) -> None:
-    records = [
-        UpsertRecord(id=doc_id, vector=state.base_vectors[i].tolist(), payload=state.base_payloads[doc_id])
-        for i, doc_id in enumerate(state.base_ids)
-    ]
-    adapter.bulk_upsert(records)
+    batch_size = 10_000
+    total = int(state.base_vectors.shape[0])
+    for start in range(0, total, batch_size):
+        stop = min(total, start + batch_size)
+        records = [
+            UpsertRecord(
+                id=state.base_ids[i],
+                vector=state.base_vectors[i].tolist(),
+                payload=state.payload_for_base_index(i),
+            )
+            for i in range(start, stop)
+        ]
+        adapter.bulk_upsert(records)
     adapter.flush_or_commit()
+    state.release_base_payloads()
 
 
 def _sample_operation(cfg: S3Config, rng: np.random.Generator, *, write_multiplier: float) -> str:
