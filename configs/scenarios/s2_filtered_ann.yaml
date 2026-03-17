@@ -18,7 +18,7 @@ warmup_s: 120
 steady_state_s: 300
 rpc_baseline_requests: 1000
 sla_threshold_ms: 80.0
-vector_dim: 64
+vector_dim: 192
 num_vectors: 5000
 num_queries: 200
 top_k: 10

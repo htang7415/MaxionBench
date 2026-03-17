@@ -1,0 +1,81 @@
+[maxionbench][2026-03-17T07:50:47Z] preprocessing datasets from /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset into /kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed
+{
+  "dataset_name": "glove-100-angular",
+  "dim": 100,
+  "family": "D1",
+  "num_base": 1183514,
+  "num_queries": 10000,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D1/glove-100-angular",
+  "task_type": "ann"
+}
+{
+  "dataset_name": "sift-128-euclidean",
+  "dim": 128,
+  "family": "D1",
+  "num_base": 1000000,
+  "num_queries": 10000,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D1/sift-128-euclidean",
+  "task_type": "ann"
+}
+{
+  "dataset_name": "gist-960-euclidean",
+  "dim": 960,
+  "family": "D1",
+  "num_base": 1000000,
+  "num_queries": 1000,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D1/gist-960-euclidean",
+  "task_type": "ann"
+}
+{
+  "dataset_name": "deep-image-96-angular",
+  "dim": 96,
+  "family": "D2",
+  "num_base": 9990000,
+  "num_queries": 10000,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D2/deep-image-96-angular",
+  "task_type": "ann"
+}
+{
+  "dataset_name": "yfcc-10M",
+  "dim": 192,
+  "family": "D3",
+  "ground_truth_k": 10,
+  "num_base": 10000000,
+  "num_queries": 100000,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D3/yfcc-10M",
+  "payloads_written": true,
+  "query_split": "public",
+  "task_type": "filtered_ann"
+}
+{
+  "dataset_name": "scifact",
+  "family": "D4",
+  "num_base": 5183,
+  "num_queries": 300,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D4/beir/scifact",
+  "task_type": "text_retrieval_strict"
+}
+{
+  "dataset_name": "fiqa",
+  "family": "D4",
+  "num_base": 57600,
+  "num_queries": 648,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D4/beir/fiqa",
+  "task_type": "text_retrieval_strict"
+}
+{
+  "dataset_name": "nfcorpus",
+  "family": "D4",
+  "num_base": 3633,
+  "num_queries": 323,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D4/beir/nfcorpus",
+  "task_type": "text_retrieval_strict"
+}
+{
+  "dataset_name": "crag_small_slice",
+  "family": "D4",
+  "num_base": 437344,
+  "num_queries": 500,
+  "output_dir": "/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/dataset/processed/D4/crag/small_slice",
+  "task_type": "text_retrieval_weak"
+}

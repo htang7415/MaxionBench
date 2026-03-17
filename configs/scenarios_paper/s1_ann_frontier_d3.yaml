@@ -23,7 +23,7 @@ steady_state_s: 300
 phase_timing_mode: strict
 rpc_baseline_requests: 1000
 sla_threshold_ms: 50.0
-vector_dim: 64
+vector_dim: 192
 num_vectors: 10000000
 num_queries: 200
 top_k: 10

@@ -1,0 +1,8 @@
+[maxionbench][2026-03-17T07:52:44Z] using apptainer binary /nopt/nrel/apps/software/apptainer/1.3.3/082324_t/opt/linux-rhel8-sapphirerapids/gcc-13.1.0/apptainer-1.3.3-gaihzin7yggjclpbihmvdgd7lauupb4y/bin/apptainer
+[maxionbench][2026-03-17T07:52:44Z] using apptainer binary /nopt/nrel/apps/software/apptainer/1.3.3/082324_t/opt/linux-rhel8-sapphirerapids/gcc-13.1.0/apptainer-1.3.3-gaihzin7yggjclpbihmvdgd7lauupb4y/bin/apptainer
+Environment placeholder MAXIONBENCH_D3_DATASET_SHA256 resolved to empty/None; using null
+[maxionbench][2026-03-17T07:52:46Z] using apptainer binary /nopt/nrel/apps/software/apptainer/1.3.3/082324_t/opt/linux-rhel8-sapphirerapids/gcc-13.1.0/apptainer-1.3.3-gaihzin7yggjclpbihmvdgd7lauupb4y/bin/apptainer
+Environment placeholder MAXIONBENCH_D3_DATASET_SHA256 resolved to empty/None; using null
+[maxionbench][2026-03-17T07:52:49Z] using apptainer binary /nopt/nrel/apps/software/apptainer/1.3.3/082324_t/opt/linux-rhel8-sapphirerapids/gcc-13.1.0/apptainer-1.3.3-gaihzin7yggjclpbihmvdgd7lauupb4y/bin/apptainer
+/kfs3/scratch/htang/AI/maxtionbench/debug_20260316/MaxionBench/maxionbench/orchestration/slurm/common.sh: line 285: 2455708 Killed                  "${container_cmd[@]}"
+[2026-03-17T01:53:34.687] error: Detected 1 oom_kill event in StepId=13110672.batch. Some of the step tasks have been OOM Killed.
