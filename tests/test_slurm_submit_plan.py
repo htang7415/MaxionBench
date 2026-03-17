@@ -487,6 +487,137 @@ your_cluster:
     assert by_key["gpu_non_d3"][by_key["gpu_non_d3"].index("--gres") + 1] == "gpu:1"
 
 
+def test_submit_steps_step_overrides_replace_duplicate_base_flags(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in (
+        "calibrate_d3.sh",
+        "cpu_array.sh",
+        "gpu_array.sh",
+        "postprocess.sh",
+    ):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    overrides_path = tmp_path / "profiles_local.yaml"
+    overrides_path.write_text(
+        """
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+    - ["--account", "private-account"]
+  step_overrides:
+    postprocess:
+      - ["--cpus-per-task", "8"]
+      - ["--mem", "64G"]
+      - ["--time", "01:00:00"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(overrides_path))
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(include_gpu=False, include_postprocess=True),
+        seed=42,
+        slurm_profile="your_cluster",
+        dry_run=True,
+    )
+    by_key = {step["key"]: [str(item) for item in step["command"]] for step in summary["steps"]}
+    postprocess_cmd = by_key["postprocess"]
+
+    assert postprocess_cmd.count("--cpus-per-task") == 1
+    assert postprocess_cmd[postprocess_cmd.index("--cpus-per-task") + 1] == "8"
+    assert postprocess_cmd.count("--mem") == 1
+    assert postprocess_cmd[postprocess_cmd.index("--mem") + 1] == "64G"
+    assert postprocess_cmd.count("--time") == 1
+    assert postprocess_cmd[postprocess_cmd.index("--time") + 1] == "01:00:00"
+    assert postprocess_cmd[postprocess_cmd.index("--account") + 1] == "private-account"
+
+
+def test_submit_steps_dry_run_emits_no_duplicate_sbatch_flags_per_step(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in (
+        "download_datasets.sh",
+        "preprocess_datasets.sh",
+        "calibrate_d3.sh",
+        "cpu_array.sh",
+        "gpu_array.sh",
+        "postprocess.sh",
+    ):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    overrides_path = tmp_path / "profiles_local.yaml"
+    overrides_path.write_text(
+        """
+your_cluster:
+  base:
+    - ["--job-name", "maxion"]
+    - ["--output", "logs/%x_%j.out"]
+    - ["--error", "logs/%x_%j.err"]
+    - ["--nodes", "1"]
+    - ["--ntasks-per-node", "1"]
+    - ["--cpus-per-task", "64"]
+    - ["--mem", "256G"]
+    - ["--time", "2-00:00:00"]
+    - ["--account", "private-account"]
+  step_overrides:
+    download_datasets:
+      - ["--cpus-per-task", "4"]
+      - ["--mem", "32G"]
+      - ["--time", "04:00:00"]
+    preprocess_datasets:
+      - ["--cpus-per-task", "32"]
+      - ["--mem", "128G"]
+      - ["--time", "08:00:00"]
+    calibrate:
+      - ["--gres", "gpu:1"]
+    gpu_all:
+      - ["--gres", "gpu:1"]
+    postprocess:
+      - ["--cpus-per-task", "8"]
+      - ["--mem", "64G"]
+      - ["--time", "01:00:00"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAXIONBENCH_SLURM_PROFILE_OVERRIDES", str(overrides_path))
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(
+            include_gpu=True,
+            download_datasets=True,
+            preprocess_datasets=True,
+            include_postprocess=True,
+        ),
+        seed=42,
+        slurm_profile="your_cluster",
+        dry_run=True,
+    )
+
+    for step in summary["steps"]:
+        command = [str(item) for item in step["command"]]
+        flags = [item for item in command if item.startswith("--")]
+        duplicates = sorted({flag for flag in flags if flags.count(flag) > 1})
+        assert duplicates == [], f"{step['key']} duplicated flags: {duplicates} in {command}"
+
+
 def test_submit_steps_exports_run_manifest_when_provided(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)

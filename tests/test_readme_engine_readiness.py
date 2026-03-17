@@ -33,6 +33,7 @@ def test_readme_describes_study_scope_and_run_entrypoints() -> None:
     assert "Dry-run prints the submit plan only." in text
     assert "`--launch` prepares the shared directory tree and builds any missing `.sif` images under `${MAXIONBENCH_SHARED_ROOT}/containers/` before submitting jobs." in text
     assert "Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission." in text
+    assert "Large Apptainer build cache/tmp data defaults to `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer`" in text
     assert "By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the repository root that contains `run_slurm_pipeline.sh`." in text
     assert "--shared-root /shared/path/maxionbench" in text
 

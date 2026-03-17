@@ -75,6 +75,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     env_text = env_example.read_text(encoding="utf-8")
     assert "MAXIONBENCH_SLURM_ACCOUNT=" in env_text
     assert "MAXIONBENCH_APPTAINER_MODULE=" in env_text
+    assert "MAXIONBENCH_APPTAINER_CACHE_DIR=" in env_text
+    assert "MAXIONBENCH_APPTAINER_TMPDIR=" in env_text
     assert "MAXIONBENCH_CLEANUP_LOCAL_SCRATCH=" in env_text
     assert "MAXIONBENCH_CONTAINER_IMAGE=" in env_text
     assert "MAXIONBENCH_QDRANT_IMAGE=" in env_text
@@ -170,6 +172,8 @@ printf '{"ok": true}\\n'
     env_text = env_file.read_text(encoding="utf-8")
     assert f"MAXIONBENCH_SHARED_ROOT={repo_dir}" in env_text
     assert f"MAXIONBENCH_DATASET_ROOT={repo_dir}/dataset" in env_text
+    assert f"MAXIONBENCH_APPTAINER_CACHE_DIR={repo_dir}/.cache/apptainer" in env_text
+    assert f"MAXIONBENCH_APPTAINER_TMPDIR={repo_dir}/.cache/apptainer/tmp" in env_text
     assert "MAXIONBENCH_APPTAINER_MODULE=apptainer" in env_text
     assert f"+ wrote cluster env {env_file}" in completed.stdout
     log_text = stub_log.read_text(encoding="utf-8")
@@ -237,6 +241,8 @@ printf '{"ok": true}\\n'
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAXIONBENCH_SHARED_ROOT=/projects/demo/maxionbench" in env_text
     assert "MAXIONBENCH_DATASET_ROOT=/projects/demo/maxionbench/dataset" in env_text
+    assert "MAXIONBENCH_APPTAINER_CACHE_DIR=/projects/demo/maxionbench/.cache/apptainer" in env_text
+    assert "MAXIONBENCH_APPTAINER_TMPDIR=/projects/demo/maxionbench/.cache/apptainer/tmp" in env_text
     log_text = stub_log.read_text(encoding="utf-8")
     assert "DATASET=/projects/demo/maxionbench/dataset" in log_text
     assert "CACHE=/projects/demo/maxionbench/.cache" in log_text
@@ -412,6 +418,8 @@ printf '{"ok": true}\\n'
     env_text = (tmp_path / ".env.slurm.nrel").read_text(encoding="utf-8")
     assert f"MAXIONBENCH_SHARED_ROOT={cli_shared_root}" in env_text
     assert f"MAXIONBENCH_CONTAINER_IMAGE={cli_shared_root}/containers/maxionbench.sif" in env_text
+    assert f"MAXIONBENCH_APPTAINER_CACHE_DIR={cli_shared_root}/.cache/apptainer" in env_text
+    assert f"MAXIONBENCH_APPTAINER_TMPDIR={cli_shared_root}/.cache/apptainer/tmp" in env_text
     log_text = stub_log.read_text(encoding="utf-8")
     assert f"DATASET={cli_shared_root}/dataset" in log_text
     assert f"CONTAINER={cli_shared_root}/containers/maxionbench.sif" in log_text
@@ -583,9 +591,18 @@ def test_run_slurm_pipeline_launch_builds_missing_container_images(tmp_path: Pat
         """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
+printf 'APPTAINER_CACHEDIR=%s\\n' "${APPTAINER_CACHEDIR:-}" >> "${MAXIONBENCH_APPTAINER_LOG}"
+printf 'APPTAINER_TMPDIR=%s\\n' "${APPTAINER_TMPDIR:-}" >> "${MAXIONBENCH_APPTAINER_LOG}"
 if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
   printf '%s\\n' '--fakeroot'
   exit 0
+fi
+if [[ "${1:-}" == "exec" ]]; then
+  target="${2:-}"
+  if grep -q 'with-git' "${target}"; then
+    exit 0
+  fi
+  exit 1
 fi
 if [[ "${1:-}" == "build" ]]; then
   if [[ "${2:-}" == "--fakeroot" ]]; then
@@ -594,7 +611,7 @@ if [[ "${1:-}" == "build" ]]; then
     target="${2:-}"
   fi
   mkdir -p "$(dirname "${target}")"
-  printf 'image\\n' > "${target}"
+  printf 'with-git\\n' > "${target}"
   exit 0
 fi
 if [[ "${1:-}" == "pull" ]]; then
@@ -660,10 +677,132 @@ printf '{"ok": true}\\n'
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
     assert "build --fakeroot" in apptainer_calls
     assert "pull" in apptainer_calls
+    assert f"APPTAINER_CACHEDIR={tmp_path}/.cache/apptainer" in apptainer_calls
+    assert f"APPTAINER_TMPDIR={tmp_path}/.cache/apptainer/tmp" in apptainer_calls
     log_text = stub_log.read_text(encoding="utf-8")
     assert f"DATASET={tmp_path}/dataset" in log_text
     assert f"CONTAINER={tmp_path}/containers/maxionbench.sif" in log_text
     assert "ARGS=submit-slurm-plan" in log_text
+
+
+def test_run_slurm_pipeline_launch_rebuilds_stale_main_container_image(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    build_script_path = scripts_dir / "build_containers.sh"
+    build_script_path.write_text(
+        Path("scripts/build_containers.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    build_script_path.chmod(0o755)
+
+    definition_path = tmp_path / "maxionbench.def"
+    definition_path.write_text(Path("maxionbench.def").read_text(encoding="utf-8"), encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "MAXIONBENCH_SLURM_ACCOUNT=nawimem\n",
+        encoding="utf-8",
+    )
+
+    containers_dir = tmp_path / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    (containers_dir / "maxionbench.sif").write_text("stale-image\n", encoding="utf-8")
+    for image_name in (
+        "qdrant.sif",
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_calls.log"
+    stub_log = tmp_path / "maxionbench_env.log"
+    apptainer_path = bin_dir / "apptainer"
+    apptainer_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
+  printf '%s\\n' '--fakeroot'
+  exit 0
+fi
+if [[ "${1:-}" == "exec" ]]; then
+  target="${2:-}"
+  if grep -q 'with-git' "${target}"; then
+    exit 0
+  fi
+  exit 1
+fi
+if [[ "${1:-}" == "build" ]]; then
+  if [[ "${2:-}" == "--fakeroot" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  printf 'with-git\\n' > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "pull" ]]; then
+  target="${2:-}"
+  printf 'image\\n' > "${target}"
+  exit 0
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    apptainer_path.chmod(0o755)
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_APPTAINER_LOG"] = str(apptainer_log)
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--launch",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (containers_dir / "maxionbench.sif").read_text(encoding="utf-8") == "with-git\n"
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    assert "exec " in apptainer_calls
+    assert "build --fakeroot" in apptainer_calls
+    assert "pull " not in apptainer_calls
+    assert "+ rebuilding stale" in completed.stdout
 
 
 def test_run_slurm_pipeline_rejects_placeholder_cluster_defaults(tmp_path: Path) -> None:

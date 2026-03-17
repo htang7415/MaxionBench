@@ -24,6 +24,7 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "Dry-run only prints the submit plan." in text
     assert "`--launch` prepares the shared directory tree and ensures the required Apptainer images exist before it calls `submit-slurm-plan`." in text
     assert "Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission." in text
+    assert "Large Apptainer build cache/tmp data defaults to `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer`" in text
     assert "${MAXIONBENCH_SHARED_ROOT}/containers/maxionbench.sif" in text
     assert "--launch" in text
     assert 'squeue -u "$USER"' in text

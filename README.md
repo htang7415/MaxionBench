@@ -80,6 +80,8 @@ Dry-run prints the submit plan only. `--launch` prepares the shared directory tr
 
 Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission.
 
+Large Apptainer build cache/tmp data defaults to `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer` and `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer/tmp`, so image builds stay on shared scratch instead of `$HOME`.
+
 By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the repository root that contains `run_slurm_pipeline.sh`. To use a different shared base path, add:
 
 ```bash

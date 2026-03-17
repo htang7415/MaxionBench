@@ -370,8 +370,9 @@ def _profile_sbatch_args(slurm_profile: str, *, step_key: str) -> list[str]:
     local_profile = profiles[slurm_profile]
     base_specs = _normalize_flag_specs(local_profile.get("base"), label=f"{slurm_profile}.base")
     overrides = _normalize_step_override_specs(local_profile.get("step_overrides"), step_key=step_key, profile=slurm_profile)
+    merged_specs = _merge_flag_specs(base_specs, overrides)
     args: list[str] = []
-    for flag, value in (*base_specs, *overrides):
+    for flag, value in merged_specs:
         args.extend([flag, value])
     return args
 
@@ -489,6 +490,16 @@ def _normalize_step_override_specs(raw_payload: Any, *, step_key: str, profile: 
             label=f"{profile}.step_overrides.{candidate_key}",
         )
     return ()
+
+
+def _merge_flag_specs(
+    base_specs: tuple[tuple[str, str], ...],
+    override_specs: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    merged: dict[str, str] = {}
+    for flag, value in (*base_specs, *override_specs):
+        merged[flag] = value
+    return tuple((flag, value) for flag, value in merged.items())
 
 
 def _warn_unknown_step_override_keys(profile: str, *, valid_step_keys: set[str]) -> None:
