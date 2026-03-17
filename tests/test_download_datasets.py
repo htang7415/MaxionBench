@@ -4,6 +4,7 @@ import bz2
 import json
 from pathlib import Path
 import sys
+import tarfile
 import types
 import zipfile
 
@@ -138,22 +139,30 @@ def test_download_bigann_yfcc_copies_generated_dataset(tmp_path: Path, monkeypat
     cache_dir = tmp_path / ".cache"
     commands: list[list[str]] = []
 
-    def _fake_clone_or_update_repo(*, repo_url: str, repo_dir: Path) -> None:
-        del repo_url
+    def _fake_stage_bigann_snapshot(
+        *,
+        snapshot_url: str,
+        repo_dir: Path,
+        cache_dir: Path,
+        timeout_s: float,
+        force: bool,
+    ) -> dict[str, str]:
+        del snapshot_url, cache_dir, timeout_s, force
         (repo_dir / "data" / "yfcc100M").mkdir(parents=True, exist_ok=True)
         (repo_dir / "data" / "yfcc100M" / "vectors.bin").write_bytes(b"abc")
         (repo_dir / "requirements_py3.10.txt").write_text("numpy\n", encoding="utf-8")
+        return {"path": str(repo_dir), "source": "download"}
 
     def _fake_run(cmd: list[str], *, cwd: Path | None = None) -> None:
         del cwd
         commands.append(list(cmd))
 
-    monkeypatch.setattr(download_datasets_mod, "clone_or_update_repo", _fake_clone_or_update_repo)
+    monkeypatch.setattr(download_datasets_mod, "stage_bigann_snapshot", _fake_stage_bigann_snapshot)
     monkeypatch.setattr(download_datasets_mod, "run", _fake_run)
     summary = download_datasets_mod.download_bigann_yfcc(root=root, cache_dir=cache_dir, timeout_s=30.0, force=False)
 
     assert (root / "D3" / "yfcc-10M" / "vectors.bin").exists()
-    assert summary["source"] == "copied_from_bigann_repo"
+    assert summary["source"] == "copied_from_bigann_snapshot"
     assert any("pip" in cmd for cmd in commands)
     assert any("create_dataset.py" in cmd for cmd in commands)
 
@@ -202,13 +211,21 @@ def test_download_bigann_yfcc_uses_existing_dst_cache_before_clone(tmp_path: Pat
     dst.mkdir(parents=True)
     (dst / "vectors.bin").write_bytes(b"cached")
 
-    def _fail_clone_or_update_repo(*, repo_url: str, repo_dir: Path) -> None:
-        raise AssertionError("clone_or_update_repo should not run when destination cache already exists")
+    def _fail_stage_bigann_snapshot(
+        *,
+        snapshot_url: str,
+        repo_dir: Path,
+        cache_dir: Path,
+        timeout_s: float,
+        force: bool,
+    ) -> dict[str, str]:
+        del snapshot_url, repo_dir, cache_dir, timeout_s, force
+        raise AssertionError("stage_bigann_snapshot should not run when destination cache already exists")
 
     def _fail_run(cmd: list[str], *, cwd: Path | None = None) -> None:
         raise AssertionError("run() should not be called when destination cache already exists")
 
-    monkeypatch.setattr(download_datasets_mod, "clone_or_update_repo", _fail_clone_or_update_repo)
+    monkeypatch.setattr(download_datasets_mod, "stage_bigann_snapshot", _fail_stage_bigann_snapshot)
     monkeypatch.setattr(download_datasets_mod, "run", _fail_run)
 
     summary = download_datasets_mod.download_bigann_yfcc(
@@ -218,6 +235,34 @@ def test_download_bigann_yfcc_uses_existing_dst_cache_before_clone(tmp_path: Pat
         force=False,
     )
     assert summary["source"] == "cache_hit"
+
+
+def test_stage_bigann_snapshot_extracts_repo_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive_source = tmp_path / "bigann_snapshot.tar.gz"
+    payload_root = tmp_path / "payload" / download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME
+    payload_root.mkdir(parents=True, exist_ok=True)
+    (payload_root / "create_dataset.py").write_text("print('ok')\n", encoding="utf-8")
+    with tarfile.open(archive_source, "w:gz") as archive:
+        archive.add(payload_root, arcname=download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME)
+
+    def _fake_download_file(*, url: str, dest: Path, timeout_s: float, force: bool) -> dict[str, str]:
+        del url, timeout_s, force
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(archive_source.read_bytes())
+        return {"url": "https://example.com/bigann.tar.gz", "path": str(dest), "source": "download"}
+
+    monkeypatch.setattr(download_datasets_mod, "download_file", _fake_download_file)
+    repo_dir = tmp_path / ".cache" / "big-ann-benchmarks"
+    summary = download_datasets_mod.stage_bigann_snapshot(
+        snapshot_url="https://example.com/bigann.tar.gz",
+        repo_dir=repo_dir,
+        cache_dir=tmp_path / ".cache",
+        timeout_s=30.0,
+        force=False,
+    )
+
+    assert summary["source"] == "download"
+    assert (repo_dir / "create_dataset.py").exists()
 
 
 def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

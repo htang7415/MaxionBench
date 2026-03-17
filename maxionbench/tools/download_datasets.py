@@ -5,10 +5,12 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import bz2
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from typing import Any
 from urllib.request import Request, urlopen
@@ -24,7 +26,8 @@ ANN_HDF5_LAYOUT = {
     "D2/deep-image-96-angular.hdf5": "deep-image-96-angular",
 }
 BEIR_DATASETS = ("scifact", "fiqa", "nfcorpus")
-BIGANN_REPO_URL = "https://github.com/harsha-simhadri/big-ann-benchmarks.git"
+BIGANN_SNAPSHOT_URL = "https://github.com/harsha-simhadri/big-ann-benchmarks/archive/refs/heads/main.tar.gz"
+BIGANN_SNAPSHOT_ROOT_NAME = "big-ann-benchmarks-main"
 CRAG_TASK12_URL = (
     "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/"
     "data/crag_task_1_and_2_dev_v4.jsonl.bz2?download="
@@ -68,13 +71,6 @@ def download_file(*, url: str, dest: Path, timeout_s: float = 60.0, force: bool 
     return {"url": url, "path": str(dest.resolve()), "source": "download"}
 
 
-def clone_or_update_repo(*, repo_url: str, repo_dir: Path) -> None:
-    if not repo_dir.exists():
-        run(["git", "clone", repo_url, str(repo_dir)])
-        return
-    run(["git", "-C", str(repo_dir), "pull", "--ff-only"])
-
-
 def copytree_replace(*, src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
@@ -86,6 +82,57 @@ def find_dir_by_name(*, root: Path, name: str) -> Path | None:
         if path.is_dir():
             return path
     return None
+
+
+def _extract_tar_archive(*, archive_path: Path, workdir: Path) -> Path:
+    extract_root = workdir / "extract"
+    extract_root.mkdir(parents=True, exist_ok=True)
+    root_path = str(extract_root.resolve())
+    with tarfile.open(archive_path, "r:*") as archive:
+        for member in archive.getmembers():
+            dest_path = str((extract_root / member.name).resolve())
+            if os.path.commonpath((root_path, dest_path)) != root_path:
+                raise ValueError(f"Refusing to extract archive member outside destination: {member.name}")
+        archive.extractall(extract_root)
+    return extract_root
+
+
+def _locate_bigann_snapshot_root(extracted_root: Path) -> Path | None:
+    direct = extracted_root / BIGANN_SNAPSHOT_ROOT_NAME
+    if direct.is_dir():
+        return direct
+    candidates = sorted(
+        path
+        for path in extracted_root.iterdir()
+        if path.is_dir() and path.name.startswith("big-ann-benchmarks-")
+    )
+    if candidates:
+        return candidates[0]
+    return None
+
+
+def stage_bigann_snapshot(
+    *,
+    snapshot_url: str,
+    repo_dir: Path,
+    cache_dir: Path,
+    timeout_s: float,
+    force: bool,
+) -> dict[str, str]:
+    _validate_timeout(timeout_s)
+    if repo_dir.exists() and not force:
+        return {"path": str(repo_dir.resolve()), "source": "cache_hit"}
+
+    archive_path = (cache_dir / f"{BIGANN_SNAPSHOT_ROOT_NAME}.tar.gz").resolve()
+    archive_meta = download_file(url=snapshot_url, dest=archive_path, timeout_s=timeout_s, force=force)
+    with tempfile.TemporaryDirectory(prefix="maxionbench_bigann_snapshot_") as tmpdir_raw:
+        tmpdir = Path(tmpdir_raw)
+        extracted_root = _extract_tar_archive(archive_path=archive_path, workdir=tmpdir)
+        src = _locate_bigann_snapshot_root(extracted_root)
+        if src is None:
+            raise FileNotFoundError(f"Unable to locate big-ann-benchmarks snapshot root in {archive_path}")
+        copytree_replace(src=src, dst=repo_dir)
+    return {"path": str(repo_dir.resolve()), "source": archive_meta["source"]}
 
 
 def download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
@@ -119,8 +166,14 @@ def download_bigann_yfcc(
         cached_src = _find_existing_yfcc_dir(repo_dir)
         if cached_src is not None:
             copytree_replace(src=cached_src, dst=dst)
-            return {"path": str(dst), "source": "copied_from_repo_cache"}
-    clone_or_update_repo(repo_url=BIGANN_REPO_URL, repo_dir=repo_dir)
+            return {"path": str(dst), "source": "copied_from_snapshot_cache"}
+    stage_bigann_snapshot(
+        snapshot_url=BIGANN_SNAPSHOT_URL,
+        repo_dir=repo_dir,
+        cache_dir=cache_dir,
+        timeout_s=timeout_s,
+        force=force,
+    )
 
     req_path = _select_bigann_requirements_file(repo_dir=repo_dir, requested=requirements_file)
     if req_path.exists():
@@ -138,7 +191,7 @@ def download_bigann_yfcc(
             f"(tried {', '.join(_YFCC_DIR_CANDIDATES)})"
         )
     copytree_replace(src=src, dst=dst)
-    return {"path": str(dst), "source": "copied_from_bigann_repo"}
+    return {"path": str(dst), "source": "copied_from_bigann_snapshot"}
 
 
 def _find_existing_yfcc_dir(repo_dir: Path) -> Path | None:

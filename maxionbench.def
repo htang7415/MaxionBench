@@ -19,7 +19,6 @@ From: python:3.11-slim
         build-essential \
         ca-certificates \
         curl \
-        git \
         libgomp1
     rm -rf /var/lib/apt/lists/*
     cd /opt/maxionbench
