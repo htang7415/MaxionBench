@@ -599,7 +599,7 @@ if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
 fi
 if [[ "${1:-}" == "exec" ]]; then
   target="${2:-}"
-  if grep -q 'with-git' "${target}"; then
+  if grep -q 'runtime-ok' "${target}"; then
     exit 0
   fi
   exit 1
@@ -611,7 +611,7 @@ if [[ "${1:-}" == "build" ]]; then
     target="${2:-}"
   fi
   mkdir -p "$(dirname "${target}")"
-  printf 'with-git\\n' > "${target}"
+  printf 'runtime-ok\\n' > "${target}"
   exit 0
 fi
 if [[ "${1:-}" == "pull" ]]; then
@@ -737,7 +737,7 @@ if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
 fi
 if [[ "${1:-}" == "exec" ]]; then
   target="${2:-}"
-  if grep -q 'with-git' "${target}"; then
+  if grep -q 'runtime-ok' "${target}"; then
     exit 0
   fi
   exit 1
@@ -748,7 +748,7 @@ if [[ "${1:-}" == "build" ]]; then
   else
     target="${2:-}"
   fi
-  printf 'with-git\\n' > "${target}"
+  printf 'runtime-ok\\n' > "${target}"
   exit 0
 fi
 if [[ "${1:-}" == "pull" ]]; then
@@ -797,7 +797,7 @@ printf '{"ok": true}\\n'
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (containers_dir / "maxionbench.sif").read_text(encoding="utf-8") == "with-git\n"
+    assert (containers_dir / "maxionbench.sif").read_text(encoding="utf-8") == "runtime-ok\n"
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
     assert "exec " in apptainer_calls
     assert "build --fakeroot" in apptainer_calls

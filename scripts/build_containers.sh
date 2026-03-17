@@ -166,7 +166,7 @@ main_image_is_valid() {
   if [[ ! -f "${target}" ]]; then
     return 1
   fi
-  apptainer exec "${target}" python -c "import shutil, sys; sys.exit(0 if shutil.which('git') else 1)" >/dev/null 2>&1
+  apptainer exec "${target}" python -c "import faiss, maxionbench.cli" >/dev/null 2>&1
 }
 
 build_main_image() {
@@ -198,10 +198,10 @@ build_main_image() {
   printf '%s\n' "+ ${cmd[*]}"
   "${cmd[@]}"
   if ! main_image_is_valid "${target}"; then
-    echo "error: built ${target} is missing required runtime tools (expected git in PATH)" >&2
+    echo "error: built ${target} is missing required runtime imports (expected faiss and maxionbench.cli imports to succeed)" >&2
     exit 2
   fi
-  printf '%s\n' "+ validated ${target} contains required runtime tools"
+  printf '%s\n' "+ validated ${target} contains required runtime imports"
 }
 
 pull_service_image() {
