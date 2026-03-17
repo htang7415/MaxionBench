@@ -292,7 +292,7 @@ mb_python() {
         mb_die "apptainer image not found: ${resolved_image}"
       fi
 
-      local -a container_cmd=(apptainer exec)
+      local -a container_cmd=(apptainer exec --cleanenv)
       if mb_apptainer_use_nv; then
         container_cmd+=(--nv)
       fi
@@ -302,7 +302,7 @@ mb_python() {
           container_cmd+=(--bind "${bind_spec}")
         fi
       done < <(mb_container_bind_specs)
-      container_cmd+=("${resolved_image}" env "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}")
+      container_cmd+=("${resolved_image}" env "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}" "PYTHONNOUSERSITE=1")
 
       if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
         local resolved_hf_cache
@@ -313,7 +313,7 @@ mb_python() {
           "TRANSFORMERS_CACHE=${resolved_hf_cache}/transformers"
         )
       fi
-      container_cmd+=(python "$@")
+      container_cmd+=(python -s "$@")
       "${container_cmd[@]}"
       ;;
     *)

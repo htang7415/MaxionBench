@@ -166,7 +166,7 @@ main_image_is_valid() {
   if [[ ! -f "${target}" ]]; then
     return 1
   fi
-  apptainer exec "${target}" python - <<'PY'
+  apptainer exec --cleanenv "${target}" python -s - <<'PY'
 import sys
 
 modules = (
@@ -234,8 +234,22 @@ pull_service_image() {
     printf '%s\n' "+ skipping existing ${target}"
     return 0
   fi
+  local stderr_log=""
+  local status=0
+  stderr_log="$(mktemp "${TMPDIR:-/tmp}/maxionbench_apptainer_pull.XXXXXX")"
   printf '%s\n' "+ apptainer pull ${target} ${source_uri}"
-  apptainer pull "${target}" "${source_uri}"
+  set +e
+  apptainer pull "${target}" "${source_uri}" 2>"${stderr_log}"
+  status=$?
+  set -e
+  while IFS= read -r line; do
+    if [[ "${line}" == *'ignoring (usually) harmless EPERM on setxattr "user.rootlesscontainers"'* ]]; then
+      continue
+    fi
+    printf '%s\n' "${line}" >&2
+  done < "${stderr_log}"
+  rm -f "${stderr_log}"
+  return "${status}"
 }
 
 build_main_image "${OUTPUT_DIR}/maxionbench.sif"
