@@ -39,7 +39,7 @@ def test_command_mac_md_is_concise_local_terminal_doc() -> None:
     text = Path("command-mac.md").read_text(encoding="utf-8")
 
     assert "# MaxionBench Mac Mini M4 Commands" in text
-    assert 'python -m pip install -e ".[dev,engines,reporting]"' in text
+    assert 'python -m pip install -e ".[dev,engines,reporting,datasets]"' in text
     assert "python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json" in text
     assert "## 3. Prepare datasets" in text
     assert "bash preprocess_all_datasets.sh" in text
