@@ -269,7 +269,7 @@ Options:
   --run-manifest-dir <path>      Output directory for generated run manifests
   --slurm-dir <path>             Slurm script directory
   --seed <int>                   Seed forwarded to submit-slurm-plan
-  --skip-gpu                     Omit GPU jobs from the plan
+  --skip-gpu                     Rejected for the hardened full-matrix rerun; GPU jobs are mandatory
   --skip-s6                      Defer S6 from the plan
   --launch                       Prepare shared dirs/images and submit jobs; otherwise prints a dry-run plan
   --help                         Show this message
@@ -362,6 +362,16 @@ if [[ -z "${CLUSTER}" && -z "${SLURM_PROFILE}" ]]; then
   echo "error: provide --cluster or --slurm-profile" >&2
   exit 2
 fi
+if [[ "${SKIP_GPU}" -eq 1 ]]; then
+  echo "error: full-matrix reruns require all GPU jobs; remove --skip-gpu" >&2
+  exit 2
+fi
+case "$(printf '%s' "${MAXIONBENCH_ALLOW_GPU_UNAVAILABLE:-0}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on)
+    echo "error: MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1 is not allowed for the hardened full-matrix rerun" >&2
+    exit 2
+    ;;
+esac
 if [[ -z "${SLURM_PROFILE}" ]]; then
   case "${CLUSTER}" in
     euler)
@@ -640,6 +650,7 @@ CMD=(
   --output-root "${MAXIONBENCH_OUTPUT_ROOT}"
   --download-datasets
   --preprocess-datasets
+  --prefetch-datasets
   --include-postprocess
   --full-matrix
   --json
@@ -647,9 +658,6 @@ CMD=(
 
 if [[ -n "${MAXIONBENCH_HF_CACHE_DIR}" ]]; then
   CMD+=(--hf-cache-dir "${MAXIONBENCH_HF_CACHE_DIR}")
-fi
-if [[ "${SKIP_GPU}" -eq 1 ]]; then
-  CMD+=(--skip-gpu)
 fi
 if [[ "${SKIP_S6}" -eq 1 ]]; then
   CMD+=(--skip-s6)

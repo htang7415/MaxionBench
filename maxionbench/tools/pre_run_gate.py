@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from maxionbench.conformance.provenance import conformance_provenance_path
 from maxionbench.orchestration.config_schema import load_run_config
 from maxionbench.runtime.system_info import collect_system_info
 from maxionbench.tools.verify_engine_readiness import verify_engine_readiness
@@ -57,6 +58,19 @@ def evaluate_pre_run_gate(
             }
         )
         return summary
+
+    provenance = _evaluate_conformance_provenance(conformance_matrix_path.resolve())
+    if provenance is not None:
+        summary["conformance_provenance"] = provenance
+        if not bool(provenance["pass"]):
+            summary.update(
+                {
+                    "pass": False,
+                    "skipped": False,
+                    "reason": "conformance provenance validation failed",
+                }
+            )
+            return summary
 
     readiness = verify_engine_readiness(
         conformance_matrix_path=conformance_matrix_path.resolve(),
@@ -120,6 +134,68 @@ def _detect_gpu_count() -> int:
         return int(payload.get("gpu_count", 0) or 0)
     except Exception:
         return 0
+
+
+def _evaluate_conformance_provenance(conformance_matrix_path: Path) -> dict[str, Any] | None:
+    expected_runtime = str(os.environ.get("MAXIONBENCH_CONTAINER_RUNTIME", "")).strip().lower()
+    expected_image = _normalized_path_str(os.environ.get("MAXIONBENCH_CONTAINER_IMAGE"))
+    if not expected_runtime:
+        return None
+
+    provenance_path = conformance_provenance_path(conformance_matrix_path)
+    summary: dict[str, Any] = {
+        "required": True,
+        "matrix_path": str(conformance_matrix_path),
+        "provenance_path": str(provenance_path),
+        "expected_container_runtime": expected_runtime,
+        "expected_container_image": expected_image,
+        "pass": False,
+        "errors": [],
+    }
+    if not provenance_path.exists():
+        summary["errors"].append(
+            f"missing conformance provenance companion file `{provenance_path}` for `{conformance_matrix_path}`"
+        )
+        return summary
+
+    try:
+        payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        summary["errors"].append(f"invalid conformance provenance JSON: {exc}")
+        return summary
+    if not isinstance(payload, dict):
+        summary["errors"].append("conformance provenance payload must be a JSON object")
+        return summary
+
+    actual_runtime = str(payload.get("container_runtime", "")).strip().lower()
+    actual_image = _normalized_path_str(payload.get("container_image"))
+    summary["actual_container_runtime"] = actual_runtime
+    summary["actual_container_image"] = actual_image
+    summary["python_executable"] = str(payload.get("python_executable", "")).strip()
+    summary["hostname"] = str(payload.get("hostname", "")).strip()
+    summary["generated_at_utc"] = str(payload.get("generated_at_utc", "")).strip()
+
+    if actual_runtime != expected_runtime:
+        summary["errors"].append(
+            f"conformance provenance runtime mismatch: expected `{expected_runtime}`, found `{actual_runtime or 'missing'}`"
+        )
+    if expected_image and actual_image != expected_image:
+        summary["errors"].append(
+            f"conformance provenance image mismatch: expected `{expected_image}`, found `{actual_image or 'missing'}`"
+        )
+    if not summary["errors"]:
+        summary["pass"] = True
+    return summary
+
+
+def _normalized_path_str(raw: object) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    try:
+        return str(Path(value).expanduser().resolve())
+    except Exception:
+        return value
 
 
 def main(argv: list[str] | None = None) -> int:

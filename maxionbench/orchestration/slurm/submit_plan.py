@@ -31,6 +31,7 @@ DEFAULT_TRACKED_PROFILES_PATH = Path(__file__).resolve().with_name("profiles_clu
 _LOG = logging.getLogger(__name__)
 _D3_WORKLOAD_SCENARIOS = {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
 _GPU_SPLIT_STEP_KEYS = {"gpu_d3_baseline", "gpu_d3_workloads", "gpu_non_d3"}
+_EXPECTED_FULL_MATRIX_GPU_ROWS = 19
 
 
 def build_submit_steps(
@@ -71,7 +72,15 @@ def build_submit_steps(
             )
         )
         last_dataset_stage_key = "prefetch_datasets"
-    calibrate_depends_on: tuple[str, ...] = ((last_dataset_stage_key,) if last_dataset_stage_key else ())
+    conformance_depends_on: tuple[str, ...] = ((last_dataset_stage_key,) if last_dataset_stage_key else ())
+    steps.append(
+        SubmitStep(
+            key="conformance",
+            script_name="conformance_matrix.sh",
+            depends_on=conformance_depends_on,
+        )
+    )
+    calibrate_depends_on: tuple[str, ...] = ("conformance",)
 
     if manifest is None:
         cpu_non_d3_array = "0,5" if skip_s6 else "0,5-6"
@@ -215,6 +224,7 @@ def submit_steps(
     container_image: str | None = None,
     container_bind: list[str] | None = None,
     hf_cache_dir: str | None = None,
+    conformance_matrix_path: str | None = None,
     prefetch_datasets: bool = False,
     download_datasets: bool = False,
     preprocess_datasets: bool = False,
@@ -225,6 +235,7 @@ def submit_steps(
     normalized_container_runtime = str(container_runtime).strip().lower() if container_runtime else None
     normalized_container_image = str(container_image).strip() if container_image else None
     normalized_hf_cache_dir = str(hf_cache_dir).strip() if hf_cache_dir else None
+    normalized_conformance_matrix_path = str(conformance_matrix_path).strip() if conformance_matrix_path else None
     normalized_run_manifest = str(run_manifest).strip() if run_manifest else None
     normalized_container_bind = [str(item).strip() for item in (container_bind or []) if str(item).strip()]
     if normalized_container_runtime and normalized_container_runtime != "apptainer":
@@ -257,6 +268,7 @@ def submit_steps(
             container_image=normalized_container_image,
             container_bind=normalized_container_bind,
             hf_cache_dir=normalized_hf_cache_dir,
+            conformance_matrix_path=normalized_conformance_matrix_path,
             run_manifest=normalized_run_manifest,
             dependencies=tuple(job_ids[key] for key in step.depends_on),
         )
@@ -287,6 +299,7 @@ def submit_steps(
         "container_image": normalized_container_image,
         "container_bind": normalized_container_bind,
         "hf_cache_dir": normalized_hf_cache_dir,
+        "conformance_matrix_path": normalized_conformance_matrix_path,
         "prefetch_datasets": bool(prefetch_datasets),
         "download_datasets": bool(download_datasets),
         "preprocess_datasets": bool(preprocess_datasets),
@@ -311,6 +324,7 @@ def _build_sbatch_command(
     container_image: str | None,
     container_bind: list[str],
     hf_cache_dir: str | None,
+    conformance_matrix_path: str | None,
     run_manifest: str | None,
     dependencies: tuple[str, ...],
 ) -> list[str]:
@@ -337,6 +351,8 @@ def _build_sbatch_command(
         export_vars.append(f"MAXIONBENCH_CONTAINER_BIND={'|'.join(container_bind)}")
     if hf_cache_dir:
         export_vars.append(f"MAXIONBENCH_HF_CACHE_DIR={hf_cache_dir}")
+    if conformance_matrix_path:
+        export_vars.append(f"MAXIONBENCH_CONFORMANCE_MATRIX={conformance_matrix_path}")
     if run_manifest:
         export_vars.append(f"MAXIONBENCH_SLURM_RUN_MANIFEST={run_manifest}")
     if len(export_vars) > 1:
@@ -539,6 +555,33 @@ def _accepted_step_override_keys(valid_step_keys: set[str]) -> set[str]:
     return accepted
 
 
+def _conformance_matrix_path_for_run_manifest_dir(run_manifest_dir: str) -> str:
+    return str((Path(str(run_manifest_dir)).expanduser().resolve() / "conformance" / "conformance_matrix.csv").resolve())
+
+
+def _env_flag_true(raw: str | None) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_full_matrix_contract(
+    *,
+    manifest: RunManifest,
+    skip_gpu: bool,
+    prefetch_datasets: bool,
+    allow_gpu_unavailable_env: str | None,
+) -> None:
+    if skip_gpu:
+        raise ValueError("--full-matrix reruns must include all GPU jobs; remove --skip-gpu")
+    if _env_flag_true(allow_gpu_unavailable_env):
+        raise ValueError("MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1 is not allowed for full-matrix GPU reruns")
+    if not prefetch_datasets:
+        raise ValueError("--full-matrix reruns require --prefetch-datasets")
+    if len(manifest.gpu_rows) != _EXPECTED_FULL_MATRIX_GPU_ROWS:
+        raise ValueError(
+            f"full-matrix manifest must include all {_EXPECTED_FULL_MATRIX_GPU_ROWS} GPU rows; found {len(manifest.gpu_rows)}"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Submit MaxionBench Slurm plan with enforced dependencies")
     parser.add_argument(
@@ -651,6 +694,7 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest: RunManifest | None = None
     manifest_path: str | None = None
+    conformance_matrix_path = _conformance_matrix_path_for_run_manifest_dir(str(args.run_manifest_dir))
     if args.full_matrix:
         if not args.scenario_config_dir:
             raise ValueError("--full-matrix requires --scenario-config-dir")
@@ -661,6 +705,12 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=Path(str(args.run_manifest_dir)),
             include_gpu=not bool(args.skip_gpu),
             skip_s6=bool(args.skip_s6),
+        )
+        validate_full_matrix_contract(
+            manifest=manifest,
+            skip_gpu=bool(args.skip_gpu),
+            prefetch_datasets=bool(args.prefetch_datasets),
+            allow_gpu_unavailable_env=os.environ.get("MAXIONBENCH_ALLOW_GPU_UNAVAILABLE"),
         )
         manifest_path = str((Path(args.run_manifest_dir).expanduser().resolve() / "run_manifest.json").resolve())
 
@@ -684,6 +734,7 @@ def main(argv: list[str] | None = None) -> int:
         container_image=str(args.container_image) if args.container_image else None,
         container_bind=[str(item) for item in (args.container_bind or [])],
         hf_cache_dir=str(args.hf_cache_dir) if args.hf_cache_dir else None,
+        conformance_matrix_path=conformance_matrix_path,
         prefetch_datasets=bool(args.prefetch_datasets),
         download_datasets=bool(args.download_datasets),
         preprocess_datasets=bool(args.preprocess_datasets),

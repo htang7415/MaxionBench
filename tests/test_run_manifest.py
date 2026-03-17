@@ -193,3 +193,15 @@ def test_build_run_manifest_orders_s1_dataset_variants_deterministically(tmp_pat
         "s1_ann_frontier_d2.yaml",
         "s1_ann_frontier_d3.yaml",
     ]
+
+
+def test_repo_full_matrix_manifest_includes_expected_gpu_rows(tmp_path: Path) -> None:
+    manifest = build_run_manifest(
+        repo_root=Path("."),
+        scenario_config_dir=Path("configs/scenarios_paper"),
+        engine_config_dir=Path("configs/engines"),
+        out_dir=tmp_path / "manifest",
+        include_gpu=True,
+        skip_s6=False,
+    )
+    assert len(manifest.gpu_rows) == 19

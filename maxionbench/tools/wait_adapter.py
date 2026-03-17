@@ -6,10 +6,11 @@ from argparse import ArgumentParser
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from maxionbench.adapters import create_adapter
 from maxionbench.orchestration.config_schema import expand_env_placeholders, load_run_config
-from maxionbench.runtime.healthcheck import wait_for_healthy
+from maxionbench.runtime.healthcheck import wait_for_healthy, wait_for_port_ready
 
 
 def wait_for_adapter(
@@ -19,6 +20,14 @@ def wait_for_adapter(
     timeout_s: float = 120.0,
     poll_interval_s: float = 1.0,
 ) -> dict[str, Any]:
+    tcp_probe = _service_tcp_probe(adapter_name=adapter_name, adapter_options=adapter_options)
+    if tcp_probe is not None:
+        wait_for_port_ready(
+            tcp_probe["host"],
+            tcp_probe["port"],
+            timeout_s=float(timeout_s),
+            poll_interval_s=float(poll_interval_s),
+        )
     adapter = create_adapter(adapter_name, **adapter_options)
     wait_for_healthy(
         adapter.healthcheck,
@@ -30,8 +39,36 @@ def wait_for_adapter(
         "adapter_options": dict(adapter_options),
         "timeout_s": float(timeout_s),
         "poll_interval_s": float(poll_interval_s),
+        "tcp_probe": tcp_probe,
         "ready": True,
     }
+
+
+def _service_tcp_probe(*, adapter_name: str, adapter_options: dict[str, Any]) -> dict[str, Any] | None:
+    normalized_name = str(adapter_name).strip().lower()
+    if normalized_name in {"qdrant", "milvus", "opensearch", "weaviate"}:
+        host = str(adapter_options.get("host", "")).strip()
+        port = adapter_options.get("port")
+        if host and port is not None:
+            return {"host": host, "port": int(port)}
+        return None
+    if normalized_name == "pgvector":
+        dsn = str(adapter_options.get("dsn", "")).strip()
+        if not dsn:
+            return None
+        parsed = urlparse(dsn)
+        if not parsed.hostname or parsed.port is None:
+            return None
+        return {"host": parsed.hostname, "port": int(parsed.port)}
+    if normalized_name == "lancedb-service":
+        base_url = str(adapter_options.get("base_url", "")).strip()
+        if not base_url or adapter_options.get("inproc_uri"):
+            return None
+        parsed = urlparse(base_url)
+        if not parsed.hostname or parsed.port is None:
+            return None
+        return {"host": parsed.hostname, "port": int(parsed.port)}
+    return None
 
 
 def parse_args(argv: list[str] | None = None) -> ArgumentParser:

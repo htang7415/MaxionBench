@@ -8,6 +8,7 @@ import pandas as pd
 import yaml
 
 from maxionbench.cli import main as cli_main
+from maxionbench.conformance.provenance import conformance_provenance_path
 from maxionbench.tools import pre_run_gate as pre_run_gate_mod
 from maxionbench.tools.pre_run_gate import evaluate_pre_run_gate
 from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS
@@ -36,6 +37,30 @@ def _write_conformance_matrix(path: Path, *, include_faiss_gpu: bool = True) -> 
         adapters = [name for name in adapters if name != "faiss-gpu"]
     frame = pd.DataFrame([{"adapter": adapter, "status": "pass"} for adapter in adapters])
     frame.to_csv(path, index=False)
+
+
+def _write_conformance_provenance(
+    path: Path,
+    *,
+    container_runtime: str = "apptainer",
+    container_image: str = "/shared/containers/maxionbench.sif",
+) -> None:
+    provenance_path = conformance_provenance_path(path)
+    provenance_path.write_text(
+        json.dumps(
+            {
+                "generated_at_utc": "2026-03-17T00:00:00+00:00",
+                "container_runtime": container_runtime,
+                "container_image": container_image,
+                "python_executable": "/usr/bin/python",
+                "hostname": "gpu-node-01",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_pre_run_gate_skips_mock_engine_without_readiness_files(tmp_path: Path) -> None:
@@ -251,3 +276,51 @@ def test_pre_run_gate_accepts_s5_hf_requirement_when_runtime_flags_are_ready(
     assert runtime["required"] is True
     assert runtime["pass"] is True
     assert runtime["errors"] == []
+
+
+def test_pre_run_gate_rejects_missing_conformance_provenance_for_container_runtime(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    cfg_path = tmp_path / "qdrant.yaml"
+    _write_config(cfg_path, engine="qdrant")
+
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame([{"adapter": "qdrant", "status": "pass"}]).to_csv(matrix_path, index=False)
+
+    monkeypatch.setenv("MAXIONBENCH_CONTAINER_RUNTIME", "apptainer")
+    monkeypatch.setenv("MAXIONBENCH_CONTAINER_IMAGE", "/shared/containers/maxionbench.sif")
+    summary = evaluate_pre_run_gate(
+        config_path=cfg_path,
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+    )
+    assert summary["pass"] is False
+    assert summary["reason"] == "conformance provenance validation failed"
+    assert summary["conformance_provenance"]["pass"] is False
+
+
+def test_pre_run_gate_accepts_matching_conformance_provenance_for_container_runtime(
+    tmp_path: Path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    cfg_path = tmp_path / "qdrant.yaml"
+    _write_config(cfg_path, engine="qdrant")
+
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame([{"adapter": "qdrant", "status": "pass"}]).to_csv(matrix_path, index=False)
+    _write_conformance_provenance(matrix_path)
+
+    monkeypatch.setenv("MAXIONBENCH_CONTAINER_RUNTIME", "apptainer")
+    monkeypatch.setenv("MAXIONBENCH_CONTAINER_IMAGE", "/shared/containers/maxionbench.sif")
+    summary = evaluate_pre_run_gate(
+        config_path=cfg_path,
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+    )
+    assert summary["pass"] is True
+    assert summary["conformance_provenance"]["pass"] is True

@@ -18,6 +18,7 @@ def test_verify_slurm_plan_passes_for_repo_slurm_layout() -> None:
 def test_verify_slurm_plan_detects_missing_d3_s1_baseline(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
+    (slurm_dir / "conformance_matrix.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     (slurm_dir / "calibrate_d3.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     (slurm_dir / "gpu_array.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     (slurm_dir / "cpu_array.sh").write_text(
@@ -42,6 +43,7 @@ SCENARIOS=(
 def test_verify_slurm_plan_skip_gpu_ignores_missing_gpu_array_script(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)
+    (slurm_dir / "conformance_matrix.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     (slurm_dir / "calibrate_d3.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     (slurm_dir / "cpu_array.sh").write_text(
         """#!/usr/bin/env bash

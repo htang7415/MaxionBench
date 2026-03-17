@@ -66,6 +66,7 @@ SCENARIO_NAME="${SCENARIO_KEY}"
 
 mb_require_tmpdir
 mb_source_dataset_env
+mb_require_dataset_env_contract "${CONFIG_PATH}"
 mb_allocate_ports
 mb_scratch_preflight "${CONFIG_PATH}"
 mb_prepare_output_paths "${SCENARIO_NAME}"

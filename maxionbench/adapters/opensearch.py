@@ -32,10 +32,12 @@ class OpenSearchAdapter(BaseAdapter):
         username: str | None = None,
         password: str | None = None,
         timeout_s: float = 30.0,
+        healthcheck_timeout_s: float | None = None,
         verify_ssl: bool = False,
     ) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout_s = float(timeout_s)
+        self._healthcheck_timeout_s = float(healthcheck_timeout_s) if healthcheck_timeout_s is not None else self._timeout_s
         self._verify_ssl = bool(verify_ssl)
         self._auth = (username, password) if username and password else None
 
@@ -79,7 +81,7 @@ class OpenSearchAdapter(BaseAdapter):
 
     def healthcheck(self) -> bool:
         try:
-            self._request("GET", "/")
+            self._request("GET", "/", timeout_s=self._healthcheck_timeout_s)
             return True
         except Exception:
             return False
@@ -278,13 +280,14 @@ class OpenSearchAdapter(BaseAdapter):
         *,
         json: Mapping[str, Any] | None = None,
         allow_404: bool = False,
+        timeout_s: float | None = None,
     ) -> dict[str, Any]:
         response = requests.request(
             method=method,
             url=f"{self._base_url}{path}",
             json=json,
             auth=self._auth,
-            timeout=self._timeout_s,
+            timeout=self._timeout_s if timeout_s is None else float(timeout_s),
             verify=self._verify_ssl,
         )
         if allow_404 and response.status_code == 404:

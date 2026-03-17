@@ -31,9 +31,17 @@ _FILTERABLE_FIELDS: dict[str, str] = {
 class WeaviateAdapter(BaseAdapter):
     """Weaviate adapter using remote vector search and pinned equality filters."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8080, scheme: str = "http", timeout_s: float = 30.0) -> None:
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8080,
+        scheme: str = "http",
+        timeout_s: float = 30.0,
+        healthcheck_timeout_s: float | None = None,
+    ) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout_s = float(timeout_s)
+        self._healthcheck_timeout_s = float(healthcheck_timeout_s) if healthcheck_timeout_s is not None else self._timeout_s
         self._collection = ""
         self._class_name = ""
         self._dimension = 0
@@ -77,7 +85,7 @@ class WeaviateAdapter(BaseAdapter):
 
     def healthcheck(self) -> bool:
         try:
-            self._request("GET", "/v1/.well-known/ready")
+            self._request("GET", "/v1/.well-known/ready", timeout_s=self._healthcheck_timeout_s)
             return True
         except Exception:
             return False
@@ -246,12 +254,13 @@ class WeaviateAdapter(BaseAdapter):
         *,
         json: Mapping[str, Any] | None = None,
         allow_404: bool = False,
+        timeout_s: float | None = None,
     ) -> dict[str, Any]:
         response = requests.request(
             method=method,
             url=f"{self._base_url}{path}",
             json=json,
-            timeout=self._timeout_s,
+            timeout=self._timeout_s if timeout_s is None else float(timeout_s),
         )
         if allow_404 and response.status_code == 404:
             return {}

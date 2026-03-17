@@ -24,8 +24,9 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
 
     cpu_array_path = resolved / "cpu_array.sh"
     calibrate_path = resolved / "calibrate_d3.sh"
+    conformance_path = resolved / "conformance_matrix.sh"
     gpu_path = resolved / "gpu_array.sh"
-    for required in (cpu_array_path, calibrate_path):
+    for required in (cpu_array_path, calibrate_path, conformance_path):
         if not required.exists():
             errors.append(
                 {
@@ -98,7 +99,7 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
 
     plan_steps = build_submit_steps(include_gpu=include_gpu)
     by_key = {step.key: step for step in plan_steps}
-    required_keys = {"calibrate", "cpu_d3_baseline", "cpu_d3_workloads", "cpu_non_d3"}
+    required_keys = {"conformance", "calibrate", "cpu_d3_baseline", "cpu_d3_workloads", "cpu_non_d3"}
     missing = sorted(required_keys - set(by_key.keys()))
     if missing:
         errors.append(
@@ -170,6 +171,20 @@ def verify_slurm_plan(*, slurm_dir: Path, include_gpu: bool = True) -> dict[str,
         expected=sorted(all_indices),
     )
 
+    _expect_equal(
+        errors,
+        file=(resolved / "submit_plan.py").resolve(),
+        field="conformance.depends_on",
+        actual=list(by_key["conformance"].depends_on),
+        expected=[],
+    )
+    _expect_equal(
+        errors,
+        file=(resolved / "submit_plan.py").resolve(),
+        field="calibrate.depends_on",
+        actual=list(by_key["calibrate"].depends_on),
+        expected=["conformance"],
+    )
     _expect_equal(
         errors,
         file=(resolved / "submit_plan.py").resolve(),
