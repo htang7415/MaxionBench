@@ -66,6 +66,8 @@ def test_paper_scenario_configs_match_dataset_contracts() -> None:
             assert int(payload.get("num_queries", 0)) == 10_000
             continue
         if bundle == "D3":
+            assert payload.get("dataset_path") == "${MAXIONBENCH_D3_DATASET_PATH}"
+            assert int(payload.get("vector_dim", 0)) == 192
             assert int(payload.get("num_vectors", 0)) >= 10_000_000
             continue
         assert bundle == "D4"
