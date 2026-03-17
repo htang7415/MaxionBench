@@ -30,6 +30,46 @@ resolve_root_path() {
   printf '%s\n' "${ROOT_DIR}/${raw_path}"
 }
 
+default_apptainer_cache_dir() {
+  if [[ -n "${MAXIONBENCH_APPTAINER_CACHE_DIR:-}" ]]; then
+    resolve_root_path "${MAXIONBENCH_APPTAINER_CACHE_DIR}"
+    return 0
+  fi
+  if [[ -n "${APPTAINER_CACHEDIR:-}" ]]; then
+    resolve_root_path "${APPTAINER_CACHEDIR}"
+    return 0
+  fi
+  if [[ -n "${MAXIONBENCH_SHARED_ROOT:-}" ]]; then
+    printf '%s\n' "${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer"
+    return 0
+  fi
+  local resolved_output_dir=""
+  resolved_output_dir="$(resolve_root_path "${OUTPUT_DIR}")"
+  printf '%s\n' "${resolved_output_dir%/*}/.cache/apptainer"
+}
+
+default_apptainer_tmpdir() {
+  if [[ -n "${MAXIONBENCH_APPTAINER_TMPDIR:-}" ]]; then
+    resolve_root_path "${MAXIONBENCH_APPTAINER_TMPDIR}"
+    return 0
+  fi
+  if [[ -n "${APPTAINER_TMPDIR:-}" ]]; then
+    resolve_root_path "${APPTAINER_TMPDIR}"
+    return 0
+  fi
+  printf '%s\n' "${APPTAINER_CACHEDIR}/tmp"
+}
+
+configure_apptainer_storage() {
+  export APPTAINER_CACHEDIR
+  APPTAINER_CACHEDIR="$(default_apptainer_cache_dir)"
+  export APPTAINER_TMPDIR
+  APPTAINER_TMPDIR="$(default_apptainer_tmpdir)"
+  mkdir -p "${APPTAINER_CACHEDIR}" "${APPTAINER_TMPDIR}"
+  printf '%s\n' "+ APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR}"
+  printf '%s\n' "+ APPTAINER_TMPDIR=${APPTAINER_TMPDIR}"
+}
+
 source_module_init() {
   if command -v module >/dev/null 2>&1; then
     return 0
@@ -109,6 +149,7 @@ if [[ -z "${OUTPUT_DIR}" ]]; then
 fi
 
 ensure_apptainer
+configure_apptainer_storage
 mkdir -p "${OUTPUT_DIR}"
 
 should_skip_target() {
@@ -120,6 +161,14 @@ apptainer_build_supports_fakeroot() {
   apptainer build --help 2>/dev/null | grep -F -- "--fakeroot" >/dev/null 2>&1
 }
 
+main_image_is_valid() {
+  local target="$1"
+  if [[ ! -f "${target}" ]]; then
+    return 1
+  fi
+  apptainer exec "${target}" python -c "import shutil, sys; sys.exit(0 if shutil.which('git') else 1)" >/dev/null 2>&1
+}
+
 build_main_image() {
   local target="$1"
   local definition_file="${ROOT_DIR}/maxionbench.def"
@@ -127,9 +176,13 @@ build_main_image() {
     echo "error: missing ${definition_file}" >&2
     exit 2
   fi
-  if should_skip_target "${target}"; then
+  if should_skip_target "${target}" && main_image_is_valid "${target}"; then
     printf '%s\n' "+ skipping existing ${target}"
     return 0
+  fi
+  if [[ "${ONLY_MISSING}" -eq 1 && -f "${target}" ]]; then
+    printf '%s\n' "+ rebuilding stale ${target}; required runtime tools are missing"
+    rm -f "${target}"
   fi
 
   local -a cmd=(apptainer build)
@@ -144,6 +197,11 @@ build_main_image() {
   cmd+=("${target}" "${definition_file}")
   printf '%s\n' "+ ${cmd[*]}"
   "${cmd[@]}"
+  if ! main_image_is_valid "${target}"; then
+    echo "error: built ${target} is missing required runtime tools (expected git in PATH)" >&2
+    exit 2
+  fi
+  printf '%s\n' "+ validated ${target} contains required runtime tools"
 }
 
 pull_service_image() {
