@@ -362,6 +362,34 @@ def test_validate_full_matrix_contract_rejects_reduced_gpu_row_count() -> None:
         raise AssertionError("expected validate_full_matrix_contract to reject a reduced GPU manifest")
 
 
+def test_validate_full_matrix_contract_allows_reduced_smoke_matrix() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/generated",
+        cpu_rows=[],
+        gpu_rows=[
+            RunManifestRow(
+                group="gpu",
+                config_path="/repo/generated/gpu_0.yaml",
+                engine="faiss-gpu",
+                scenario="s5_rerank",
+                dataset_bundle="D4",
+                template_name="s5_rerank.yaml",
+            )
+        ],
+        selected_engines=["faiss-gpu"],
+        selected_templates=["s5_rerank.yaml"],
+    )
+
+    validate_full_matrix_contract(
+        manifest=manifest,
+        skip_gpu=False,
+        prefetch_datasets=True,
+        allow_gpu_unavailable_env="0",
+        allow_reduced_matrix=True,
+    )
+
+
 def test_submit_steps_requires_container_image_when_runtime_enabled(tmp_path: Path) -> None:
     slurm_dir = tmp_path / "slurm"
     slurm_dir.mkdir(parents=True, exist_ok=True)

@@ -55,6 +55,62 @@ def test_prefetch_for_configs_materializes_d3_from_local_npz(tmp_path: Path) -> 
     assert "MAXIONBENCH_D3_DATASET_SHA256" in text
 
 
+def test_prefetch_for_configs_reuses_existing_d3_dataset_path_export(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    config_path = _write_yaml(
+        repo_root / "configs" / "scenarios_paper" / "calibrate_d3.yaml",
+        {
+            "scenario": "calibrate_d3",
+            "dataset_bundle": "D3",
+            "calibration_require_real_data": True,
+        },
+    )
+    staged_dataset = repo_root / "shared" / "processed" / "D3" / "yfcc-10M" / "base.npy"
+    staged_dataset.parent.mkdir(parents=True, exist_ok=True)
+    np.save(staged_dataset, np.arange(24, dtype=np.float32).reshape(6, 4))
+
+    summary = prefetch_for_configs(
+        repo_root=repo_root,
+        config_paths=[config_path],
+        env_sh_path=repo_root / "artifacts" / "prefetch" / "dataset_env.sh",
+        env={
+            "MAXIONBENCH_D3_DATASET_PATH": str(staged_dataset),
+            "MAXIONBENCH_DATASET_ROOT": str(repo_root / "shared"),
+        },
+    )
+
+    assert summary["fetched"]["d3"]["path"] == str(staged_dataset.resolve())
+    assert summary["fetched"]["d3"]["source"] == "env_MAXIONBENCH_D3_DATASET_PATH"
+    assert not (repo_root / "data" / "d3" / "laion_d3_vectors.npy").exists()
+    text = (repo_root / "artifacts" / "prefetch" / "dataset_env.sh").read_text(encoding="utf-8")
+    assert str(staged_dataset.resolve()) in text
+
+
+def test_prefetch_for_configs_reuses_processed_d3_cache_when_available(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    config_path = _write_yaml(
+        repo_root / "configs" / "scenarios_paper" / "calibrate_d3.yaml",
+        {
+            "scenario": "calibrate_d3",
+            "dataset_bundle": "D3",
+            "calibration_require_real_data": True,
+        },
+    )
+    processed_base = repo_root / "dataset" / "processed" / "D3" / "yfcc-10M" / "base.npy"
+    processed_base.parent.mkdir(parents=True, exist_ok=True)
+    np.save(processed_base, np.arange(32, dtype=np.float32).reshape(8, 4))
+
+    summary = prefetch_for_configs(
+        repo_root=repo_root,
+        config_paths=[config_path],
+        env_sh_path=repo_root / "artifacts" / "prefetch" / "dataset_env.sh",
+    )
+
+    assert summary["fetched"]["d3"]["path"] == str(processed_base.resolve())
+    assert summary["fetched"]["d3"]["source"] == "processed_dataset_cache"
+    assert not (repo_root / "data" / "d3" / "laion_d3_vectors.npy").exists()
+
+
 def test_prefetch_for_configs_materializes_d4_from_local_sources(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     config_path = _write_yaml(
