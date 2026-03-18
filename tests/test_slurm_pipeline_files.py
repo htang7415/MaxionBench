@@ -8,6 +8,7 @@ import tomllib
 
 def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     script = Path("run_slurm_pipeline.sh")
+    smoke_script = Path("test_slrum_pipeline.sh")
     build_script = Path("scripts/build_containers.sh")
     definition = Path("maxionbench.def")
     download = Path("maxionbench/orchestration/slurm/download_datasets.sh")
@@ -17,7 +18,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     profiles = Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml")
     env_example = Path(".env.slurm.example")
 
-    for path in (script, build_script, definition, download, preprocess, conformance, postprocess, profiles, env_example):
+    for path in (script, smoke_script, build_script, definition, download, preprocess, conformance, postprocess, profiles, env_example):
         assert path.exists(), path
 
     text = script.read_text(encoding="utf-8")
@@ -41,6 +42,17 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "prepare_container_images()" in text
     assert "scripts/build_containers.sh" in text
     assert "full-matrix reruns require all GPU jobs" in text
+    assert "--allow-reduced-matrix" in text
+
+    smoke_text = smoke_script.read_text(encoding="utf-8")
+    assert "run_slurm_pipeline.sh" in smoke_text
+    assert "--allow-reduced-matrix" in smoke_text
+    assert "s2_filtered_ann" in smoke_text
+    assert "s4_hybrid" in smoke_text
+    assert "s5_rerank" in smoke_text
+    assert "faiss_gpu" in smoke_text
+    assert "qdrant" in smoke_text
+    assert "opensearch" in smoke_text
 
     build_text = build_script.read_text(encoding="utf-8")
     assert "apptainer build" in build_text
@@ -112,6 +124,7 @@ def test_datasets_extra_pins_known_good_pytz() -> None:
 def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
     for path in (
         "run_slurm_pipeline.sh",
+        "test_slrum_pipeline.sh",
         "scripts/build_containers.sh",
         "maxionbench/orchestration/slurm/download_datasets.sh",
         "maxionbench/orchestration/slurm/preprocess_datasets.sh",

@@ -21,9 +21,11 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "--shared-root /shared/path/maxionbench" in text
     assert "bash run_slurm_pipeline.sh --cluster euler" in text
     assert "bash run_slurm_pipeline.sh --cluster nrel" in text
+    assert "bash test_slrum_pipeline.sh --cluster nrel" in text
     assert "Dry-run only prints the submit plan." in text
     assert "`--launch` prepares the shared directory tree and ensures the required Apptainer images exist before it calls `submit-slurm-plan`." in text
     assert "run_slurm_pipeline.sh` rejects `--skip-gpu` and `MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1`" in text
+    assert "It stages a reduced matrix and then calls `run_slurm_pipeline.sh` with `--allow-reduced-matrix`." in text
     assert "Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission." in text
     assert "Large Apptainer build cache/tmp data defaults to `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer`" in text
     assert "${MAXIONBENCH_SHARED_ROOT}/containers/maxionbench.sif" in text

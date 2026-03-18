@@ -569,6 +569,7 @@ def validate_full_matrix_contract(
     skip_gpu: bool,
     prefetch_datasets: bool,
     allow_gpu_unavailable_env: str | None,
+    allow_reduced_matrix: bool = False,
 ) -> None:
     if skip_gpu:
         raise ValueError("--full-matrix reruns must include all GPU jobs; remove --skip-gpu")
@@ -576,6 +577,10 @@ def validate_full_matrix_contract(
         raise ValueError("MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1 is not allowed for full-matrix GPU reruns")
     if not prefetch_datasets:
         raise ValueError("--full-matrix reruns require --prefetch-datasets")
+    if allow_reduced_matrix:
+        if not manifest.gpu_rows:
+            raise ValueError("reduced full-matrix smoke runs must still include at least one GPU row")
+        return
     if len(manifest.gpu_rows) != _EXPECTED_FULL_MATRIX_GPU_ROWS:
         raise ValueError(
             f"full-matrix manifest must include all {_EXPECTED_FULL_MATRIX_GPU_ROWS} GPU rows; found {len(manifest.gpu_rows)}"
@@ -684,6 +689,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--allow-reduced-matrix",
+        action="store_true",
+        help="Allow a reduced smoke/debug matrix while still requiring the GPU lane and dataset prefetch.",
+    )
+    parser.add_argument(
         "--skip-s6",
         action="store_true",
         help="Defer S6 by removing index 6 from cpu_non_d3 array submissions.",
@@ -711,6 +721,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_gpu=bool(args.skip_gpu),
             prefetch_datasets=bool(args.prefetch_datasets),
             allow_gpu_unavailable_env=os.environ.get("MAXIONBENCH_ALLOW_GPU_UNAVAILABLE"),
+            allow_reduced_matrix=bool(args.allow_reduced_matrix),
         )
         manifest_path = str((Path(args.run_manifest_dir).expanduser().resolve() / "run_manifest.json").resolve())
 
@@ -744,6 +755,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if manifest_path is not None:
         summary["full_matrix"] = True
+        summary["allow_reduced_matrix"] = bool(args.allow_reduced_matrix)
         summary["run_manifest"] = manifest_path
         summary["run_manifest_dir"] = str(Path(args.run_manifest_dir).expanduser().resolve())
         summary["engine_config_dir"] = str(args.engine_config_dir)

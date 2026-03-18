@@ -24,6 +24,7 @@ from maxionbench.orchestration.config_schema import expand_env_placeholders
 
 DEFAULT_ENV_SH = "artifacts/prefetch/dataset_env.sh"
 DEFAULT_D3_TARGET = "data/d3/laion_d3_vectors.npy"
+DEFAULT_PROCESSED_D3_BASE = "dataset/processed/D3/yfcc-10M/base.npy"
 DEFAULT_D4_BEIR_ROOT = "data/beir"
 DEFAULT_D4_CRAG_TARGET = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 DEFAULT_D4_CRAG_URL = "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2"
@@ -132,6 +133,7 @@ def prefetch_required_datasets(
     env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     env_map = dict(env or {})
+    dataset_root = _resolve_dataset_root(repo_root=repo_root, env_map=env_map)
     exports: dict[str, str] = {}
     summary: dict[str, Any] = {
         "repo_root": str(repo_root.resolve()),
@@ -149,8 +151,16 @@ def prefetch_required_datasets(
     if requirements.need_d3:
         d3_target = (repo_root / DEFAULT_D3_TARGET).resolve()
         d3_source = _env_value(env_map, "MAXIONBENCH_PREFETCH_D3_SOURCE")
-        d3_meta = _ensure_d3_dataset(target_path=d3_target, source=d3_source)
-        exports["MAXIONBENCH_D3_DATASET_PATH"] = str(d3_target)
+        d3_meta = _ensure_d3_dataset(
+            target_path=d3_target,
+            source=d3_source,
+            existing_candidates=_existing_d3_dataset_candidates(
+                repo_root=repo_root,
+                dataset_root=dataset_root,
+                env_map=env_map,
+            ),
+        )
+        exports["MAXIONBENCH_D3_DATASET_PATH"] = d3_meta["path"]
         exports["MAXIONBENCH_D3_DATASET_SHA256"] = d3_meta["sha256"]
         summary["fetched"]["d3"] = d3_meta
 
@@ -191,17 +201,31 @@ def _load_config_mapping(path: Path) -> dict[str, Any]:
     return dict(expand_env_placeholders(payload))
 
 
-def _ensure_d3_dataset(*, target_path: Path, source: str | None) -> dict[str, Any]:
+def _ensure_d3_dataset(
+    *,
+    target_path: Path,
+    source: str | None,
+    existing_candidates: Sequence[tuple[Path, str]] = (),
+) -> dict[str, Any]:
     if target_path.exists():
         return {
-            "target_path": str(target_path),
+            "path": str(target_path),
             "sha256": _sha256_file(target_path),
             "source": "cache_hit",
         }
+    for candidate_path, candidate_source in existing_candidates:
+        if not candidate_path.exists():
+            continue
+        return {
+            "path": str(candidate_path),
+            "sha256": _sha256_file(candidate_path),
+            "source": candidate_source,
+        }
     if not source:
         raise FileNotFoundError(
-            "D3 real data is required but missing. Provide MAXIONBENCH_PREFETCH_D3_SOURCE "
-            "as a local .npy/.npz path or downloadable URL."
+            "D3 real data is required but missing. Provide MAXIONBENCH_D3_DATASET_PATH as an existing "
+            ".npy/.npz file, or provide MAXIONBENCH_PREFETCH_D3_SOURCE as a local .npy/.npz path or "
+            "downloadable URL."
         )
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="maxionbench_d3_prefetch_") as tmpdir_raw:
@@ -218,10 +242,46 @@ def _ensure_d3_dataset(*, target_path: Path, source: str | None) -> dict[str, An
         else:
             raise ValueError("D3 source must be a .npy or .npz file")
     return {
-        "target_path": str(target_path),
+        "path": str(target_path),
         "sha256": _sha256_file(target_path),
         "source": source,
     }
+
+
+def _existing_d3_dataset_candidates(
+    *,
+    repo_root: Path,
+    dataset_root: Path,
+    env_map: Mapping[str, str],
+) -> list[tuple[Path, str]]:
+    candidates: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    raw_env_path = _env_value(env_map, "MAXIONBENCH_D3_DATASET_PATH")
+    if raw_env_path:
+        resolved = _resolve_path_from_env(raw_value=raw_env_path, repo_root=repo_root)
+        if resolved not in seen:
+            candidates.append((resolved, "env_MAXIONBENCH_D3_DATASET_PATH"))
+            seen.add(resolved)
+    processed_base = (dataset_root / "processed" / "D3" / "yfcc-10M" / "base.npy").resolve()
+    if processed_base not in seen:
+        candidates.append((processed_base, "processed_dataset_cache"))
+        seen.add(processed_base)
+    legacy_target = (repo_root / DEFAULT_PROCESSED_D3_BASE).resolve()
+    if legacy_target not in seen:
+        candidates.append((legacy_target, "processed_dataset_cache"))
+    return candidates
+
+
+def _resolve_dataset_root(*, repo_root: Path, env_map: Mapping[str, str]) -> Path:
+    raw = _env_value(env_map, "MAXIONBENCH_DATASET_ROOT") or "dataset"
+    return _resolve_path_from_env(raw_value=raw, repo_root=repo_root)
+
+
+def _resolve_path_from_env(*, raw_value: str, repo_root: Path) -> Path:
+    candidate = Path(str(raw_value)).expanduser()
+    if not candidate.is_absolute():
+        candidate = (repo_root / candidate).resolve()
+    return candidate.resolve()
 
 
 def _ensure_d4_beir_root(*, target_root: Path, required_subsets: Sequence[str], source: str | None) -> dict[str, Any]:

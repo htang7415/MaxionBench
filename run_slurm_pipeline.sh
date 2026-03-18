@@ -246,6 +246,7 @@ SLURM_DIR="maxionbench/orchestration/slurm"
 SEED="42"
 SKIP_GPU=0
 SKIP_S6=0
+ALLOW_REDUCED_MATRIX=0
 DRY_RUN=1
 
 usage() {
@@ -271,6 +272,7 @@ Options:
   --seed <int>                   Seed forwarded to submit-slurm-plan
   --skip-gpu                     Rejected for the hardened full-matrix rerun; GPU jobs are mandatory
   --skip-s6                      Defer S6 from the plan
+  --allow-reduced-matrix         Allow a reduced smoke/debug matrix while still requiring GPU jobs
   --launch                       Prepare shared dirs/images and submit jobs; otherwise prints a dry-run plan
   --help                         Show this message
 EOF
@@ -340,6 +342,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-s6)
       SKIP_S6=1
+      shift
+      ;;
+    --allow-reduced-matrix)
+      ALLOW_REDUCED_MATRIX=1
       shift
       ;;
     --launch)
@@ -661,6 +667,9 @@ if [[ -n "${MAXIONBENCH_HF_CACHE_DIR}" ]]; then
 fi
 if [[ "${SKIP_S6}" -eq 1 ]]; then
   CMD+=(--skip-s6)
+fi
+if [[ "${ALLOW_REDUCED_MATRIX}" -eq 1 ]]; then
+  CMD+=(--allow-reduced-matrix)
 fi
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   CMD+=(--dry-run)
