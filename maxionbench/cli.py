@@ -227,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     submit_slurm_plan_parser.add_argument("--preprocess-datasets", action="store_true")
     submit_slurm_plan_parser.add_argument("--include-postprocess", action="store_true")
     submit_slurm_plan_parser.add_argument("--full-matrix", action="store_true")
+    submit_slurm_plan_parser.add_argument("--allow-reduced-matrix", action="store_true")
     submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
     submit_slurm_plan_parser.add_argument("--json", action="store_true")
 
@@ -623,6 +624,8 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.append("--include-postprocess")
         if args.full_matrix:
             submit_argv.append("--full-matrix")
+        if args.allow_reduced_matrix:
+            submit_argv.append("--allow-reduced-matrix")
         if args.dry_run:
             submit_argv.append("--dry-run")
         if args.json:

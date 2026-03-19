@@ -26,7 +26,9 @@ DEFAULT_ENV_SH = "artifacts/prefetch/dataset_env.sh"
 DEFAULT_D3_TARGET = "data/d3/laion_d3_vectors.npy"
 DEFAULT_PROCESSED_D3_BASE = "dataset/processed/D3/yfcc-10M/base.npy"
 DEFAULT_D4_BEIR_ROOT = "data/beir"
+DEFAULT_DOWNLOADED_D4_BEIR_ROOT = "dataset/D4/beir"
 DEFAULT_D4_CRAG_TARGET = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
+DEFAULT_DOWNLOADED_D4_CRAG_TARGET = "dataset/D4/crag/crag_task_1_and_2_dev_v4.jsonl.bz2"
 DEFAULT_D4_CRAG_URL = "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 
 CPU_SCENARIOS = (
@@ -171,6 +173,11 @@ def prefetch_required_datasets(
             target_root=beir_target_root,
             required_subsets=requirements.beir_subsets,
             source=beir_source,
+            existing_candidates=_existing_d4_beir_candidates(
+                repo_root=repo_root,
+                dataset_root=dataset_root,
+                env_map=env_map,
+            ),
         )
         exports["MAXIONBENCH_D4_BEIR_ROOT"] = str(beir_target_root)
         summary["fetched"]["d4_beir"] = beir_meta
@@ -182,6 +189,11 @@ def prefetch_required_datasets(
             target_path=crag_target,
             source=crag_source,
             label="D4 CRAG",
+            existing_candidates=_existing_d4_crag_candidates(
+                repo_root=repo_root,
+                dataset_root=dataset_root,
+                env_map=env_map,
+            ),
         )
         exports["MAXIONBENCH_D4_CRAG_PATH"] = str(crag_target)
         exports["MAXIONBENCH_D4_CRAG_SHA256"] = crag_meta["sha256"]
@@ -272,6 +284,54 @@ def _existing_d3_dataset_candidates(
     return candidates
 
 
+def _existing_d4_beir_candidates(
+    *,
+    repo_root: Path,
+    dataset_root: Path,
+    env_map: Mapping[str, str],
+) -> list[tuple[Path, str]]:
+    candidates: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    raw_env_path = _env_value(env_map, "MAXIONBENCH_D4_BEIR_ROOT")
+    if raw_env_path:
+        resolved = _resolve_path_from_env(raw_value=raw_env_path, repo_root=repo_root)
+        if resolved not in seen:
+            candidates.append((resolved, "env_MAXIONBENCH_D4_BEIR_ROOT"))
+            seen.add(resolved)
+    downloaded_root = (dataset_root / "D4" / "beir").resolve()
+    if downloaded_root not in seen:
+        candidates.append((downloaded_root, "downloaded_dataset_cache"))
+        seen.add(downloaded_root)
+    legacy_root = (repo_root / DEFAULT_DOWNLOADED_D4_BEIR_ROOT).resolve()
+    if legacy_root not in seen:
+        candidates.append((legacy_root, "downloaded_dataset_cache"))
+    return candidates
+
+
+def _existing_d4_crag_candidates(
+    *,
+    repo_root: Path,
+    dataset_root: Path,
+    env_map: Mapping[str, str],
+) -> list[tuple[Path, str]]:
+    candidates: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    raw_env_path = _env_value(env_map, "MAXIONBENCH_D4_CRAG_PATH")
+    if raw_env_path:
+        resolved = _resolve_path_from_env(raw_value=raw_env_path, repo_root=repo_root)
+        if resolved not in seen:
+            candidates.append((resolved, "env_MAXIONBENCH_D4_CRAG_PATH"))
+            seen.add(resolved)
+    downloaded_target = (dataset_root / "D4" / "crag" / Path(DEFAULT_D4_CRAG_TARGET).name).resolve()
+    if downloaded_target not in seen:
+        candidates.append((downloaded_target, "downloaded_dataset_cache"))
+        seen.add(downloaded_target)
+    legacy_target = (repo_root / DEFAULT_DOWNLOADED_D4_CRAG_TARGET).resolve()
+    if legacy_target not in seen:
+        candidates.append((legacy_target, "downloaded_dataset_cache"))
+    return candidates
+
+
 def _resolve_dataset_root(*, repo_root: Path, env_map: Mapping[str, str]) -> Path:
     raw = _env_value(env_map, "MAXIONBENCH_DATASET_ROOT") or "dataset"
     return _resolve_path_from_env(raw_value=raw, repo_root=repo_root)
@@ -284,13 +344,34 @@ def _resolve_path_from_env(*, raw_value: str, repo_root: Path) -> Path:
     return candidate.resolve()
 
 
-def _ensure_d4_beir_root(*, target_root: Path, required_subsets: Sequence[str], source: str | None) -> dict[str, Any]:
+def _ensure_d4_beir_root(
+    *,
+    target_root: Path,
+    required_subsets: Sequence[str],
+    source: str | None,
+    existing_candidates: Sequence[tuple[Path, str]] = (),
+) -> dict[str, Any]:
     missing = _missing_beir_subsets(root=target_root, required_subsets=required_subsets)
     if not missing:
         return {
             "target_root": str(target_root),
             "required_subsets": list(required_subsets),
             "source": "cache_hit",
+        }
+    for candidate_root, candidate_source in existing_candidates:
+        if candidate_root.resolve() == target_root.resolve():
+            continue
+        if _missing_beir_subsets(root=candidate_root, required_subsets=required_subsets):
+            continue
+        _copy_beir_subsets(
+            source_root=candidate_root,
+            target_root=target_root,
+            required_subsets=required_subsets,
+        )
+        return {
+            "target_root": str(target_root),
+            "required_subsets": list(required_subsets),
+            "source": candidate_source,
         }
     if not source:
         raise FileNotFoundError(
@@ -302,14 +383,12 @@ def _ensure_d4_beir_root(*, target_root: Path, required_subsets: Sequence[str], 
         tmpdir = Path(tmpdir_raw)
         acquired = _acquire_source_path(source=source, workdir=tmpdir)
         extracted_root = _materialize_directory_source(acquired=acquired, workdir=tmpdir)
-        for subset in required_subsets:
-            subset_source = _find_named_directory(root=extracted_root, name=subset)
-            if subset_source is None:
-                raise FileNotFoundError(f"Unable to locate BEIR subset `{subset}` in {source}")
-            destination = target_root / subset
-            if destination.exists():
-                shutil.rmtree(destination)
-            shutil.copytree(subset_source, destination)
+        _copy_beir_subsets(
+            source_root=extracted_root,
+            target_root=target_root,
+            required_subsets=required_subsets,
+            source_label=source,
+        )
     missing_after = _missing_beir_subsets(root=target_root, required_subsets=required_subsets)
     if missing_after:
         raise FileNotFoundError(f"Missing BEIR subset(s) after prefetch: {missing_after}")
@@ -320,13 +399,52 @@ def _ensure_d4_beir_root(*, target_root: Path, required_subsets: Sequence[str], 
     }
 
 
-def _ensure_binary_target(*, target_path: Path, source: str, label: str) -> dict[str, Any]:
+def _copy_beir_subsets(
+    *,
+    source_root: Path,
+    target_root: Path,
+    required_subsets: Sequence[str],
+    source_label: str | None = None,
+) -> None:
+    target_root.mkdir(parents=True, exist_ok=True)
+    for subset in required_subsets:
+        subset_source = _find_named_directory(root=source_root, name=subset)
+        if subset_source is None:
+            label = source_label or str(source_root)
+            raise FileNotFoundError(f"Unable to locate BEIR subset `{subset}` in {label}")
+        destination = target_root / subset
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(subset_source, destination)
+
+
+def _ensure_binary_target(
+    *,
+    target_path: Path,
+    source: str | None,
+    label: str,
+    existing_candidates: Sequence[tuple[Path, str]] = (),
+) -> dict[str, Any]:
     if target_path.exists():
         return {
             "target_path": str(target_path),
             "sha256": _sha256_file(target_path),
             "source": "cache_hit",
         }
+    for candidate_path, candidate_source in existing_candidates:
+        if candidate_path.resolve() == target_path.resolve():
+            continue
+        if not candidate_path.exists() or candidate_path.is_dir():
+            continue
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(candidate_path, target_path)
+        return {
+            "target_path": str(target_path),
+            "sha256": _sha256_file(target_path),
+            "source": candidate_source,
+        }
+    if not source:
+        raise FileNotFoundError(f"{label} is required but missing; provide an explicit source path or URL.")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="maxionbench_binary_prefetch_") as tmpdir_raw:
         tmpdir = Path(tmpdir_raw)

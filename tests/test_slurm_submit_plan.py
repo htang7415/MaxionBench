@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from maxionbench.cli import main as cli_main
 from maxionbench.orchestration.slurm.run_manifest import RunManifest, RunManifestRow
 from maxionbench.orchestration.slurm.submit_plan import (
     SubmitStep,
@@ -388,6 +389,32 @@ def test_validate_full_matrix_contract_allows_reduced_smoke_matrix() -> None:
         allow_gpu_unavailable_env="0",
         allow_reduced_matrix=True,
     )
+
+
+def test_cli_submit_slurm_plan_forwards_allow_reduced_matrix(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_submit(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 0
+
+    monkeypatch.setattr("maxionbench.orchestration.slurm.submit_plan.main", _fake_submit)
+
+    rc = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--scenario-config-dir",
+            "configs/scenarios_paper",
+            "--full-matrix",
+            "--prefetch-datasets",
+            "--allow-reduced-matrix",
+        ]
+    )
+
+    assert rc == 0
+    assert "--allow-reduced-matrix" in captured["argv"]
 
 
 def test_submit_steps_requires_container_image_when_runtime_enabled(tmp_path: Path) -> None:
