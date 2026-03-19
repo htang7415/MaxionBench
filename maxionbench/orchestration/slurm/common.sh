@@ -28,6 +28,7 @@ export MAXIONBENCH_CONFORMANCE_TIMEOUT_S="${MAXIONBENCH_CONFORMANCE_TIMEOUT_S:-3
 export MAXIONBENCH_SERVICE_START_GRACE_S="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
 export MAXIONBENCH_SERVICE_START_POLL_S="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
 export MAXIONBENCH_SERVICE_LOG_TAIL_LINES="${MAXIONBENCH_SERVICE_LOG_TAIL_LINES:-80}"
+export MAXIONBENCH_PGVECTOR_BIN_DIR="${MAXIONBENCH_PGVECTOR_BIN_DIR:-/usr/lib/postgresql/16/bin}"
 export MAXIONBENCH_QDRANT_IMAGE="${MAXIONBENCH_QDRANT_IMAGE:-}"
 export MAXIONBENCH_PGVECTOR_IMAGE="${MAXIONBENCH_PGVECTOR_IMAGE:-}"
 export MAXIONBENCH_OPENSEARCH_IMAGE="${MAXIONBENCH_OPENSEARCH_IMAGE:-}"
@@ -600,6 +601,21 @@ mb_validate_apptainer_service_image() {
   fi
 }
 
+mb_pgvector_path_env() {
+  printf '%s\n' "${MAXIONBENCH_PGVECTOR_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+}
+
+mb_validate_pgvector_service_image() {
+  local image_path="$1"
+  local pgvector_path
+  pgvector_path="$(mb_pgvector_path_env)"
+  mb_validate_apptainer_service_image "${image_path}" "pgvector" "docker-entrypoint.sh"
+  if ! apptainer exec --cleanenv "${image_path}" env "PATH=${pgvector_path}" /bin/sh -lc \
+    'command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1' >/dev/null 2>&1; then
+    mb_die "pgvector Apptainer image does not expose required PostgreSQL binaries `postgres` and `initdb` with PATH ${pgvector_path}: ${image_path}"
+  fi
+}
+
 mb_log_file_tail() {
   local label="$1"
   local file_path="$2"
@@ -744,18 +760,26 @@ mb_start_qdrant_service() {
 
 mb_start_pgvector_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector" "docker-entrypoint.sh")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector")"
+  mb_validate_pgvector_service_image "${image_path}"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/pgvector/data"
-  mkdir -p "${data_dir}"
+  local run_dir="${runtime_root}/pgvector/run"
+  local pgvector_path
+  pgvector_path="$(mb_pgvector_path_env)"
+  mkdir -p "${data_dir}" "${run_dir}"
   local -a env_specs=(
+    "PATH=${pgvector_path}"
     "POSTGRES_USER=postgres"
     "POSTGRES_PASSWORD=postgres"
     "POSTGRES_DB=postgres"
     "PGDATA=/var/lib/postgresql/data/pgdata"
   )
-  local -a bind_specs=("${data_dir}:/var/lib/postgresql/data")
+  local -a bind_specs=(
+    "${data_dir}:/var/lib/postgresql/data"
+    "${run_dir}:/var/run/postgresql"
+  )
   local cmd="${MAXIONBENCH_PGVECTOR_START_CMD:-docker-entrypoint.sh postgres -p ${MAXIONBENCH_PORT_PGVECTOR}}"
   mb_start_apptainer_service_process "pgvector" "${image_path}" "${cmd}" env_specs bind_specs
 }

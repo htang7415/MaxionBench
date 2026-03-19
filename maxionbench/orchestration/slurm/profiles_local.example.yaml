@@ -11,6 +11,8 @@ your_cluster:
     - ["--account", "YOUR_PRIVATE_ACCOUNT"]
     - ["--partition", "YOUR_PRIVATE_PARTITION"]
   step_overrides:
+    conformance:
+      - ["--gres", "gpu:1"]
     calibrate:
       - ["--gres", "gpu:1"]
     gpu_all:
