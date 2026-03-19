@@ -11,6 +11,7 @@ cd "${ROOT_DIR}"
 
 OUTPUT_DIR=""
 ONLY_MISSING=0
+MAXIONBENCH_PGVECTOR_BIN_DIR="${MAXIONBENCH_PGVECTOR_BIN_DIR:-/usr/lib/postgresql/16/bin}"
 
 usage() {
   cat <<'EOF'
@@ -161,6 +162,10 @@ apptainer_build_supports_fakeroot() {
   apptainer build --help 2>/dev/null | grep -F -- "--fakeroot" >/dev/null 2>&1
 }
 
+default_pgvector_path() {
+  printf '%s\n' "${MAXIONBENCH_PGVECTOR_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+}
+
 main_image_is_valid() {
   local target="$1"
   if [[ ! -f "${target}" ]]; then
@@ -190,6 +195,44 @@ for module_name in modules:
         print(f"main image validation failed while importing {module_name}: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise
 PY
+}
+
+service_image_is_valid() {
+  local target="$1"
+  local service_name="$2"
+  if [[ ! -f "${target}" ]]; then
+    return 1
+  fi
+  case "${service_name}" in
+    qdrant)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v qdrant >/dev/null 2>&1'
+      ;;
+    pgvector)
+      local pgvector_path=""
+      pgvector_path="$(default_pgvector_path)"
+      apptainer exec --cleanenv "${target}" env "PATH=${pgvector_path}" /bin/sh -lc \
+        'command -v docker-entrypoint.sh >/dev/null 2>&1 && command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1'
+      ;;
+    opensearch)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v opensearch >/dev/null 2>&1'
+      ;;
+    weaviate)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v weaviate >/dev/null 2>&1'
+      ;;
+    milvus)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v milvus >/dev/null 2>&1'
+      ;;
+    milvus-etcd)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v etcd >/dev/null 2>&1'
+      ;;
+    milvus-minio)
+      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v minio >/dev/null 2>&1'
+      ;;
+    *)
+      echo "error: unsupported service image validation target: ${service_name}" >&2
+      exit 2
+      ;;
+  esac
 }
 
 build_main_image() {
@@ -230,9 +273,14 @@ build_main_image() {
 pull_service_image() {
   local target="$1"
   local source_uri="$2"
-  if should_skip_target "${target}"; then
-    printf '%s\n' "+ skipping existing ${target}"
-    return 0
+  local service_name="$3"
+  if [[ "${ONLY_MISSING}" -eq 1 && -f "${target}" ]]; then
+    if service_image_is_valid "${target}" "${service_name}"; then
+      printf '%s\n' "+ skipping existing ${target}"
+      return 0
+    fi
+    printf '%s\n' "+ rebuilding stale ${target}; required runtime contract is missing for ${service_name}"
+    rm -f "${target}"
   fi
   local stderr_log=""
   local status=0
@@ -249,14 +297,21 @@ pull_service_image() {
     printf '%s\n' "${line}" >&2
   done < "${stderr_log}"
   rm -f "${stderr_log}"
-  return "${status}"
+  if [[ "${status}" -ne 0 ]]; then
+    return "${status}"
+  fi
+  if ! service_image_is_valid "${target}" "${service_name}"; then
+    echo "error: pulled ${target} is missing required runtime contract for ${service_name}" >&2
+    exit 2
+  fi
+  printf '%s\n' "+ validated ${target} contains required runtime contract for ${service_name}"
 }
 
 build_main_image "${OUTPUT_DIR}/maxionbench.sif"
-pull_service_image "${OUTPUT_DIR}/qdrant.sif" "docker://qdrant/qdrant:v1.13.0"
-pull_service_image "${OUTPUT_DIR}/pgvector.sif" "docker://pgvector/pgvector:0.8.0-pg16"
-pull_service_image "${OUTPUT_DIR}/opensearch.sif" "docker://opensearchproject/opensearch:2.19.1"
-pull_service_image "${OUTPUT_DIR}/weaviate.sif" "docker://semitechnologies/weaviate:1.28.4"
-pull_service_image "${OUTPUT_DIR}/milvus.sif" "docker://milvusdb/milvus:v2.5.4"
-pull_service_image "${OUTPUT_DIR}/milvus-etcd.sif" "docker://quay.io/coreos/etcd:v3.5.18"
-pull_service_image "${OUTPUT_DIR}/milvus-minio.sif" "docker://minio/minio:RELEASE.2024-11-07T00-52-20Z"
+pull_service_image "${OUTPUT_DIR}/qdrant.sif" "docker://qdrant/qdrant:v1.13.0" "qdrant"
+pull_service_image "${OUTPUT_DIR}/pgvector.sif" "docker://pgvector/pgvector:0.8.0-pg16" "pgvector"
+pull_service_image "${OUTPUT_DIR}/opensearch.sif" "docker://opensearchproject/opensearch:2.19.1" "opensearch"
+pull_service_image "${OUTPUT_DIR}/weaviate.sif" "docker://semitechnologies/weaviate:1.28.4" "weaviate"
+pull_service_image "${OUTPUT_DIR}/milvus.sif" "docker://milvusdb/milvus:v2.5.4" "milvus"
+pull_service_image "${OUTPUT_DIR}/milvus-etcd.sif" "docker://quay.io/coreos/etcd:v3.5.18" "milvus-etcd"
+pull_service_image "${OUTPUT_DIR}/milvus-minio.sif" "docker://minio/minio:RELEASE.2024-11-07T00-52-20Z" "milvus-minio"

@@ -178,6 +178,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_SERVICE_START_GRACE_S" in text
     assert "MAXIONBENCH_SERVICE_START_POLL_S" in text
     assert "MAXIONBENCH_SERVICE_LOG_TAIL_LINES" in text
+    assert "MAXIONBENCH_PGVECTOR_BIN_DIR" in text
     assert "MAXIONBENCH_CONTAINER_RUNTIME" in text
     assert "MAXIONBENCH_CONTAINER_IMAGE" in text
     assert "MAXIONBENCH_CONTAINER_BIND" in text
@@ -441,7 +442,7 @@ if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
-if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == command\ -v* ]]; then
+    if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == command\\ -v* ]]; then
   exit 0
 fi
 sleep 30
@@ -483,6 +484,87 @@ sleep 30
     assert "QDRANT__SERVICE__GRPC_PORT=" in post_image_args
     assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in post_image_args
     assert "/bin/sh" in post_image_args
+
+
+def test_slurm_common_pgvector_service_uses_writable_runtime_dirs_and_pg_bin_path(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "pgvector.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    apptainer_log = tmp_path / "apptainer_pgvector.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == *"command -v docker-entrypoint.sh"* ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
+  exit 0
+fi
+sleep 30
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_PGVECTOR_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_pgvector_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7"
+    assert f"--bind {runtime_root / 'pgvector' / 'data'}:/var/lib/postgresql/data" in apptainer_calls
+    assert f"--bind {runtime_root / 'pgvector' / 'run'}:/var/run/postgresql" in apptainer_calls
+    assert "PATH=/usr/lib/postgresql/16/bin:" in apptainer_calls
+    assert "docker-entrypoint.sh postgres -p" in apptainer_calls
 
 
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:

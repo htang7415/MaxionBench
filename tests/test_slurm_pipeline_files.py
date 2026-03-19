@@ -6,6 +6,10 @@ import subprocess
 import tomllib
 
 
+def _service_image_payload(image_name: str) -> str:
+    return f"{Path(image_name).stem}-ok\n"
+
+
 def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     script = Path("run_slurm_pipeline.sh")
     smoke_script = Path("test_slrum_pipeline.sh")
@@ -68,7 +72,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "%post" in definition_text
     assert "%runscript" in definition_text
     assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
-    assert 'python -m pip install ".[dev,engines,reporting,datasets,rerank]"' in definition_text
+    assert 'python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"' in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -623,6 +627,12 @@ def test_run_slurm_pipeline_launch_builds_missing_container_images(tmp_path: Pat
     apptainer_path.write_text(
         """#!/usr/bin/env bash
 set -euo pipefail
+marker_for_target() {
+  local target="$1"
+  local base=""
+  base="$(basename "${target}" .sif)"
+  printf '%s-ok\\n' "${base}"
+}
 printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
 printf 'APPTAINER_CACHEDIR=%s\\n' "${APPTAINER_CACHEDIR:-}" >> "${MAXIONBENCH_APPTAINER_LOG}"
 printf 'APPTAINER_TMPDIR=%s\\n' "${APPTAINER_TMPDIR:-}" >> "${MAXIONBENCH_APPTAINER_LOG}"
@@ -637,6 +647,10 @@ if [[ "${1:-}" == "exec" ]]; then
     target="${2:-}"
   fi
   if grep -q 'runtime-ok' "${target}"; then
+    exit 0
+  fi
+  marker="$(marker_for_target "${target}")"
+  if grep -q "${marker}" "${target}"; then
     exit 0
   fi
   exit 1
@@ -654,7 +668,7 @@ fi
 if [[ "${1:-}" == "pull" ]]; then
   target="${2:-}"
   mkdir -p "$(dirname "${target}")"
-  printf 'image\\n' > "${target}"
+  marker_for_target "${target}" > "${target}"
   exit 0
 fi
 exit 0
@@ -757,7 +771,7 @@ def test_run_slurm_pipeline_launch_rebuilds_stale_main_container_image(tmp_path:
         "milvus-minio.sif",
         "milvus.sif",
     ):
-        (containers_dir / image_name).write_text("image\n", encoding="utf-8")
+        (containers_dir / image_name).write_text(_service_image_payload(image_name), encoding="utf-8")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -767,6 +781,12 @@ def test_run_slurm_pipeline_launch_rebuilds_stale_main_container_image(tmp_path:
     apptainer_path.write_text(
         """#!/usr/bin/env bash
 set -euo pipefail
+marker_for_target() {
+  local target="$1"
+  local base=""
+  base="$(basename "${target}" .sif)"
+  printf '%s-ok\\n' "${base}"
+}
 printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
 if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
   printf '%s\\n' '--fakeroot'
@@ -779,6 +799,10 @@ if [[ "${1:-}" == "exec" ]]; then
     target="${2:-}"
   fi
   if grep -q 'runtime-ok' "${target}"; then
+    exit 0
+  fi
+  marker="$(marker_for_target "${target}")"
+  if grep -q "${marker}" "${target}"; then
     exit 0
   fi
   exit 1
@@ -794,7 +818,7 @@ if [[ "${1:-}" == "build" ]]; then
 fi
 if [[ "${1:-}" == "pull" ]]; then
   target="${2:-}"
-  printf 'image\\n' > "${target}"
+  marker_for_target "${target}" > "${target}"
   exit 0
 fi
 exit 0
@@ -843,6 +867,140 @@ printf '{"ok": true}\\n'
     assert "exec " in apptainer_calls
     assert "build --fakeroot" in apptainer_calls
     assert "pull " not in apptainer_calls
+    assert "+ rebuilding stale" in completed.stdout
+
+
+def test_run_slurm_pipeline_launch_repairs_stale_pgvector_service_image(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    build_script_path = scripts_dir / "build_containers.sh"
+    build_script_path.write_text(
+        Path("scripts/build_containers.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    build_script_path.chmod(0o755)
+
+    definition_path = tmp_path / "maxionbench.def"
+    definition_path.write_text(Path("maxionbench.def").read_text(encoding="utf-8"), encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "MAXIONBENCH_SLURM_ACCOUNT=nawimem\n",
+        encoding="utf-8",
+    )
+
+    containers_dir = tmp_path / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    (containers_dir / "maxionbench.sif").write_text("runtime-ok\n", encoding="utf-8")
+    for image_name in (
+        "qdrant.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text(_service_image_payload(image_name), encoding="utf-8")
+    (containers_dir / "pgvector.sif").write_text("stale-image\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_calls.log"
+    stub_log = tmp_path / "maxionbench_env.log"
+    apptainer_path = bin_dir / "apptainer"
+    apptainer_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+marker_for_target() {
+  local target="$1"
+  local base=""
+  base="$(basename "${target}" .sif)"
+  printf '%s-ok\\n' "${base}"
+}
+printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
+  printf '%s\\n' '--fakeroot'
+  exit 0
+fi
+if [[ "${1:-}" == "exec" ]]; then
+  if [[ "${2:-}" == "--cleanenv" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  if grep -q 'runtime-ok' "${target}"; then
+    exit 0
+  fi
+  marker="$(marker_for_target "${target}")"
+  if grep -q "${marker}" "${target}"; then
+    exit 0
+  fi
+  exit 1
+fi
+if [[ "${1:-}" == "build" ]]; then
+  if [[ "${2:-}" == "--fakeroot" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  printf 'runtime-ok\\n' > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "pull" ]]; then
+  target="${2:-}"
+  marker_for_target "${target}" > "${target}"
+  exit 0
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    apptainer_path.chmod(0o755)
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_APPTAINER_LOG"] = str(apptainer_log)
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--launch",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (containers_dir / "pgvector.sif").read_text(encoding="utf-8") == "pgvector-ok\n"
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    assert "pull " in apptainer_calls
+    assert "pgvector.sif docker://pgvector/pgvector:0.8.0-pg16" in apptainer_calls
+    assert "build --fakeroot" not in apptainer_calls
     assert "+ rebuilding stale" in completed.stdout
 
 
