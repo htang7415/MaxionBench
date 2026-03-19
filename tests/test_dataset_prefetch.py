@@ -152,3 +152,39 @@ def test_prefetch_for_configs_materializes_d4_from_local_sources(tmp_path: Path)
     assert "MAXIONBENCH_D4_BEIR_ROOT" in text
     assert "MAXIONBENCH_D4_CRAG_PATH" in text
     assert "MAXIONBENCH_D4_CRAG_SHA256" in text
+
+
+def test_prefetch_for_configs_reuses_downloaded_d4_repo_cache(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    config_path = _write_yaml(
+        repo_root / "configs" / "scenarios_paper" / "s4_hybrid.yaml",
+        {
+            "scenario": "s4_hybrid",
+            "dataset_bundle": "D4",
+            "d4_use_real_data": True,
+            "d4_beir_root": "data/beir",
+            "d4_beir_subsets": ["fiqa", "scifact"],
+            "d4_beir_split": "test",
+            "d4_crag_path": "data/crag_task_1_and_2_dev_v4.jsonl.bz2",
+            "d4_include_crag": True,
+        },
+    )
+    downloaded_beir_root = repo_root / "dataset" / "D4" / "beir"
+    _make_beir_subset(downloaded_beir_root, "fiqa")
+    _make_beir_subset(downloaded_beir_root, "scifact")
+    downloaded_crag = repo_root / "dataset" / "D4" / "crag" / "crag_task_1_and_2_dev_v4.jsonl.bz2"
+    downloaded_crag.parent.mkdir(parents=True, exist_ok=True)
+    with bz2.open(downloaded_crag, "wt", encoding="utf-8") as handle:
+        handle.write('{"query_id":"q1","query":"what","candidates":[{"doc_id":"d1","text":"doc","relevance":1}]}\n')
+
+    summary = prefetch_for_configs(
+        repo_root=repo_root,
+        config_paths=[config_path],
+        env_sh_path=repo_root / "artifacts" / "prefetch" / "dataset_env.sh",
+    )
+
+    assert (repo_root / "data" / "beir" / "fiqa" / "corpus.jsonl").exists()
+    assert (repo_root / "data" / "beir" / "scifact" / "queries.jsonl").exists()
+    assert (repo_root / "data" / "crag_task_1_and_2_dev_v4.jsonl.bz2").exists()
+    assert summary["fetched"]["d4_beir"]["source"] == "downloaded_dataset_cache"
+    assert summary["fetched"]["d4_crag"]["source"] == "downloaded_dataset_cache"
