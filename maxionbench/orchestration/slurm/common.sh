@@ -601,6 +601,20 @@ mb_validate_apptainer_service_image() {
   fi
 }
 
+mb_validate_qdrant_service_image() {
+  local image_path="$1"
+  if ! mb_ensure_apptainer; then
+    mb_die "Apptainer is required to validate qdrant image ${image_path}"
+  fi
+  if ! apptainer inspect "${image_path}" >/dev/null 2>&1; then
+    mb_die "qdrant Apptainer image failed inspect: ${image_path}"
+  fi
+  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -lc \
+    '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]' >/dev/null 2>&1; then
+    mb_die "qdrant Apptainer image does not expose expected /qdrant/entrypoint.sh and /qdrant/qdrant: ${image_path}"
+  fi
+}
+
 mb_pgvector_path_env() {
   printf '%s\n' "${MAXIONBENCH_PGVECTOR_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 }
@@ -677,6 +691,7 @@ mb_start_apptainer_service_process() {
   local service_cmd="$3"
   local env_array_name="$4"
   local bind_array_name="$5"
+  local workdir="${6:-}"
   local -a env_specs_ref=()
   local -a bind_specs_ref=()
   eval "env_specs_ref=(\"\${${env_array_name}[@]}\")"
@@ -717,7 +732,11 @@ mb_start_apptainer_service_process() {
       container_cmd+=("${env_spec}")
     fi
   done
-  container_cmd+=(/bin/sh -lc "exec ${service_cmd}")
+  local shell_cmd="exec ${service_cmd}"
+  if [[ -n "${workdir}" ]]; then
+    shell_cmd="cd ${workdir} && exec ${service_cmd}"
+  fi
+  container_cmd+=(/bin/sh -lc "${shell_cmd}")
 
   "${container_cmd[@]}" >"${log_file}" 2>&1 &
   local pid=$!
@@ -742,7 +761,8 @@ mb_start_apptainer_service_process() {
 
 mb_start_qdrant_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant" "qdrant")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant")"
+  mb_validate_qdrant_service_image "${image_path}"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local storage_dir="${runtime_root}/qdrant/storage"
@@ -754,8 +774,8 @@ mb_start_qdrant_service() {
     "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage"
   )
   local -a bind_specs=("${storage_dir}:/qdrant/storage")
-  local cmd="${MAXIONBENCH_QDRANT_START_CMD:-qdrant}"
-  mb_start_apptainer_service_process "qdrant" "${image_path}" "${cmd}" env_specs bind_specs
+  local cmd="${MAXIONBENCH_QDRANT_START_CMD:-./entrypoint.sh}"
+  mb_start_apptainer_service_process "qdrant" "${image_path}" "${cmd}" env_specs bind_specs "/qdrant"
 }
 
 mb_start_pgvector_service() {
