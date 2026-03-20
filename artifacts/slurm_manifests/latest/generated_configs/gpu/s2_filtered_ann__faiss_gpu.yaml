@@ -31,5 +31,5 @@ seed: 42
 sla_threshold_ms: 80.0
 steady_state_s: 300
 top_k: 10
-vector_dim: 64
+vector_dim: 192
 warmup_s: 120

@@ -418,6 +418,42 @@ def test_cli_submit_slurm_plan_dispatches_prefetch_flag(monkeypatch) -> None:  #
     ]
 
 
+def test_cli_submit_slurm_plan_dispatches_prepare_containers_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 344
+
+    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-slurm-plan",
+            "--slurm-dir",
+            "maxionbench/orchestration/slurm",
+            "--seed",
+            "42",
+            "--prepare-containers",
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 344
+    assert captured["argv"] == [
+        "--slurm-dir",
+        "maxionbench/orchestration/slurm",
+        "--seed",
+        "42",
+        "--engine-config-dir",
+        "configs/engines",
+        "--run-manifest-dir",
+        "artifacts/slurm_manifests/latest",
+        "--prepare-containers",
+        "--dry-run",
+        "--json",
+    ]
+
+
 def test_cli_submit_slurm_plan_dispatches_full_matrix_pipeline_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 

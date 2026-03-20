@@ -18,6 +18,7 @@ __pycache__/
 run_workstation.sh
 !run_slurm_pipeline.sh
 !scripts/build_containers.sh
+!maxionbench/orchestration/slurm/prepare_containers.sh
 !maxionbench/orchestration/slurm/download_datasets.sh
 !maxionbench/orchestration/slurm/preprocess_datasets.sh
 !maxionbench/orchestration/slurm/postprocess.sh
