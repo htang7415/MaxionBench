@@ -205,7 +205,9 @@ service_image_is_valid() {
   fi
   case "${service_name}" in
     qdrant)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v qdrant >/dev/null 2>&1'
+      apptainer inspect "${target}" >/dev/null 2>&1 && \
+        apptainer exec --cleanenv "${target}" /bin/sh -lc \
+          '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]'
       ;;
     pgvector)
       local pgvector_path=""

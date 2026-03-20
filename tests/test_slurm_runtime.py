@@ -422,7 +422,10 @@ def test_slurm_common_passes_service_env_inside_apptainer_exec(tmp_path: Path) -
     fake_apptainer.write_text(
         """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "$*" > "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
 args=("$@")
 index=0
 while [[ ${index} -lt ${#args[@]} ]]; do
@@ -442,7 +445,7 @@ if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
-    if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == command\\ -v* ]]; then
+if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == "[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" ]]; then
   exit 0
 fi
 sleep 30
@@ -484,6 +487,9 @@ sleep 30
     assert "QDRANT__SERVICE__GRPC_PORT=" in post_image_args
     assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in post_image_args
     assert "/bin/sh" in post_image_args
+    assert "cd /qdrant && exec ./entrypoint.sh" in post_image_args
+    apptainer_calls = full_log.read_text(encoding="utf-8")
+    assert f"inspect {fake_image}" in apptainer_calls
 
 
 def test_slurm_common_pgvector_service_uses_writable_runtime_dirs_and_pg_bin_path(tmp_path: Path) -> None:

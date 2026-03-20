@@ -62,9 +62,11 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "apptainer build" in build_text
     assert "apptainer pull" in build_text
     assert "apptainer exec --cleanenv" in build_text
+    assert "apptainer inspect" in build_text
     assert "python -s" in build_text
     assert "--output-dir" in build_text
     assert "--only-missing" in build_text
+    assert "[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" in build_text
 
     definition_text = definition.read_text(encoding="utf-8")
     assert "Bootstrap: docker" in definition_text
@@ -1000,6 +1002,143 @@ printf '{"ok": true}\\n'
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
     assert "pull " in apptainer_calls
     assert "pgvector.sif docker://pgvector/pgvector:0.8.0-pg16" in apptainer_calls
+    assert "build --fakeroot" not in apptainer_calls
+    assert "+ rebuilding stale" in completed.stdout
+
+
+def test_run_slurm_pipeline_launch_repairs_stale_qdrant_service_image(tmp_path: Path) -> None:
+    source_script = Path("run_slurm_pipeline.sh")
+    script_path = tmp_path / "run_slurm_pipeline.sh"
+    script_path.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
+    script_path.chmod(0o755)
+
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    build_script_path = scripts_dir / "build_containers.sh"
+    build_script_path.write_text(
+        Path("scripts/build_containers.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    build_script_path.chmod(0o755)
+
+    definition_path = tmp_path / "maxionbench.def"
+    definition_path.write_text(Path("maxionbench.def").read_text(encoding="utf-8"), encoding="utf-8")
+
+    (tmp_path / ".env.slurm.nrel").write_text(
+        "MAXIONBENCH_SLURM_ACCOUNT=nawimem\n",
+        encoding="utf-8",
+    )
+
+    containers_dir = tmp_path / "containers"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+    (containers_dir / "maxionbench.sif").write_text("runtime-ok\n", encoding="utf-8")
+    (containers_dir / "qdrant.sif").write_text("stale-image\n", encoding="utf-8")
+    for image_name in (
+        "pgvector.sif",
+        "opensearch.sif",
+        "weaviate.sif",
+        "milvus-etcd.sif",
+        "milvus-minio.sif",
+        "milvus.sif",
+    ):
+        (containers_dir / image_name).write_text(_service_image_payload(image_name), encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_calls.log"
+    stub_log = tmp_path / "maxionbench_env.log"
+    apptainer_path = bin_dir / "apptainer"
+    apptainer_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+marker_for_target() {
+  local target="$1"
+  local base=""
+  base="$(basename "${target}" .sif)"
+  printf '%s-ok\\n' "${base}"
+}
+printf '%s\\n' "$*" >> "${MAXIONBENCH_APPTAINER_LOG}"
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
+  printf '%s\\n' '--fakeroot'
+  exit 0
+fi
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" ]]; then
+  if [[ "${2:-}" == "--cleanenv" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  if grep -q 'runtime-ok' "${target}"; then
+    exit 0
+  fi
+  marker="$(marker_for_target "${target}")"
+  if grep -q "${marker}" "${target}"; then
+    exit 0
+  fi
+  exit 1
+fi
+if [[ "${1:-}" == "build" ]]; then
+  if [[ "${2:-}" == "--fakeroot" ]]; then
+    target="${3:-}"
+  else
+    target="${2:-}"
+  fi
+  printf 'runtime-ok\\n' > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "pull" ]]; then
+  target="${2:-}"
+  marker_for_target "${target}" > "${target}"
+  exit 0
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    apptainer_path.chmod(0o755)
+    stub_path = bin_dir / "maxionbench"
+    stub_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'CONTAINER=%s\\n' "${MAXIONBENCH_CONTAINER_IMAGE:-}"
+  printf 'ARGS=%s\\n' "$*"
+} > "${MAXIONBENCH_STUB_LOG}"
+printf '{"ok": true}\\n'
+""",
+        encoding="utf-8",
+    )
+    stub_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MAXIONBENCH_APPTAINER_LOG"] = str(apptainer_log)
+    env["MAXIONBENCH_STUB_LOG"] = str(stub_log)
+    env["USER"] = "tester"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(script_path),
+            "--cluster",
+            "nrel",
+            "--launch",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (containers_dir / "qdrant.sif").read_text(encoding="utf-8") == "qdrant-ok\n"
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    assert "pull " in apptainer_calls
+    assert "qdrant.sif docker://qdrant/qdrant:v1.13.0" in apptainer_calls
     assert "build --fakeroot" not in apptainer_calls
     assert "+ rebuilding stale" in completed.stdout
 
