@@ -1,4 +1,5 @@
 adapter_options:
+  healthcheck_timeout_s: 5.0
   host: ${MAXIONBENCH_OPENSEARCH_HOST:-127.0.0.1}
   port: ${MAXIONBENCH_OPENSEARCH_PORT:-9200}
   scheme: ${MAXIONBENCH_OPENSEARCH_SCHEME:-http}
@@ -41,5 +42,5 @@ seed: 42
 sla_threshold_ms: 120.0
 steady_state_s: 300
 top_k: 10
-vector_dim: 64
+vector_dim: 192
 warmup_s: 120

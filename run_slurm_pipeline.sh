@@ -273,7 +273,7 @@ Options:
   --skip-gpu                     Rejected for the hardened full-matrix rerun; GPU jobs are mandatory
   --skip-s6                      Defer S6 from the plan
   --allow-reduced-matrix         Allow a reduced smoke/debug matrix while still requiring GPU jobs
-  --launch                       Prepare shared dirs/images and submit jobs; otherwise prints a dry-run plan
+  --launch                       Prepare shared dirs locally, then submit a cluster-side container prep job plus the Slurm plan
   --help                         Show this message
 EOF
 }
@@ -493,77 +493,6 @@ read_missing_image_paths() {
   done < <(list_missing_image_paths)
 }
 
-source_module_init() {
-  if command -v module >/dev/null 2>&1; then
-    return 0
-  fi
-
-  local candidate=""
-  if [[ -n "${MAXIONBENCH_MODULE_INIT_SH:-}" ]]; then
-    candidate="$(resolve_root_path "${MAXIONBENCH_MODULE_INIT_SH}")"
-    if [[ -f "${candidate}" ]]; then
-      # shellcheck disable=SC1090
-      source "${candidate}"
-      printf '%s\n' "+ sourced module init ${candidate}"
-      if command -v module >/dev/null 2>&1; then
-        return 0
-      fi
-    fi
-  fi
-
-  for candidate in \
-    /etc/profile.d/modules.sh \
-    /usr/share/Modules/init/bash \
-    /etc/profile.d/lmod.sh \
-    /usr/share/lmod/lmod/init/bash
-  do
-    if [[ ! -f "${candidate}" ]]; then
-      continue
-    fi
-    # shellcheck disable=SC1090
-    source "${candidate}"
-    printf '%s\n' "+ sourced module init ${candidate}"
-    if command -v module >/dev/null 2>&1; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-ensure_apptainer() {
-  if command -v apptainer >/dev/null 2>&1; then
-    return 0
-  fi
-
-  local module_name="${MAXIONBENCH_APPTAINER_MODULE:-apptainer}"
-  printf '%s\n' "+ apptainer not found in PATH; attempting module bootstrap with ${module_name}"
-  if source_module_init && command -v module >/dev/null 2>&1; then
-    printf '%s\n' "+ loading apptainer module ${module_name}"
-    local module_output=""
-    local module_status=0
-    local module_log_file=""
-    module_log_file="$(mktemp "${TMPDIR:-/tmp}/maxionbench_apptainer_module.XXXXXX")"
-    set +e
-    module load "${module_name}" >"${module_log_file}" 2>&1
-    module_status=$?
-    set -e
-    if [[ -f "${module_log_file}" ]]; then
-      module_output="$(cat "${module_log_file}")"
-      rm -f "${module_log_file}"
-    fi
-    if [[ -n "${module_output}" ]]; then
-      printf '%s\n' "+ module load ${module_name} output: ${module_output}"
-    fi
-    if [[ ${module_status} -eq 0 ]] && command -v apptainer >/dev/null 2>&1; then
-      return 0
-    fi
-  fi
-
-  echo "error: apptainer is required on the login/build node to prepare container images" >&2
-  exit 2
-}
-
 prepare_shared_layout() {
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     return 0
@@ -582,25 +511,26 @@ prepare_shared_layout() {
     "$(resolve_root_path "${RUN_MANIFEST_DIR}")"
 }
 
-prepare_container_images() {
+validate_container_build_prerequisites() {
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     return 0
   fi
-
   local build_script="${ROOT_DIR}/scripts/build_containers.sh"
+  local prepare_script
+  prepare_script="$(resolve_root_path "${SLURM_DIR}/prepare_containers.sh")"
   local definition_file="${ROOT_DIR}/maxionbench.def"
   if [[ ! -f "${build_script}" ]]; then
     echo "error: missing container build helper: ${build_script}" >&2
+    exit 2
+  fi
+  if [[ ! -f "${prepare_script}" ]]; then
+    echo "error: missing Slurm container prep script: ${prepare_script}" >&2
     exit 2
   fi
   if [[ ! -f "${definition_file}" ]]; then
     echo "error: missing Apptainer definition file: ${definition_file}" >&2
     exit 2
   fi
-
-  ensure_apptainer
-  printf '%s\n' "+ bash ${build_script} --output-dir ${MAXIONBENCH_SHARED_ROOT}/containers --only-missing"
-  bash "${build_script}" --output-dir "${MAXIONBENCH_SHARED_ROOT}/containers" --only-missing
 }
 
 check_required_image_paths() {
@@ -612,8 +542,7 @@ check_required_image_paths() {
   printf '%s\n' "warning: missing container images:" >&2
   printf '  %s\n' "${MISSING_IMAGE_PATHS[@]}" >&2
   if [[ "${DRY_RUN}" -eq 0 ]]; then
-    echo "error: refusing to launch because required container images are missing" >&2
-    exit 2
+    printf '%s\n' "+ missing images will be prepared by the cluster-side prepare_containers job" >&2
   fi
 }
 
@@ -639,7 +568,7 @@ CONTAINER_IMAGE="${MAXIONBENCH_CONTAINER_IMAGE}"
 validate_cluster_defaults
 write_cluster_env_defaults
 prepare_shared_layout
-prepare_container_images
+validate_container_build_prerequisites
 report_container_images
 check_required_image_paths
 CMD=(
@@ -653,6 +582,7 @@ CMD=(
   --seed "${SEED}"
   --container-runtime apptainer
   --container-image "${CONTAINER_IMAGE}"
+  --prepare-containers
   --output-root "${MAXIONBENCH_OUTPUT_ROOT}"
   --download-datasets
   --preprocess-datasets

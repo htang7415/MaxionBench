@@ -38,6 +38,7 @@ def build_submit_steps(
     *,
     include_gpu: bool = True,
     skip_s6: bool = False,
+    prepare_containers: bool = False,
     prefetch_datasets: bool = False,
     download_datasets: bool = False,
     preprocess_datasets: bool = False,
@@ -45,6 +46,15 @@ def build_submit_steps(
     manifest: RunManifest | None = None,
 ) -> list[SubmitStep]:
     steps: list[SubmitStep] = []
+    container_stage_key: str | None = None
+    if prepare_containers:
+        steps.append(
+            SubmitStep(
+                key="prepare_containers",
+                script_name="prepare_containers.sh",
+            )
+        )
+        container_stage_key = "prepare_containers"
     last_dataset_stage_key: str | None = None
     if download_datasets:
         steps.append(
@@ -72,7 +82,12 @@ def build_submit_steps(
             )
         )
         last_dataset_stage_key = "prefetch_datasets"
-    conformance_depends_on: tuple[str, ...] = ((last_dataset_stage_key,) if last_dataset_stage_key else ())
+    conformance_depends_list: list[str] = []
+    if last_dataset_stage_key:
+        conformance_depends_list.append(last_dataset_stage_key)
+    if container_stage_key:
+        conformance_depends_list.append(container_stage_key)
+    conformance_depends_on = tuple(conformance_depends_list)
     steps.append(
         SubmitStep(
             key="conformance",
@@ -661,6 +676,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--skip-gpu", action="store_true")
     parser.add_argument(
+        "--prepare-containers",
+        action="store_true",
+        help="Submit a shared container-build job before the first containerized Slurm step.",
+    )
+    parser.add_argument(
         "--prefetch-datasets",
         action="store_true",
         help="Submit a dataset prefetch/cache job before calibration and benchmark arrays.",
@@ -728,6 +748,7 @@ def main(argv: list[str] | None = None) -> int:
     steps = build_submit_steps(
         include_gpu=not bool(args.skip_gpu),
         skip_s6=bool(args.skip_s6),
+        prepare_containers=bool(args.prepare_containers),
         prefetch_datasets=bool(args.prefetch_datasets),
         download_datasets=bool(args.download_datasets),
         preprocess_datasets=bool(args.preprocess_datasets),
@@ -753,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
         run_manifest=manifest_path,
         dry_run=bool(args.dry_run),
     )
+    summary["prepare_containers"] = bool(args.prepare_containers)
     if manifest_path is not None:
         summary["full_matrix"] = True
         summary["allow_reduced_matrix"] = bool(args.allow_reduced_matrix)

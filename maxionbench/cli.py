@@ -222,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     submit_slurm_plan_parser.add_argument("--container-bind", action="append", dest="container_bind", default=None)
     submit_slurm_plan_parser.add_argument("--hf-cache-dir", default=None)
     submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
+    submit_slurm_plan_parser.add_argument("--prepare-containers", action="store_true")
     submit_slurm_plan_parser.add_argument("--prefetch-datasets", action="store_true")
     submit_slurm_plan_parser.add_argument("--download-datasets", action="store_true")
     submit_slurm_plan_parser.add_argument("--preprocess-datasets", action="store_true")
@@ -614,6 +615,8 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.extend(["--hf-cache-dir", args.hf_cache_dir])
         if args.skip_gpu:
             submit_argv.append("--skip-gpu")
+        if args.prepare_containers:
+            submit_argv.append("--prepare-containers")
         if args.prefetch_datasets:
             submit_argv.append("--prefetch-datasets")
         if args.download_datasets:
