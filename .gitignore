@@ -22,6 +22,7 @@ run_workstation.sh
 !maxionbench/orchestration/slurm/download_datasets.sh
 !maxionbench/orchestration/slurm/preprocess_datasets.sh
 !maxionbench/orchestration/slurm/postprocess.sh
+!maxionbench/orchestration/slurm/service_contracts.sh
 
 # Local generated benchmark outputs
 artifacts/ci/

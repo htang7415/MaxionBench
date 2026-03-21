@@ -12,6 +12,14 @@ cd "${ROOT_DIR}"
 OUTPUT_DIR=""
 ONLY_MISSING=0
 MAXIONBENCH_PGVECTOR_BIN_DIR="${MAXIONBENCH_PGVECTOR_BIN_DIR:-/usr/lib/postgresql/16/bin}"
+SERVICE_CONTRACTS_SH="${ROOT_DIR}/maxionbench/orchestration/slurm/service_contracts.sh"
+
+if [[ ! -f "${SERVICE_CONTRACTS_SH}" ]]; then
+  echo "error: missing Apptainer service contract helper: ${SERVICE_CONTRACTS_SH}" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "${SERVICE_CONTRACTS_SH}"
 
 usage() {
   cat <<'EOF'
@@ -166,6 +174,15 @@ default_pgvector_path() {
   printf '%s\n' "${MAXIONBENCH_PGVECTOR_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 }
 
+service_probe_is_valid() {
+  local target="$1"
+  local service_name="$2"
+  local -a probe_args=()
+  mb_service_probe_args "${service_name}" probe_args || return 1
+  apptainer inspect "${target}" >/dev/null 2>&1 && \
+    apptainer exec --cleanenv "${target}" "${probe_args[@]}" >/dev/null 2>&1
+}
+
 main_image_is_valid() {
   local target="$1"
   if [[ ! -f "${target}" ]]; then
@@ -206,29 +223,18 @@ service_image_is_valid() {
   case "${service_name}" in
     qdrant)
       apptainer inspect "${target}" >/dev/null 2>&1 && \
-        apptainer exec --cleanenv "${target}" /bin/sh -lc \
+        apptainer exec --cleanenv "${target}" /bin/sh -c \
           '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]'
       ;;
     pgvector)
       local pgvector_path=""
       pgvector_path="$(default_pgvector_path)"
-      apptainer exec --cleanenv "${target}" env "PATH=${pgvector_path}" /bin/sh -lc \
+      apptainer inspect "${target}" >/dev/null 2>&1 && \
+        apptainer exec --cleanenv "${target}" env "PATH=${pgvector_path}" /bin/sh -c \
         'command -v docker-entrypoint.sh >/dev/null 2>&1 && command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1'
       ;;
-    opensearch)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v opensearch >/dev/null 2>&1'
-      ;;
-    weaviate)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v weaviate >/dev/null 2>&1'
-      ;;
-    milvus)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v milvus >/dev/null 2>&1'
-      ;;
-    milvus-etcd)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v etcd >/dev/null 2>&1'
-      ;;
-    milvus-minio)
-      apptainer exec --cleanenv "${target}" /bin/sh -lc 'command -v minio >/dev/null 2>&1'
+    opensearch|weaviate|milvus|milvus-etcd|milvus-minio)
+      service_probe_is_valid "${target}" "${service_name}"
       ;;
     *)
       echo "error: unsupported service image validation target: ${service_name}" >&2
@@ -303,7 +309,7 @@ pull_service_image() {
     return "${status}"
   fi
   if ! service_image_is_valid "${target}" "${service_name}"; then
-    echo "error: pulled ${target} is missing required runtime contract for ${service_name}" >&2
+    echo "error: pulled ${target} failed ${service_name} probe command / runtime contract validation" >&2
     exit 2
   fi
   printf '%s\n' "+ validated ${target} contains required runtime contract for ${service_name}"
