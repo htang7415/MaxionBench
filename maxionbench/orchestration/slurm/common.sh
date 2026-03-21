@@ -27,6 +27,7 @@ export MAXIONBENCH_SLURM_RUN_MANIFEST="${MAXIONBENCH_SLURM_RUN_MANIFEST:-}"
 export MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S="${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S:-300}"
 export MAXIONBENCH_CONFORMANCE_TIMEOUT_S="${MAXIONBENCH_CONFORMANCE_TIMEOUT_S:-300}"
 export MAXIONBENCH_SERVICE_START_GRACE_S="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
+export MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S:-30}"
 export MAXIONBENCH_SERVICE_START_POLL_S="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
 export MAXIONBENCH_SERVICE_LOG_TAIL_LINES="${MAXIONBENCH_SERVICE_LOG_TAIL_LINES:-80}"
 export MAXIONBENCH_PGVECTOR_BIN_DIR="${MAXIONBENCH_PGVECTOR_BIN_DIR:-/usr/lib/postgresql/16/bin}"
@@ -669,6 +670,24 @@ mb_validate_opensearch_service_image() {
   fi
 }
 
+mb_seed_opensearch_config_dir() {
+  local image_path="$1"
+  local config_dir="$2"
+
+  if ! mb_ensure_apptainer; then
+    mb_die "Apptainer is required to seed writable OpenSearch config"
+  fi
+
+  mkdir -p "${config_dir}"
+  if ! apptainer exec --cleanenv \
+    --bind "${config_dir}:${config_dir}" \
+    "${image_path}" \
+    /bin/sh -c 'set -eu; target="$1"; cp -R /usr/share/opensearch/config/. "${target}/"' \
+    sh "${config_dir}" >/dev/null 2>&1; then
+    mb_die "failed to seed writable OpenSearch config dir from image: ${image_path}"
+  fi
+}
+
 mb_validate_named_service_image() {
   local image_path="$1"
   local service_name="$2"
@@ -751,6 +770,99 @@ mb_register_engine_pid() {
   printf '%s\t%s\n' "${name}" "${pid}" >> "${pid_file}"
 }
 
+mb_service_bind_target_present() {
+  local bind_array_name="$1"
+  local target_path="$2"
+  local -a bind_specs_ref=()
+  eval "bind_specs_ref=(\"\${${bind_array_name}[@]-}\")"
+
+  local bind_spec=""
+  local container_path=""
+  for bind_spec in "${bind_specs_ref[@]}"; do
+    container_path="${bind_spec#*:}"
+    if [[ "${container_path}" == "${target_path}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+mb_assert_service_runtime_bind_contract() {
+  local service_name="$1"
+  local bind_array_name="$2"
+  local -a writable_paths=()
+  local -a seeded_paths=()
+  local target_path=""
+
+  mb_service_runtime_writable_paths "${service_name}" writable_paths || mb_die "missing writable runtime contract for ${service_name}"
+  for target_path in "${writable_paths[@]-}"; do
+    if [[ -z "${target_path}" ]]; then
+      continue
+    fi
+    if ! mb_service_bind_target_present "${bind_array_name}" "${target_path}"; then
+      mb_die "managed service ${service_name} missing writable runtime bind for ${target_path}"
+    fi
+  done
+
+  mb_service_runtime_seed_paths "${service_name}" seeded_paths || mb_die "missing runtime seed contract for ${service_name}"
+  for target_path in "${seeded_paths[@]-}"; do
+    if [[ -z "${target_path}" ]]; then
+      continue
+    fi
+    if ! mb_service_bind_target_present "${bind_array_name}" "${target_path}"; then
+      mb_die "managed service ${service_name} missing seeded runtime bind for ${target_path}"
+    fi
+  done
+}
+
+mb_service_startup_adapter_options_json() {
+  local service_name="$1"
+  mb_python - <<'PY' "${service_name}"
+import json
+import os
+import sys
+
+service_name = sys.argv[1]
+
+if service_name == "qdrant":
+    payload = {
+        "host": os.environ["MAXIONBENCH_QDRANT_HOST"],
+        "port": int(os.environ["MAXIONBENCH_QDRANT_PORT"]),
+    }
+elif service_name == "pgvector":
+    payload = {
+        "connect_timeout_s": 5.0,
+        "dsn": os.environ["MAXIONBENCH_PGVECTOR_DSN"],
+        "schema": "public",
+    }
+elif service_name == "opensearch":
+    payload = {
+        "healthcheck_timeout_s": 5.0,
+        "host": os.environ["MAXIONBENCH_OPENSEARCH_HOST"],
+        "port": int(os.environ["MAXIONBENCH_OPENSEARCH_PORT"]),
+        "scheme": os.environ["MAXIONBENCH_OPENSEARCH_SCHEME"],
+        "timeout_s": 5.0,
+    }
+elif service_name == "weaviate":
+    payload = {
+        "healthcheck_timeout_s": 5.0,
+        "host": os.environ["MAXIONBENCH_WEAVIATE_HOST"],
+        "port": int(os.environ["MAXIONBENCH_WEAVIATE_PORT"]),
+        "scheme": os.environ["MAXIONBENCH_WEAVIATE_SCHEME"],
+        "timeout_s": 5.0,
+    }
+elif service_name == "milvus":
+    payload = {
+        "host": os.environ["MAXIONBENCH_MILVUS_HOST"],
+        "port": int(os.environ["MAXIONBENCH_MILVUS_PORT"]),
+    }
+else:
+    raise ValueError(f"unsupported startup adapter mapping for {service_name}")
+
+print(json.dumps(payload, sort_keys=True))
+PY
+}
+
 mb_build_apptainer_service_prefix() {
   local output_array_name="$1"
   local image_path="$2"
@@ -809,23 +921,71 @@ mb_launch_apptainer_service_process() {
 
   "${container_cmd_ref[@]}" >"${log_file}" 2>&1 &
   local pid=$!
-  local grace_s="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
-  local poll_s="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
-  local max_checks=1
-  max_checks="$(awk -v g="${grace_s}" -v p="${poll_s}" 'BEGIN { v=int((g / p)+0.999999); if (v < 1) v = 1; print v }')"
-  local check_idx=0
-  while [[ "${check_idx}" -lt "${max_checks}" ]]; do
-    if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      mb_log_file_tail "managed engine service ${name}" "${log_file}"
-      mb_die "managed engine service ${name} exited early; see ${log_file}"
-    fi
-    check_idx=$((check_idx + 1))
-    if [[ "${check_idx}" -lt "${max_checks}" ]]; then
-      sleep "${poll_s}"
-    fi
-  done
-  mb_register_engine_pid "${name}" "${pid}"
-  mb_log "started engine service ${name} pid=${pid} log=${log_file}"
+  mb_verify_managed_service_startup "${name}" "${pid}" "${log_file}"
+}
+
+mb_verify_managed_service_startup() {
+  local name="$1"
+  local pid="$2"
+  local log_file="$3"
+  local verify_mode=""
+  verify_mode="$(mb_service_startup_verify_mode "${name}")" || mb_die "missing startup verification mode for managed engine service ${name}"
+
+  case "${verify_mode}" in
+    health)
+      local adapter_name=""
+      local adapter_options_json=""
+      local verify_timeout_s="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S:-30}"
+      local status=0
+      adapter_name="$(mb_service_startup_adapter_name "${name}")" || mb_die "missing startup adapter mapping for managed engine service ${name}"
+      if [[ -z "${adapter_name}" ]]; then
+        mb_die "startup verification mode health requires an adapter mapping for managed engine service ${name}"
+      fi
+      adapter_options_json="$(mb_service_startup_adapter_options_json "${name}")" || mb_die "failed to build startup adapter options for managed engine service ${name}"
+
+      set +e
+      mb_wait_named_adapter_health_timeout "${adapter_name}" "${adapter_options_json}" "${verify_timeout_s}" >/dev/null 2>&1
+      status=$?
+      set -e
+
+      if [[ "${status}" -ne 0 ]]; then
+        mb_log_file_tail "managed engine service ${name}" "${log_file}"
+        if kill -0 "${pid}" >/dev/null 2>&1; then
+          mb_die "managed engine service ${name} failed adapter health startup verification within ${verify_timeout_s}s; see ${log_file}"
+        fi
+        mb_die "managed engine service ${name} exited before adapter health became reachable; see ${log_file}"
+      fi
+
+      if kill -0 "${pid}" >/dev/null 2>&1; then
+        mb_register_engine_pid "${name}" "${pid}"
+        mb_log "started engine service ${name} pid=${pid} log=${log_file} verify=${verify_mode}"
+      else
+        mb_log "started engine service ${name} detached_after_startup=1 log=${log_file} verify=${verify_mode}"
+      fi
+      ;;
+    liveness)
+      local grace_s="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
+      local poll_s="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
+      local max_checks=1
+      local check_idx=0
+      max_checks="$(awk -v g="${grace_s}" -v p="${poll_s}" 'BEGIN { v=int((g / p)+0.999999); if (v < 1) v = 1; print v }')"
+      while [[ "${check_idx}" -lt "${max_checks}" ]]; do
+        if ! kill -0 "${pid}" >/dev/null 2>&1; then
+          mb_log_file_tail "managed engine service ${name}" "${log_file}"
+          mb_die "managed engine service ${name} exited early; see ${log_file}"
+        fi
+        check_idx=$((check_idx + 1))
+        if [[ "${check_idx}" -lt "${max_checks}" ]]; then
+          sleep "${poll_s}"
+        fi
+      done
+      mb_register_engine_pid "${name}" "${pid}"
+      mb_log "started engine service ${name} pid=${pid} log=${log_file} verify=${verify_mode}"
+      ;;
+    *)
+      mb_die "unsupported startup verification mode ${verify_mode} for managed engine service ${name}"
+      ;;
+  esac
 }
 
 mb_start_apptainer_service_process() {
@@ -882,6 +1042,7 @@ mb_start_qdrant_service() {
     "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage"
   )
   local -a bind_specs=("${storage_dir}:/qdrant/storage")
+  mb_assert_service_runtime_bind_contract "qdrant" bind_specs
   local cmd="${MAXIONBENCH_QDRANT_START_CMD:-./entrypoint.sh}"
   mb_start_apptainer_service_process "qdrant" "${image_path}" "${cmd}" env_specs bind_specs "/qdrant"
 }
@@ -908,6 +1069,7 @@ mb_start_pgvector_service() {
     "${data_dir}:/var/lib/postgresql/data"
     "${run_dir}:/var/run/postgresql"
   )
+  mb_assert_service_runtime_bind_contract "pgvector" bind_specs
   if [[ -n "${MAXIONBENCH_PGVECTOR_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "pgvector" "${image_path}" "${MAXIONBENCH_PGVECTOR_START_CMD}" env_specs bind_specs
   else
@@ -927,7 +1089,8 @@ mb_start_opensearch_service() {
   local logs_dir="${runtime_root}/opensearch/logs"
   local config_dir="${runtime_root}/opensearch/config"
   local config_path="${config_dir}/opensearch.yml"
-  mkdir -p "${data_dir}" "${logs_dir}" "${config_dir}"
+  mkdir -p "${data_dir}" "${logs_dir}"
+  mb_seed_opensearch_config_dir "${image_path}" "${config_dir}"
   cat > "${config_path}" <<EOF
 cluster.name: maxionbench-slurm
 network.host: 0.0.0.0
@@ -945,8 +1108,9 @@ EOF
   local -a bind_specs=(
     "${data_dir}:/usr/share/opensearch/data"
     "${logs_dir}:/usr/share/opensearch/logs"
-    "${config_path}:/usr/share/opensearch/config/opensearch.yml"
+    "${config_dir}:/usr/share/opensearch/config"
   )
+  mb_assert_service_runtime_bind_contract "opensearch" bind_specs
   if [[ -n "${MAXIONBENCH_OPENSEARCH_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "opensearch" "${image_path}" "${MAXIONBENCH_OPENSEARCH_START_CMD}" env_specs bind_specs
   else
@@ -971,6 +1135,7 @@ mb_start_weaviate_service() {
     "CLUSTER_HOSTNAME=node1"
   )
   local -a bind_specs=("${data_dir}:/var/lib/weaviate")
+  mb_assert_service_runtime_bind_contract "weaviate" bind_specs
   if [[ -n "${MAXIONBENCH_WEAVIATE_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "weaviate" "${image_path}" "${MAXIONBENCH_WEAVIATE_START_CMD}" env_specs bind_specs
   else
@@ -998,6 +1163,7 @@ mb_start_milvus_services() {
   mkdir -p "${etcd_dir}"
   local -a etcd_env=()
   local -a etcd_binds=("${etcd_dir}:/etcd")
+  mb_assert_service_runtime_bind_contract "milvus-etcd" etcd_binds
   if [[ -n "${MAXIONBENCH_MILVUS_ETCD_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus-etcd" "${etcd_image}" "${MAXIONBENCH_MILVUS_ETCD_START_CMD}" etcd_env etcd_binds
   else
@@ -1013,6 +1179,7 @@ mb_start_milvus_services() {
     "MINIO_ROOT_PASSWORD=minioadmin"
   )
   local -a minio_binds=("${minio_dir}:/minio_data")
+  mb_assert_service_runtime_bind_contract "milvus-minio" minio_binds
   if [[ -n "${MAXIONBENCH_MILVUS_MINIO_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus-minio" "${minio_image}" "${MAXIONBENCH_MILVUS_MINIO_START_CMD}" minio_env minio_binds
   else
@@ -1030,6 +1197,7 @@ mb_start_milvus_services() {
     "MILVUS_METRICS_PORT=${MAXIONBENCH_PORT_MILVUS_METRICS}"
   )
   local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
+  mb_assert_service_runtime_bind_contract "milvus" milvus_binds
   if [[ -n "${MAXIONBENCH_MILVUS_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus" "${milvus_image}" "${MAXIONBENCH_MILVUS_START_CMD}" milvus_env milvus_binds
   else
@@ -1039,15 +1207,22 @@ mb_start_milvus_services() {
   fi
 }
 
-mb_wait_named_adapter_health() {
+mb_wait_named_adapter_health_timeout() {
   local adapter_name="$1"
   local adapter_options_json="$2"
-  mb_log "waiting for adapter health adapter=${adapter_name} timeout=${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}s"
+  local timeout_s="$3"
+  mb_log "waiting for adapter health adapter=${adapter_name} timeout=${timeout_s}s"
   mb_python -m maxionbench.cli wait-adapter \
     --adapter "${adapter_name}" \
     --adapter-options-json "${adapter_options_json}" \
-    --timeout-s "${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}" \
+    --timeout-s "${timeout_s}" \
     --json
+}
+
+mb_wait_named_adapter_health() {
+  local adapter_name="$1"
+  local adapter_options_json="$2"
+  mb_wait_named_adapter_health_timeout "${adapter_name}" "${adapter_options_json}" "${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S}"
 }
 
 mb_start_engine_services() {
