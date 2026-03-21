@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 
@@ -176,6 +177,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "MAXIONBENCH_SLURM_RUN_MANIFEST" in text
     assert "MAXIONBENCH_CONFORMANCE_TIMEOUT_S" in text
     assert "MAXIONBENCH_SERVICE_START_GRACE_S" in text
+    assert "MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S" in text
     assert "MAXIONBENCH_SERVICE_START_POLL_S" in text
     assert "MAXIONBENCH_SERVICE_LOG_TAIL_LINES" in text
     assert "MAXIONBENCH_PGVECTOR_BIN_DIR" in text
@@ -235,9 +237,13 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_milvus_services()" in text
     assert "mb_start_apptainer_service_process()" in text
     assert "mb_start_apptainer_service_argv_process()" in text
+    assert "mb_assert_service_runtime_bind_contract()" in text
+    assert "mb_service_startup_adapter_options_json()" in text
+    assert "mb_verify_managed_service_startup()" in text
     assert "mb_validate_apptainer_service_probe()" in text
     assert "mb_validate_opensearch_service_image()" in text
     assert "mb_validate_named_service_image()" in text
+    assert "mb_wait_named_adapter_health_timeout()" in text
     assert "mb_wait_named_adapter_health()" in text
     assert "mb_capture_local_diagnostics()" in text
     assert "mb_finalize_job()" in text
@@ -246,6 +252,130 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "apptainer inspect" in text
     assert "command -v" in text
     assert "mb_log_file_tail" in text
+
+
+def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> None:
+    service_contracts_path = Path("maxionbench/orchestration/slurm/service_contracts.sh").resolve()
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{service_contracts_path}"; '
+                "for service in qdrant pgvector opensearch weaviate milvus milvus-etcd milvus-minio; do "
+                'kind="$(mb_service_contract_kind "${service}")"; '
+                'start_mode="$(mb_service_default_start_mode "${service}")"; '
+                'verify_mode="$(mb_service_startup_verify_mode "${service}")"; '
+                'adapter_name="$(mb_service_startup_adapter_name "${service}")"; '
+                'mb_service_runtime_writable_paths "${service}" writable_paths; '
+                'mb_service_runtime_seed_paths "${service}" seeded_paths; '
+                'printf "SERVICE|%s|%s|%s|%s|%s|%s|%s\\n" '
+                '"${service}" "${kind}" "${start_mode}" "${verify_mode}" "${adapter_name}" "${#writable_paths[@]}" "${#seeded_paths[@]}"; '
+                'if [[ "${kind}" == "probe" ]]; then '
+                '  mb_service_probe_args "${service}" probe_args; '
+                '  printf "PROBE|%s|%s\\n" "${service}" "${#probe_args[@]}"; '
+                "fi; "
+                "done"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    service_rows: dict[str, dict[str, str]] = {}
+    probe_rows: dict[str, int] = {}
+    for raw_line in completed.stdout.splitlines():
+        parts = raw_line.split("|")
+        if parts[0] == "SERVICE":
+            service_rows[parts[1]] = {
+                "kind": parts[2],
+                "start_mode": parts[3],
+                "verify_mode": parts[4],
+                "adapter_name": parts[5],
+                "writable_count": parts[6],
+                "seed_count": parts[7],
+            }
+        elif parts[0] == "PROBE":
+            probe_rows[parts[1]] = int(parts[2])
+
+    expected_verify_modes = {
+        "qdrant": "health",
+        "pgvector": "health",
+        "opensearch": "health",
+        "weaviate": "health",
+        "milvus": "health",
+        "milvus-etcd": "liveness",
+        "milvus-minio": "liveness",
+    }
+    for service_name, verify_mode in expected_verify_modes.items():
+        row = service_rows[service_name]
+        assert row["start_mode"] in {"shell", "argv"}
+        assert row["verify_mode"] == verify_mode
+        assert int(row["writable_count"]) >= 1
+        if verify_mode == "health":
+          assert row["adapter_name"] == service_name
+        else:
+          assert row["adapter_name"] == ""
+
+    assert service_rows["qdrant"]["kind"] == "qdrant-layout"
+    assert service_rows["pgvector"]["kind"] == "pgvector"
+    assert service_rows["opensearch"]["kind"] == "opensearch-layout"
+    assert int(service_rows["opensearch"]["seed_count"]) == 1
+    assert int(service_rows["qdrant"]["seed_count"]) == 0
+    assert int(service_rows["weaviate"]["seed_count"]) == 0
+    assert probe_rows == {
+        "weaviate": 2,
+        "milvus": 2,
+        "milvus-etcd": 2,
+        "milvus-minio": 2,
+    }
+
+
+def test_slurm_common_health_startup_verifier_uses_adapter_metadata(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+    adapter_log = tmp_path / "startup_adapter.jsonl"
+    service_log = tmp_path / "service.log"
+    service_log.write_text("service still booting\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { '
+                f'  printf "%s\\n%s\\n%s\\n" "$1" "$2" "$3" > "{adapter_log}"; '
+                '  return 0; '
+                '}; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'sleep 30 & '
+                'pid=$!; '
+                f'mb_verify_managed_service_startup "qdrant" "${{pid}}" "{service_log}"; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    adapter_name, adapter_options_json, timeout_s = adapter_log.read_text(encoding="utf-8").splitlines()
+    assert adapter_name == "qdrant"
+    assert timeout_s == "30"
+    adapter_options = json.loads(adapter_options_json)
+    assert adapter_options["host"] == "127.0.0.1"
+    assert isinstance(adapter_options["port"], int)
+    assert set(adapter_options.keys()) == {"host", "port"}
 
 
 def test_slurm_common_loads_apptainer_module_when_binary_missing(tmp_path: Path) -> None:
@@ -470,6 +600,7 @@ sleep 30
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
                 'mb_start_qdrant_service; '
@@ -561,6 +692,7 @@ sleep 30
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
                 'mb_start_pgvector_service; '
@@ -659,6 +791,7 @@ exit 1
                 'export MAXIONBENCH_PGVECTOR_START_CMD="custom-pgvector-start --flag"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
                 'mb_start_pgvector_service; '
@@ -680,7 +813,7 @@ exit 1
     assert "exec custom-pgvector-start --flag" in post_image_args
 
 
-def test_slurm_common_opensearch_uses_layout_validation_and_writable_logs(tmp_path: Path) -> None:
+def test_slurm_common_opensearch_uses_layout_validation_and_writable_config(tmp_path: Path) -> None:
     common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
     fake_bin_dir = tmp_path / "fake_bin"
     fake_bin_dir.mkdir(parents=True, exist_ok=True)
@@ -700,12 +833,14 @@ if [[ "${1:-}" == "inspect" ]]; then
 fi
 args=("$@")
 index=0
+bind_specs=()
 while [[ ${index} -lt ${#args[@]} ]]; do
   case "${args[${index}]}" in
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
     --bind)
+      bind_specs+=("${args[$((index + 1))]}")
       index=$((index + 2))
       ;;
     *)
@@ -724,7 +859,27 @@ fi
 if [[ "${post_args}" == *"opensearch --version"* ]]; then
   exit 1
 fi
+if [[ "${post_args}" == *"cp -R /usr/share/opensearch/config/. "* ]]; then
+  last_index=$((${#args[@]} - 1))
+  target="${args[${last_index}]}"
+  mkdir -p "${target}"
+  printf '%s\\n' "# seeded jvm options" > "${target}/jvm.options"
+  printf '%s\\n' "# seeded log4j config" > "${target}/log4j2.properties"
+  exit 0
+fi
 if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"cd /usr/share/opensearch && exec ./opensearch-docker-entrypoint.sh opensearch"* ]]; then
+  config_bind=""
+  for bind_spec in "${bind_specs[@]}"; do
+    if [[ "${bind_spec}" == *":/usr/share/opensearch/config" ]]; then
+      config_bind="${bind_spec%%:/usr/share/opensearch/config}"
+      break
+    fi
+  done
+  if [[ -z "${config_bind}" || ! -d "${config_bind}" ]]; then
+    echo "Likely root cause: java.nio.file.FileSystemException: /usr/share/opensearch/config/opensearch.keystore.tmp: Read-only file system" >&2
+    exit 1
+  fi
+  touch "${config_bind}/opensearch.keystore.tmp"
   sleep 30
   exit 0
 fi
@@ -747,6 +902,7 @@ exit 1
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
                 'mb_start_opensearch_service; '
@@ -763,6 +919,7 @@ exit 1
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
     post_image_args = post_image_log.read_text(encoding="utf-8")
     runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7"
+    config_dir = runtime_root / "opensearch" / "config"
     config_path = runtime_root / "opensearch" / "config" / "opensearch.yml"
     config_text = config_path.read_text(encoding="utf-8")
     assert f"inspect {fake_image}" in apptainer_calls
@@ -770,7 +927,7 @@ exit 1
     assert "opensearch --version" not in apptainer_calls
     assert f"--bind {runtime_root / 'opensearch' / 'data'}:/usr/share/opensearch/data" in apptainer_calls
     assert f"--bind {runtime_root / 'opensearch' / 'logs'}:/usr/share/opensearch/logs" in apptainer_calls
-    assert f"--bind {config_path}:/usr/share/opensearch/config/opensearch.yml" in apptainer_calls
+    assert f"--bind {config_dir}:/usr/share/opensearch/config" in apptainer_calls
     assert post_image_args.startswith("env\n")
     assert "DISABLE_SECURITY_PLUGIN=true" in post_image_args
     assert "OPENSEARCH_JAVA_OPTS=" in post_image_args
@@ -779,6 +936,272 @@ exit 1
     assert "-lc" not in post_image_args
     assert "cd /usr/share/opensearch && exec ./opensearch-docker-entrypoint.sh opensearch" in post_image_args
     assert "path.logs: /usr/share/opensearch/logs" in config_text
+    assert (config_dir / "jvm.options").exists()
+    assert (config_dir / "log4j2.properties").exists()
+    assert (config_dir / "opensearch.keystore.tmp").exists()
+
+
+def test_slurm_common_opensearch_binds_writable_config_dir_for_keystore_updates(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "opensearch.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+bind_specs=()
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      bind_specs+=("${args[$((index + 1))]}")
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"[ -x /usr/share/opensearch/bin/opensearch ]"* && "${post_args}" == *"[ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ]"* && "${post_args}" == *"[ -x /usr/share/opensearch/jdk/bin/java ]"* ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"cp -R /usr/share/opensearch/config/. "* ]]; then
+  last_index=$((${#args[@]} - 1))
+  target="${args[${last_index}]}"
+  mkdir -p "${target}"
+  exit 0
+fi
+if [[ "${post_args}" == *"cd /usr/share/opensearch && exec ./opensearch-docker-entrypoint.sh opensearch"* ]]; then
+  config_bind=""
+  for bind_spec in "${bind_specs[@]}"; do
+    if [[ "${bind_spec}" == *":/usr/share/opensearch/config" ]]; then
+      config_bind="${bind_spec%%:/usr/share/opensearch/config}"
+      break
+    fi
+  done
+  if [[ -z "${config_bind}" || ! -d "${config_bind}" ]]; then
+    echo "Likely root cause: java.nio.file.FileSystemException: /usr/share/opensearch/config/opensearch.keystore.tmp: Read-only file system" >&2
+    exit 1
+  fi
+  touch "${config_bind}/opensearch.keystore.tmp"
+  sleep 30
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_OPENSEARCH_IMAGE="{fake_image}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="8"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_opensearch_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (
+        slurm_tmpdir
+        / "maxionbench_engine_runtime"
+        / "4242_8"
+        / "opensearch"
+        / "config"
+        / "opensearch.keystore.tmp"
+    ).exists()
+
+
+def test_slurm_common_weaviate_startup_accepts_detached_parent_when_health_recovers(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "weaviate.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+    health_log = tmp_path / "weaviate_health.txt"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == "weaviate --help" ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"weaviate --host 0.0.0.0 --port"* ]]; then
+  echo "grpc server listening on detached child"
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_WEAVIATE_IMAGE="{fake_image}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="9"; '
+                'mb_wait_named_adapter_health_timeout() { '
+                f'  printf "%s|%s|%s\\n" "$1" "$2" "$3" > "{health_log}"; '
+                '  return 0; '
+                '}; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_weaviate_service'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "started engine service weaviate detached_after_startup=1" in completed.stdout
+    health_adapter, health_options_json, health_timeout = health_log.read_text(encoding="utf-8").strip().split("|", maxsplit=2)
+    assert health_adapter == "weaviate"
+    assert health_timeout == "30"
+    health_options = json.loads(health_options_json)
+    assert health_options["host"] == "127.0.0.1"
+    assert health_options["scheme"] == "http"
+    assert isinstance(health_options["port"], int)
+
+
+def test_slurm_common_weaviate_startup_fails_when_parent_exits_before_health(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "weaviate.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == "weaviate --help" ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"weaviate --host 0.0.0.0 --port"* ]]; then
+  echo "weaviate bootstrap failed after parent exit"
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_WEAVIATE_IMAGE="{fake_image}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="10"; '
+                'mb_wait_named_adapter_health_timeout() { return 1; }; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_weaviate_service'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode != 0
+    output = completed.stdout + completed.stderr
+    assert "weaviate bootstrap failed after parent exit" in output
+    assert "managed engine service weaviate exited before adapter health became reachable" in output
 
 
 def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Path) -> None:
@@ -876,6 +1299,7 @@ exit 1
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
                 'mb_start_milvus_services; '

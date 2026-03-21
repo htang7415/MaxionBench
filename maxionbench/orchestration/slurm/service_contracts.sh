@@ -55,6 +55,86 @@ mb_service_default_start_mode() {
   esac
 }
 
+mb_service_startup_verify_mode() {
+  case "$1" in
+    qdrant|pgvector|opensearch|weaviate|milvus)
+      printf '%s\n' "health"
+      ;;
+    milvus-etcd|milvus-minio)
+      printf '%s\n' "liveness"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+mb_service_startup_adapter_name() {
+  case "$1" in
+    qdrant|pgvector|opensearch|weaviate|milvus)
+      printf '%s\n' "$1"
+      ;;
+    milvus-etcd|milvus-minio)
+      printf '%s\n' ""
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+mb_service_runtime_writable_paths() {
+  local service_name="$1"
+  local array_name="$2"
+
+  case "${service_name}" in
+    qdrant)
+      mb_assign_shell_array "${array_name}" "/qdrant/storage"
+      ;;
+    pgvector)
+      mb_assign_shell_array "${array_name}" "/var/lib/postgresql/data" "/var/run/postgresql"
+      ;;
+    opensearch)
+      mb_assign_shell_array "${array_name}" \
+        "/usr/share/opensearch/data" \
+        "/usr/share/opensearch/logs" \
+        "/usr/share/opensearch/config"
+      ;;
+    weaviate)
+      mb_assign_shell_array "${array_name}" "/var/lib/weaviate"
+      ;;
+    milvus-etcd)
+      mb_assign_shell_array "${array_name}" "/etcd"
+      ;;
+    milvus-minio)
+      mb_assign_shell_array "${array_name}" "/minio_data"
+      ;;
+    milvus)
+      mb_assign_shell_array "${array_name}" "/var/lib/milvus"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+mb_service_runtime_seed_paths() {
+  local service_name="$1"
+  local array_name="$2"
+
+  case "${service_name}" in
+    opensearch)
+      mb_assign_shell_array "${array_name}" "/usr/share/opensearch/config"
+      ;;
+    qdrant|pgvector|weaviate|milvus|milvus-etcd|milvus-minio)
+      mb_assign_shell_array "${array_name}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 mb_service_probe_args() {
   local service_name="$1"
   local array_name="$2"
