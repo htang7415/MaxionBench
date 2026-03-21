@@ -61,7 +61,7 @@ mb_service_startup_verify_mode() {
       printf '%s\n' "health"
       ;;
     milvus-etcd|milvus-minio)
-      printf '%s\n' "liveness"
+      printf '%s\n' "http"
       ;;
     *)
       return 1
@@ -76,6 +76,20 @@ mb_service_startup_adapter_name() {
       ;;
     milvus-etcd|milvus-minio)
       printf '%s\n' ""
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+mb_service_startup_http_url() {
+  case "$1" in
+    milvus-etcd)
+      printf 'http://127.0.0.1:%s/readyz\n' "${MAXIONBENCH_PORT_MILVUS_ETCD}"
+      ;;
+    milvus-minio)
+      printf 'http://127.0.0.1:%s/minio/health/live\n' "${MAXIONBENCH_PORT_MILVUS_MINIO}"
       ;;
     *)
       return 1
@@ -126,7 +140,10 @@ mb_service_runtime_seed_paths() {
     opensearch)
       mb_assign_shell_array "${array_name}" "/usr/share/opensearch/config"
       ;;
-    qdrant|pgvector|weaviate|milvus|milvus-etcd|milvus-minio)
+    milvus)
+      mb_assign_shell_array "${array_name}" "/milvus/configs"
+      ;;
+    qdrant|pgvector|weaviate|milvus-etcd|milvus-minio)
       mb_assign_shell_array "${array_name}"
       ;;
     *)
