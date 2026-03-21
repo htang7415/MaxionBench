@@ -4,6 +4,7 @@ set -euo pipefail
 # Shared Slurm helpers for MaxionBench jobs.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SERVICE_CONTRACTS_SH="${ROOT_DIR}/maxionbench/orchestration/slurm/service_contracts.sh"
 export PYTHONUNBUFFERED=1
 export MAXIONBENCH_SCRATCH_SAFETY_FACTOR="${MAXIONBENCH_SCRATCH_SAFETY_FACTOR:-1.8}"
 export MAXIONBENCH_SKIP_PRE_RUN_GATE="${MAXIONBENCH_SKIP_PRE_RUN_GATE:-0}"
@@ -37,6 +38,13 @@ export MAXIONBENCH_MILVUS_ETCD_IMAGE="${MAXIONBENCH_MILVUS_ETCD_IMAGE:-}"
 export MAXIONBENCH_MILVUS_MINIO_IMAGE="${MAXIONBENCH_MILVUS_MINIO_IMAGE:-}"
 export MAXIONBENCH_MILVUS_IMAGE="${MAXIONBENCH_MILVUS_IMAGE:-}"
 export MAXIONBENCH_CLEANUP_LOCAL_SCRATCH="${MAXIONBENCH_CLEANUP_LOCAL_SCRATCH:-1}"
+
+if [[ ! -f "${SERVICE_CONTRACTS_SH}" ]]; then
+  echo "error: missing Apptainer service contract helper: ${SERVICE_CONTRACTS_SH}" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "${SERVICE_CONTRACTS_SH}"
 
 mb_log() {
   echo "[maxionbench][$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
@@ -570,7 +578,6 @@ mb_resolve_apptainer_image() {
 mb_require_apptainer_service_image() {
   local env_name="$1"
   local label="$2"
-  local expected_binary="${3:-}"
   local raw_path="${!env_name:-}"
   if [[ -z "${raw_path}" ]]; then
     mb_die "${env_name} must be set to a prebuilt Apptainer image for ${label}"
@@ -580,36 +587,55 @@ mb_require_apptainer_service_image() {
   if [[ ! -f "${resolved}" ]]; then
     mb_die "${label} Apptainer image not found: ${resolved}"
   fi
-  if [[ -n "${expected_binary}" ]]; then
-    mb_validate_apptainer_service_image "${resolved}" "${label}" "${expected_binary}"
-  fi
   echo "${resolved}"
 }
 
-mb_validate_apptainer_service_image() {
+mb_quote_command_args() {
+  local rendered=""
+  local arg=""
+  for arg in "$@"; do
+    if [[ -n "${rendered}" ]]; then
+      rendered="${rendered} "
+    fi
+    rendered="${rendered}$(printf '%q' "${arg}")"
+  done
+  printf '%s\n' "${rendered}"
+}
+
+mb_validate_apptainer_service_inspect() {
   local image_path="$1"
   local label="$2"
-  local expected_binary="$3"
   if ! mb_ensure_apptainer; then
     mb_die "Apptainer is required to validate ${label} image ${image_path}"
   fi
   if ! apptainer inspect "${image_path}" >/dev/null 2>&1; then
     mb_die "${label} Apptainer image failed inspect: ${image_path}"
   fi
-  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -lc "command -v ${expected_binary}" >/dev/null 2>&1; then
-    mb_die "${label} Apptainer image does not expose required binary `${expected_binary}`: ${image_path}"
+}
+
+mb_validate_apptainer_service_probe() {
+  local image_path="$1"
+  local label="$2"
+  local probe_array_name="$3"
+  local -a probe_args_ref=()
+  eval "probe_args_ref=(\"\${${probe_array_name}[@]-}\")"
+
+  if [[ "${#probe_args_ref[@]}" -eq 0 ]]; then
+    mb_die "missing Apptainer probe command for ${label}"
+  fi
+
+  mb_validate_apptainer_service_inspect "${image_path}" "${label}"
+  if ! apptainer exec --cleanenv "${image_path}" "${probe_args_ref[@]}" >/dev/null 2>&1; then
+    local rendered_probe=""
+    rendered_probe="$(mb_quote_command_args "${probe_args_ref[@]}")"
+    mb_die "${label} Apptainer image probe command unavailable or image contract mismatch (probe: ${rendered_probe}): ${image_path}"
   fi
 }
 
 mb_validate_qdrant_service_image() {
   local image_path="$1"
-  if ! mb_ensure_apptainer; then
-    mb_die "Apptainer is required to validate qdrant image ${image_path}"
-  fi
-  if ! apptainer inspect "${image_path}" >/dev/null 2>&1; then
-    mb_die "qdrant Apptainer image failed inspect: ${image_path}"
-  fi
-  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -lc \
+  mb_validate_apptainer_service_inspect "${image_path}" "qdrant"
+  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -c \
     '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]' >/dev/null 2>&1; then
     mb_die "qdrant Apptainer image does not expose expected /qdrant/entrypoint.sh and /qdrant/qdrant: ${image_path}"
   fi
@@ -623,11 +649,39 @@ mb_validate_pgvector_service_image() {
   local image_path="$1"
   local pgvector_path
   pgvector_path="$(mb_pgvector_path_env)"
-  mb_validate_apptainer_service_image "${image_path}" "pgvector" "docker-entrypoint.sh"
-  if ! apptainer exec --cleanenv "${image_path}" env "PATH=${pgvector_path}" /bin/sh -lc \
-    'command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1' >/dev/null 2>&1; then
-    mb_die "pgvector Apptainer image does not expose required PostgreSQL binaries `postgres` and `initdb` with PATH ${pgvector_path}: ${image_path}"
+  mb_validate_apptainer_service_inspect "${image_path}" "pgvector"
+  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -c \
+    'command -v docker-entrypoint.sh >/dev/null 2>&1' >/dev/null 2>&1; then
+    mb_die "pgvector Apptainer image does not expose required entrypoint `docker-entrypoint.sh`: ${image_path}"
   fi
+  if ! apptainer exec --cleanenv "${image_path}" env "PATH=${pgvector_path}" /bin/sh -c \
+    'command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1' >/dev/null 2>&1; then
+    mb_die "pgvector Apptainer image does not expose required PostgreSQL binaries `postgres` and `initdb` under preserved PATH ${pgvector_path}: ${image_path}"
+  fi
+}
+
+mb_validate_named_service_image() {
+  local image_path="$1"
+  local service_name="$2"
+  local contract_kind=""
+  contract_kind="$(mb_service_contract_kind "${service_name}")" || mb_die "unsupported Apptainer service contract target: ${service_name}"
+
+  case "${contract_kind}" in
+    qdrant-layout)
+      mb_validate_qdrant_service_image "${image_path}"
+      ;;
+    pgvector)
+      mb_validate_pgvector_service_image "${image_path}"
+      ;;
+    probe)
+      local -a probe_args=()
+      mb_service_probe_args "${service_name}" probe_args || mb_die "missing Apptainer probe command for ${service_name}"
+      mb_validate_apptainer_service_probe "${image_path}" "${service_name}" probe_args
+      ;;
+    *)
+      mb_die "unsupported Apptainer service contract kind ${contract_kind} for ${service_name}"
+      ;;
+  esac
 }
 
 mb_log_file_tail() {
@@ -685,21 +739,55 @@ mb_register_engine_pid() {
   printf '%s\t%s\n' "${name}" "${pid}" >> "${pid_file}"
 }
 
-mb_start_apptainer_service_process() {
-  local name="$1"
+mb_build_apptainer_service_prefix() {
+  local output_array_name="$1"
   local image_path="$2"
-  local service_cmd="$3"
-  local env_array_name="$4"
-  local bind_array_name="$5"
-  local workdir="${6:-}"
+  local env_array_name="$3"
+  local bind_array_name="$4"
   local -a env_specs_ref=()
   local -a bind_specs_ref=()
-  eval "env_specs_ref=(\"\${${env_array_name}[@]}\")"
-  eval "bind_specs_ref=(\"\${${bind_array_name}[@]}\")"
+  local -a container_cmd_ref=()
+  eval "env_specs_ref=(\"\${${env_array_name}[@]-}\")"
+  eval "bind_specs_ref=(\"\${${bind_array_name}[@]-}\")"
 
   if ! mb_ensure_apptainer; then
     mb_die "Apptainer is required to start managed engine services"
   fi
+
+  container_cmd_ref=(apptainer exec --cleanenv)
+  if mb_apptainer_use_nv; then
+    container_cmd_ref+=(--nv)
+  fi
+
+  local bind_spec=""
+  while IFS= read -r bind_spec; do
+    if [[ -n "${bind_spec}" ]]; then
+      container_cmd_ref+=(--bind "${bind_spec}")
+    fi
+  done < <(mb_container_bind_specs)
+
+  for bind_spec in "${bind_specs_ref[@]}"; do
+    if [[ -n "${bind_spec}" ]]; then
+      container_cmd_ref+=(--bind "${bind_spec}")
+    fi
+  done
+
+  container_cmd_ref+=("${image_path}" env)
+  local env_spec=""
+  for env_spec in "${env_specs_ref[@]}"; do
+    if [[ -n "${env_spec}" ]]; then
+      container_cmd_ref+=("${env_spec}")
+    fi
+  done
+
+  mb_assign_shell_array "${output_array_name}" "${container_cmd_ref[@]}"
+}
+
+mb_launch_apptainer_service_process() {
+  local name="$1"
+  local cmd_array_name="$2"
+  local -a container_cmd_ref=()
+  eval "container_cmd_ref=(\"\${${cmd_array_name}[@]-}\")"
 
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
@@ -707,38 +795,7 @@ mb_start_apptainer_service_process() {
   mkdir -p "${log_dir}"
   local log_file="${log_dir}/${name}.log"
 
-  local -a container_cmd=(apptainer exec --cleanenv)
-  if mb_apptainer_use_nv; then
-    container_cmd+=(--nv)
-  fi
-
-  local bind_spec=""
-  while IFS= read -r bind_spec; do
-    if [[ -n "${bind_spec}" ]]; then
-      container_cmd+=(--bind "${bind_spec}")
-    fi
-  done < <(mb_container_bind_specs)
-
-  for bind_spec in "${bind_specs_ref[@]}"; do
-    if [[ -n "${bind_spec}" ]]; then
-      container_cmd+=(--bind "${bind_spec}")
-    fi
-  done
-
-  container_cmd+=("${image_path}" env)
-  local env_spec=""
-  for env_spec in "${env_specs_ref[@]}"; do
-    if [[ -n "${env_spec}" ]]; then
-      container_cmd+=("${env_spec}")
-    fi
-  done
-  local shell_cmd="exec ${service_cmd}"
-  if [[ -n "${workdir}" ]]; then
-    shell_cmd="cd ${workdir} && exec ${service_cmd}"
-  fi
-  container_cmd+=(/bin/sh -lc "${shell_cmd}")
-
-  "${container_cmd[@]}" >"${log_file}" 2>&1 &
+  "${container_cmd_ref[@]}" >"${log_file}" 2>&1 &
   local pid=$!
   local grace_s="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
   local poll_s="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
@@ -759,10 +816,49 @@ mb_start_apptainer_service_process() {
   mb_log "started engine service ${name} pid=${pid} log=${log_file}"
 }
 
+mb_start_apptainer_service_process() {
+  local name="$1"
+  local image_path="$2"
+  local service_cmd="$3"
+  local env_array_name="$4"
+  local bind_array_name="$5"
+  local workdir="${6:-}"
+  local -a container_cmd=()
+
+  mb_build_apptainer_service_prefix container_cmd "${image_path}" "${env_array_name}" "${bind_array_name}"
+  # Login shells can rewrite PATH and other injected env vars inside OCI-derived
+  # images, so managed services must run under a non-login shell.
+  local shell_cmd="exec ${service_cmd}"
+  if [[ -n "${workdir}" ]]; then
+    shell_cmd="cd ${workdir} && exec ${service_cmd}"
+  fi
+  container_cmd+=(/bin/sh -c "${shell_cmd}")
+  mb_launch_apptainer_service_process "${name}" container_cmd
+}
+
+mb_start_apptainer_service_argv_process() {
+  local name="$1"
+  local image_path="$2"
+  local cmd_array_name="$3"
+  local env_array_name="$4"
+  local bind_array_name="$5"
+  local -a cmd_args_ref=()
+  local -a container_cmd=()
+  eval "cmd_args_ref=(\"\${${cmd_array_name}[@]-}\")"
+
+  if [[ "${#cmd_args_ref[@]}" -eq 0 ]]; then
+    mb_die "missing argv command for managed engine service ${name}"
+  fi
+
+  mb_build_apptainer_service_prefix container_cmd "${image_path}" "${env_array_name}" "${bind_array_name}"
+  container_cmd+=("${cmd_args_ref[@]}")
+  mb_launch_apptainer_service_process "${name}" container_cmd
+}
+
 mb_start_qdrant_service() {
   local image_path
   image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_QDRANT_IMAGE" "qdrant")"
-  mb_validate_qdrant_service_image "${image_path}"
+  mb_validate_named_service_image "${image_path}" "qdrant"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local storage_dir="${runtime_root}/qdrant/storage"
@@ -781,7 +877,7 @@ mb_start_qdrant_service() {
 mb_start_pgvector_service() {
   local image_path
   image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_PGVECTOR_IMAGE" "pgvector")"
-  mb_validate_pgvector_service_image "${image_path}"
+  mb_validate_named_service_image "${image_path}" "pgvector"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/pgvector/data"
@@ -800,13 +896,19 @@ mb_start_pgvector_service() {
     "${data_dir}:/var/lib/postgresql/data"
     "${run_dir}:/var/run/postgresql"
   )
-  local cmd="${MAXIONBENCH_PGVECTOR_START_CMD:-docker-entrypoint.sh postgres -p ${MAXIONBENCH_PORT_PGVECTOR}}"
-  mb_start_apptainer_service_process "pgvector" "${image_path}" "${cmd}" env_specs bind_specs
+  if [[ -n "${MAXIONBENCH_PGVECTOR_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "pgvector" "${image_path}" "${MAXIONBENCH_PGVECTOR_START_CMD}" env_specs bind_specs
+  else
+    local -a cmd_args=()
+    mb_service_default_start_args "pgvector" cmd_args
+    mb_start_apptainer_service_argv_process "pgvector" "${image_path}" cmd_args env_specs bind_specs
+  fi
 }
 
 mb_start_opensearch_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_OPENSEARCH_IMAGE" "opensearch" "opensearch")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_OPENSEARCH_IMAGE" "opensearch")"
+  mb_validate_named_service_image "${image_path}" "opensearch"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/opensearch/data"
@@ -830,13 +932,19 @@ EOF
     "${data_dir}:/usr/share/opensearch/data"
     "${config_path}:/usr/share/opensearch/config/opensearch.yml"
   )
-  local cmd="${MAXIONBENCH_OPENSEARCH_START_CMD:-opensearch}"
-  mb_start_apptainer_service_process "opensearch" "${image_path}" "${cmd}" env_specs bind_specs
+  if [[ -n "${MAXIONBENCH_OPENSEARCH_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "opensearch" "${image_path}" "${MAXIONBENCH_OPENSEARCH_START_CMD}" env_specs bind_specs
+  else
+    local -a cmd_args=()
+    mb_service_default_start_args "opensearch" cmd_args
+    mb_start_apptainer_service_argv_process "opensearch" "${image_path}" cmd_args env_specs bind_specs
+  fi
 }
 
 mb_start_weaviate_service() {
   local image_path
-  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_WEAVIATE_IMAGE" "weaviate" "weaviate")"
+  image_path="$(mb_require_apptainer_service_image "MAXIONBENCH_WEAVIATE_IMAGE" "weaviate")"
+  mb_validate_named_service_image "${image_path}" "weaviate"
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/weaviate/data"
@@ -850,17 +958,25 @@ mb_start_weaviate_service() {
     "CLUSTER_HOSTNAME=node1"
   )
   local -a bind_specs=("${data_dir}:/var/lib/weaviate")
-  local cmd="${MAXIONBENCH_WEAVIATE_START_CMD:-weaviate --host 0.0.0.0 --port ${MAXIONBENCH_PORT_WEAVIATE}}"
-  mb_start_apptainer_service_process "weaviate" "${image_path}" "${cmd}" env_specs bind_specs
+  if [[ -n "${MAXIONBENCH_WEAVIATE_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "weaviate" "${image_path}" "${MAXIONBENCH_WEAVIATE_START_CMD}" env_specs bind_specs
+  else
+    local -a cmd_args=()
+    mb_service_default_start_args "weaviate" cmd_args
+    mb_start_apptainer_service_argv_process "weaviate" "${image_path}" cmd_args env_specs bind_specs
+  fi
 }
 
 mb_start_milvus_services() {
   local etcd_image
   local minio_image
   local milvus_image
-  etcd_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_ETCD_IMAGE" "milvus-etcd" "etcd")"
-  minio_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_MINIO_IMAGE" "milvus-minio" "minio")"
-  milvus_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_IMAGE" "milvus" "milvus")"
+  etcd_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_ETCD_IMAGE" "milvus-etcd")"
+  minio_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_MINIO_IMAGE" "milvus-minio")"
+  milvus_image="$(mb_require_apptainer_service_image "MAXIONBENCH_MILVUS_IMAGE" "milvus")"
+  mb_validate_named_service_image "${etcd_image}" "milvus-etcd"
+  mb_validate_named_service_image "${minio_image}" "milvus-minio"
+  mb_validate_named_service_image "${milvus_image}" "milvus"
 
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
@@ -869,8 +985,13 @@ mb_start_milvus_services() {
   mkdir -p "${etcd_dir}"
   local -a etcd_env=()
   local -a etcd_binds=("${etcd_dir}:/etcd")
-  local etcd_cmd="${MAXIONBENCH_MILVUS_ETCD_START_CMD:-etcd -advertise-client-urls=http://127.0.0.1:${MAXIONBENCH_PORT_MILVUS_ETCD} -listen-client-urls=http://0.0.0.0:${MAXIONBENCH_PORT_MILVUS_ETCD} --data-dir=/etcd}"
-  mb_start_apptainer_service_process "milvus-etcd" "${etcd_image}" "${etcd_cmd}" etcd_env etcd_binds
+  if [[ -n "${MAXIONBENCH_MILVUS_ETCD_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "milvus-etcd" "${etcd_image}" "${MAXIONBENCH_MILVUS_ETCD_START_CMD}" etcd_env etcd_binds
+  else
+    local -a etcd_cmd_args=()
+    mb_service_default_start_args "milvus-etcd" etcd_cmd_args
+    mb_start_apptainer_service_argv_process "milvus-etcd" "${etcd_image}" etcd_cmd_args etcd_env etcd_binds
+  fi
 
   local minio_dir="${runtime_root}/milvus/minio"
   mkdir -p "${minio_dir}"
@@ -879,8 +1000,13 @@ mb_start_milvus_services() {
     "MINIO_ROOT_PASSWORD=minioadmin"
   )
   local -a minio_binds=("${minio_dir}:/minio_data")
-  local minio_cmd="${MAXIONBENCH_MILVUS_MINIO_START_CMD:-minio server /minio_data --address :${MAXIONBENCH_PORT_MILVUS_MINIO} --console-address :${MAXIONBENCH_PORT_MILVUS_MINIO_CONSOLE}}"
-  mb_start_apptainer_service_process "milvus-minio" "${minio_image}" "${minio_cmd}" minio_env minio_binds
+  if [[ -n "${MAXIONBENCH_MILVUS_MINIO_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "milvus-minio" "${minio_image}" "${MAXIONBENCH_MILVUS_MINIO_START_CMD}" minio_env minio_binds
+  else
+    local -a minio_cmd_args=()
+    mb_service_default_start_args "milvus-minio" minio_cmd_args
+    mb_start_apptainer_service_argv_process "milvus-minio" "${minio_image}" minio_cmd_args minio_env minio_binds
+  fi
 
   local milvus_dir="${runtime_root}/milvus/data"
   mkdir -p "${milvus_dir}"
@@ -891,8 +1017,13 @@ mb_start_milvus_services() {
     "MILVUS_METRICS_PORT=${MAXIONBENCH_PORT_MILVUS_METRICS}"
   )
   local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
-  local milvus_cmd="${MAXIONBENCH_MILVUS_START_CMD:-milvus run standalone}"
-  mb_start_apptainer_service_process "milvus" "${milvus_image}" "${milvus_cmd}" milvus_env milvus_binds
+  if [[ -n "${MAXIONBENCH_MILVUS_START_CMD:-}" ]]; then
+    mb_start_apptainer_service_process "milvus" "${milvus_image}" "${MAXIONBENCH_MILVUS_START_CMD}" milvus_env milvus_binds
+  else
+    local -a milvus_cmd_args=()
+    mb_service_default_start_args "milvus" milvus_cmd_args
+    mb_start_apptainer_service_argv_process "milvus" "${milvus_image}" milvus_cmd_args milvus_env milvus_binds
+  fi
 }
 
 mb_wait_named_adapter_health() {

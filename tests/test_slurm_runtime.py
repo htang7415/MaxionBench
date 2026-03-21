@@ -234,7 +234,9 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_weaviate_service()" in text
     assert "mb_start_milvus_services()" in text
     assert "mb_start_apptainer_service_process()" in text
-    assert "mb_validate_apptainer_service_image()" in text
+    assert "mb_start_apptainer_service_argv_process()" in text
+    assert "mb_validate_apptainer_service_probe()" in text
+    assert "mb_validate_named_service_image()" in text
     assert "mb_wait_named_adapter_health()" in text
     assert "mb_capture_local_diagnostics()" in text
     assert "mb_finalize_job()" in text
@@ -445,7 +447,7 @@ if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
-if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-lc" && "${args[$((index + 2))]:-}" == "[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" ]]; then
+if [[ "${args[${index}]:-}" == "/bin/sh" && "${args[$((index + 1))]:-}" == "-c" && "${args[$((index + 2))]:-}" == "[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" ]]; then
   exit 0
 fi
 sleep 30
@@ -487,9 +489,12 @@ sleep 30
     assert "QDRANT__SERVICE__GRPC_PORT=" in post_image_args
     assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in post_image_args
     assert "/bin/sh" in post_image_args
+    assert "\n-c\n" in post_image_args
+    assert "-lc" not in post_image_args
     assert "cd /qdrant && exec ./entrypoint.sh" in post_image_args
     apptainer_calls = full_log.read_text(encoding="utf-8")
     assert f"inspect {fake_image}" in apptainer_calls
+    assert "/bin/sh -c [ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" in apptainer_calls
 
 
 def test_slurm_common_pgvector_service_uses_writable_runtime_dirs_and_pg_bin_path(tmp_path: Path) -> None:
@@ -499,6 +504,7 @@ def test_slurm_common_pgvector_service_uses_writable_runtime_dirs_and_pg_bin_pat
     fake_image = tmp_path / "pgvector.sif"
     fake_image.write_text("image\n", encoding="utf-8")
     apptainer_log = tmp_path / "apptainer_pgvector.log"
+    post_image_log = tmp_path / "apptainer_pgvector_post_image.log"
     slurm_tmpdir = tmp_path / "slurm_tmp"
 
     fake_apptainer = fake_bin_dir / "apptainer"
@@ -527,11 +533,12 @@ done
 if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
 post_args="${args[*]:${index}}"
-if [[ "${post_args}" == *"command -v docker-entrypoint.sh"* ]]; then
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v docker-entrypoint.sh"* ]]; then
   exit 0
 fi
-if [[ "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
   exit 0
 fi
 sleep 30
@@ -549,6 +556,7 @@ sleep 30
                 f'export PATH="{fake_bin_dir}:$PATH"; '
                 f'export MAXIONBENCH_PGVECTOR_IMAGE="{fake_image}"; '
                 f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
@@ -566,11 +574,228 @@ sleep 30
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    post_image_args = post_image_log.read_text(encoding="utf-8")
     runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7"
     assert f"--bind {runtime_root / 'pgvector' / 'data'}:/var/lib/postgresql/data" in apptainer_calls
     assert f"--bind {runtime_root / 'pgvector' / 'run'}:/var/run/postgresql" in apptainer_calls
     assert "PATH=/usr/lib/postgresql/16/bin:" in apptainer_calls
-    assert "docker-entrypoint.sh postgres -p" in apptainer_calls
+    assert "/bin/sh -c command -v docker-entrypoint.sh" in apptainer_calls
+    assert "/bin/sh -c command -v postgres" in apptainer_calls
+    assert "/bin/sh -lc" not in apptainer_calls
+    assert post_image_args.startswith("env\n")
+    assert "PATH=/usr/lib/postgresql/16/bin:" in post_image_args
+    assert "docker-entrypoint.sh" in post_image_args
+    assert "postgres" in post_image_args
+    assert "\n-p\n" in post_image_args
+    assert "/bin/sh" not in post_image_args
+
+
+def test_slurm_common_pgvector_start_cmd_override_uses_shell_launcher(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "pgvector.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    apptainer_log = tmp_path / "apptainer_pgvector_override.log"
+    post_image_log = tmp_path / "apptainer_pgvector_override_post_image.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v docker-entrypoint.sh"* ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"exec custom-pgvector-start --flag"* ]]; then
+  sleep 30
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_PGVECTOR_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export MAXIONBENCH_PGVECTOR_START_CMD="custom-pgvector-start --flag"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_pgvector_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    post_image_args = post_image_log.read_text(encoding="utf-8")
+    assert post_image_args.startswith("env\n")
+    assert "PATH=/usr/lib/postgresql/16/bin:" in post_image_args
+    assert "/bin/sh" in post_image_args
+    assert "\n-c\n" in post_image_args
+    assert "exec custom-pgvector-start --flag" in post_image_args
+
+
+def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_milvus.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    etcd_image = tmp_path / "milvus-etcd.sif"
+    minio_image = tmp_path / "milvus-minio.sif"
+    milvus_image = tmp_path / "milvus.sif"
+    for image_path in (etcd_image, minio_image, milvus_image):
+        image_path.write_text("image\n", encoding="utf-8")
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  image="${args[${index}]}"
+  index=$((index + 1))
+else
+  image=""
+fi
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == *"/bin/sh"* ]]; then
+  exit 1
+fi
+case "${image##*/}" in
+  milvus-etcd.sif)
+    if [[ "${post_args}" == "etcd --version" ]]; then
+      exit 0
+    fi
+    if [[ "${post_args}" == *"env etcd -advertise-client-urls=http://127.0.0.1:"* && "${post_args}" == *"--data-dir=/etcd"* ]]; then
+      sleep 30
+      exit 0
+    fi
+    ;;
+  milvus-minio.sif)
+    if [[ "${post_args}" == "minio --version" ]]; then
+      exit 0
+    fi
+    if [[ "${post_args}" == *"env MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin minio server /minio_data --address :"* && "${post_args}" == *"--console-address :"* ]]; then
+      sleep 30
+      exit 0
+    fi
+    ;;
+  milvus.sif)
+    if [[ "${post_args}" == "milvus --help" ]]; then
+      exit 0
+    fi
+    if [[ "${post_args}" == *"env ETCD_ENDPOINTS=127.0.0.1:"* && "${post_args}" == *"MINIO_ADDRESS=127.0.0.1:"* && "${post_args}" == *"milvus run standalone"* ]]; then
+      sleep 30
+      exit 0
+    fi
+    ;;
+esac
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_MILVUS_ETCD_IMAGE="{etcd_image}"; '
+                f'export MAXIONBENCH_MILVUS_MINIO_IMAGE="{minio_image}"; '
+                f'export MAXIONBENCH_MILVUS_IMAGE="{milvus_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_milvus_services; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7" / "milvus"
+    assert "/bin/sh" not in apptainer_calls
+    assert "milvus-etcd.sif etcd --version" in apptainer_calls
+    assert "milvus-minio.sif minio --version" in apptainer_calls
+    assert "milvus.sif milvus --help" in apptainer_calls
+    assert f"--bind {runtime_root / 'etcd'}:/etcd" in apptainer_calls
+    assert f"--bind {runtime_root / 'minio'}:/minio_data" in apptainer_calls
+    assert f"--bind {runtime_root / 'data'}:/var/lib/milvus" in apptainer_calls
 
 
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:
