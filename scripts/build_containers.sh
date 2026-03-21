@@ -183,6 +183,27 @@ service_probe_is_valid() {
     apptainer exec --cleanenv "${target}" "${probe_args[@]}" >/dev/null 2>&1
 }
 
+service_layout_is_valid() {
+  local target="$1"
+  local service_name="$2"
+
+  case "${service_name}" in
+    qdrant)
+      apptainer inspect "${target}" >/dev/null 2>&1 && \
+        apptainer exec --cleanenv "${target}" /bin/sh -c \
+          '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]'
+      ;;
+    opensearch)
+      apptainer inspect "${target}" >/dev/null 2>&1 && \
+        apptainer exec --cleanenv "${target}" /bin/sh -c \
+          '[ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 main_image_is_valid() {
   local target="$1"
   if [[ ! -f "${target}" ]]; then
@@ -217,14 +238,17 @@ PY
 service_image_is_valid() {
   local target="$1"
   local service_name="$2"
+  local contract_kind=""
   if [[ ! -f "${target}" ]]; then
     return 1
   fi
-  case "${service_name}" in
-    qdrant)
-      apptainer inspect "${target}" >/dev/null 2>&1 && \
-        apptainer exec --cleanenv "${target}" /bin/sh -c \
-          '[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]'
+  contract_kind="$(mb_service_contract_kind "${service_name}")" || {
+    echo "error: unsupported service image validation target: ${service_name}" >&2
+    exit 2
+  }
+  case "${contract_kind}" in
+    qdrant-layout|opensearch-layout)
+      service_layout_is_valid "${target}" "${service_name}"
       ;;
     pgvector)
       local pgvector_path=""
@@ -233,11 +257,11 @@ service_image_is_valid() {
         apptainer exec --cleanenv "${target}" env "PATH=${pgvector_path}" /bin/sh -c \
         'command -v docker-entrypoint.sh >/dev/null 2>&1 && command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1'
       ;;
-    opensearch|weaviate|milvus|milvus-etcd|milvus-minio)
+    probe)
       service_probe_is_valid "${target}" "${service_name}"
       ;;
     *)
-      echo "error: unsupported service image validation target: ${service_name}" >&2
+      echo "error: unsupported service image validation contract ${contract_kind} for ${service_name}" >&2
       exit 2
       ;;
   esac
@@ -309,7 +333,7 @@ pull_service_image() {
     return "${status}"
   fi
   if ! service_image_is_valid "${target}" "${service_name}"; then
-    echo "error: pulled ${target} failed ${service_name} probe command / runtime contract validation" >&2
+    echo "error: pulled ${target} failed ${service_name} runtime contract validation" >&2
     exit 2
   fi
   printf '%s\n' "+ validated ${target} contains required runtime contract for ${service_name}"

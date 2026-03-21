@@ -29,7 +29,10 @@ mb_service_contract_kind() {
     pgvector)
       printf '%s\n' "pgvector"
       ;;
-    opensearch|weaviate|milvus|milvus-etcd|milvus-minio)
+    opensearch)
+      printf '%s\n' "opensearch-layout"
+      ;;
+    weaviate|milvus|milvus-etcd|milvus-minio)
       printf '%s\n' "probe"
       ;;
     *)
@@ -40,10 +43,10 @@ mb_service_contract_kind() {
 
 mb_service_default_start_mode() {
   case "$1" in
-    qdrant)
+    qdrant|opensearch)
       printf '%s\n' "shell"
       ;;
-    pgvector|opensearch|weaviate|milvus|milvus-etcd|milvus-minio)
+    pgvector|weaviate|milvus|milvus-etcd|milvus-minio)
       printf '%s\n' "argv"
       ;;
     *)
@@ -57,9 +60,6 @@ mb_service_probe_args() {
   local array_name="$2"
 
   case "${service_name}" in
-    opensearch)
-      mb_assign_shell_array "${array_name}" "opensearch" "--version"
-      ;;
     weaviate)
       mb_assign_shell_array "${array_name}" "weaviate" "--help"
       ;;
@@ -89,9 +89,6 @@ mb_service_default_start_args() {
         "postgres" \
         "-p" \
         "${MAXIONBENCH_PORT_PGVECTOR}"
-      ;;
-    opensearch)
-      mb_assign_shell_array "${array_name}" "opensearch"
       ;;
     weaviate)
       mb_assign_shell_array "${array_name}" \
