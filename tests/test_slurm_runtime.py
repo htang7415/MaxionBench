@@ -236,6 +236,7 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_apptainer_service_process()" in text
     assert "mb_start_apptainer_service_argv_process()" in text
     assert "mb_validate_apptainer_service_probe()" in text
+    assert "mb_validate_opensearch_service_image()" in text
     assert "mb_validate_named_service_image()" in text
     assert "mb_wait_named_adapter_health()" in text
     assert "mb_capture_local_diagnostics()" in text
@@ -677,6 +678,107 @@ exit 1
     assert "/bin/sh" in post_image_args
     assert "\n-c\n" in post_image_args
     assert "exec custom-pgvector-start --flag" in post_image_args
+
+
+def test_slurm_common_opensearch_uses_layout_validation_and_writable_logs(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "opensearch.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    apptainer_log = tmp_path / "apptainer_opensearch.log"
+    post_image_log = tmp_path / "apptainer_opensearch_post_image.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"[ -x /usr/share/opensearch/bin/opensearch ]"* && "${post_args}" == *"[ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ]"* && "${post_args}" == *"[ -x /usr/share/opensearch/jdk/bin/java ]"* ]]; then
+  exit 0
+fi
+if [[ "${post_args}" == *"opensearch --version"* ]]; then
+  exit 1
+fi
+if [[ "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"cd /usr/share/opensearch && exec ./opensearch-docker-entrypoint.sh opensearch"* ]]; then
+  sleep 30
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_OPENSEARCH_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_opensearch_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    post_image_args = post_image_log.read_text(encoding="utf-8")
+    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7"
+    config_path = runtime_root / "opensearch" / "config" / "opensearch.yml"
+    config_text = config_path.read_text(encoding="utf-8")
+    assert f"inspect {fake_image}" in apptainer_calls
+    assert "/bin/sh -c [ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]" in apptainer_calls
+    assert "opensearch --version" not in apptainer_calls
+    assert f"--bind {runtime_root / 'opensearch' / 'data'}:/usr/share/opensearch/data" in apptainer_calls
+    assert f"--bind {runtime_root / 'opensearch' / 'logs'}:/usr/share/opensearch/logs" in apptainer_calls
+    assert f"--bind {config_path}:/usr/share/opensearch/config/opensearch.yml" in apptainer_calls
+    assert post_image_args.startswith("env\n")
+    assert "DISABLE_SECURITY_PLUGIN=true" in post_image_args
+    assert "OPENSEARCH_JAVA_OPTS=" in post_image_args
+    assert "/bin/sh" in post_image_args
+    assert "\n-c\n" in post_image_args
+    assert "-lc" not in post_image_args
+    assert "cd /usr/share/opensearch && exec ./opensearch-docker-entrypoint.sh opensearch" in post_image_args
+    assert "path.logs: /usr/share/opensearch/logs" in config_text
 
 
 def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Path) -> None:

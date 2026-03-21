@@ -660,6 +660,15 @@ mb_validate_pgvector_service_image() {
   fi
 }
 
+mb_validate_opensearch_service_image() {
+  local image_path="$1"
+  mb_validate_apptainer_service_inspect "${image_path}" "opensearch"
+  if ! apptainer exec --cleanenv "${image_path}" /bin/sh -c \
+    '[ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]' >/dev/null 2>&1; then
+    mb_die "opensearch Apptainer image does not expose required /usr/share/opensearch/bin/opensearch, /usr/share/opensearch/opensearch-docker-entrypoint.sh, and /usr/share/opensearch/jdk/bin/java: ${image_path}"
+  fi
+}
+
 mb_validate_named_service_image() {
   local image_path="$1"
   local service_name="$2"
@@ -672,6 +681,9 @@ mb_validate_named_service_image() {
       ;;
     pgvector)
       mb_validate_pgvector_service_image "${image_path}"
+      ;;
+    opensearch-layout)
+      mb_validate_opensearch_service_image "${image_path}"
       ;;
     probe)
       local -a probe_args=()
@@ -912,9 +924,10 @@ mb_start_opensearch_service() {
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local data_dir="${runtime_root}/opensearch/data"
+  local logs_dir="${runtime_root}/opensearch/logs"
   local config_dir="${runtime_root}/opensearch/config"
   local config_path="${config_dir}/opensearch.yml"
-  mkdir -p "${data_dir}" "${config_dir}"
+  mkdir -p "${data_dir}" "${logs_dir}" "${config_dir}"
   cat > "${config_path}" <<EOF
 cluster.name: maxionbench-slurm
 network.host: 0.0.0.0
@@ -923,6 +936,7 @@ transport.port: ${MAXIONBENCH_PORT_OPENSEARCH_TRANSPORT}
 discovery.type: single-node
 plugins.security.disabled: true
 path.data: /usr/share/opensearch/data
+path.logs: /usr/share/opensearch/logs
 EOF
   local -a env_specs=(
     "DISABLE_SECURITY_PLUGIN=true"
@@ -930,14 +944,13 @@ EOF
   )
   local -a bind_specs=(
     "${data_dir}:/usr/share/opensearch/data"
+    "${logs_dir}:/usr/share/opensearch/logs"
     "${config_path}:/usr/share/opensearch/config/opensearch.yml"
   )
   if [[ -n "${MAXIONBENCH_OPENSEARCH_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "opensearch" "${image_path}" "${MAXIONBENCH_OPENSEARCH_START_CMD}" env_specs bind_specs
   else
-    local -a cmd_args=()
-    mb_service_default_start_args "opensearch" cmd_args
-    mb_start_apptainer_service_argv_process "opensearch" "${image_path}" cmd_args env_specs bind_specs
+    mb_start_apptainer_service_process "opensearch" "${image_path}" "./opensearch-docker-entrypoint.sh opensearch" env_specs bind_specs "/usr/share/opensearch"
   fi
 }
 

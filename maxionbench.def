@@ -15,6 +15,7 @@ From: python:3.11-slim
     run_workstation.sh /opt/maxionbench/
 
 %post
+    set -eu
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \

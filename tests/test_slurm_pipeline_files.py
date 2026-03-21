@@ -83,6 +83,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "Bootstrap: docker" in definition_text
     assert "From: python:3.11-slim" in definition_text
     assert "%post" in definition_text
+    assert "set -eu" in definition_text
     assert "%runscript" in definition_text
     assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"' in definition_text
@@ -160,7 +161,16 @@ def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
         assert completed.returncode == 0, f"{path}: {completed.stdout}{completed.stderr}"
 
 
-def test_build_containers_only_missing_accepts_shellless_milvus_images_and_pgvector_contracts(tmp_path: Path) -> None:
+def test_main_container_definition_enables_fail_fast_post_install() -> None:
+    definition_text = Path("maxionbench.def").read_text(encoding="utf-8")
+
+    assert "%post" in definition_text
+    assert "\n    set -eu\n" in definition_text
+    assert "apt-get update && apt-get install -y --no-install-recommends" in definition_text
+    assert 'python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"' in definition_text
+
+
+def test_build_containers_only_missing_accepts_opensearch_layout_and_shellless_milvus_images(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir = repo_dir / "scripts"
@@ -226,7 +236,7 @@ if [[ "${1:-}" == "exec" && "${2:-}" == "--cleanenv" ]]; then
       fi
       ;;
     opensearch.sif)
-      if [[ "${post_args}" == "opensearch --version" ]]; then
+      if [[ "${post_args}" == *"/bin/sh -c [ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]"* ]]; then
         exit 0
       fi
       ;;
@@ -283,6 +293,8 @@ exit 1
     assert "/bin/sh -c command -v docker-entrypoint.sh" in log_text
     assert "/bin/sh -lc" not in log_text
     assert "PATH=/usr/lib/postgresql/16/bin:" in log_text
+    assert "/bin/sh -c [ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]" in log_text
+    assert "opensearch.sif opensearch --version" not in log_text
     assert "milvus-etcd.sif etcd --version" in log_text
     assert "milvus-minio.sif minio --version" in log_text
     assert "milvus.sif milvus --help" in log_text
