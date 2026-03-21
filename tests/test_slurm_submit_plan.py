@@ -35,9 +35,24 @@ def test_build_submit_steps_can_require_prepare_containers_before_conformance() 
     by_key = {step.key: step for step in steps}
     assert steps[0].key == "prepare_containers"
     assert by_key["prepare_containers"].depends_on == ()
-    assert by_key["prefetch_datasets"].depends_on == ()
+    assert by_key["prefetch_datasets"].depends_on == ("prepare_containers",)
     assert by_key["conformance"].depends_on == ("prefetch_datasets", "prepare_containers")
     assert by_key["calibrate"].depends_on == ("conformance",)
+
+
+def test_build_submit_steps_gates_dataset_pipeline_on_prepare_containers() -> None:
+    steps = build_submit_steps(
+        include_gpu=False,
+        prepare_containers=True,
+        download_datasets=True,
+        preprocess_datasets=True,
+    )
+    by_key = {step.key: step for step in steps}
+
+    assert steps[0].key == "prepare_containers"
+    assert by_key["download_datasets"].depends_on == ("prepare_containers",)
+    assert by_key["preprocess_datasets"].depends_on == ("download_datasets", "prepare_containers")
+    assert by_key["conformance"].depends_on == ("preprocess_datasets", "prepare_containers")
 
 
 def test_build_submit_steps_can_prepend_dataset_prefetch() -> None:
@@ -110,6 +125,45 @@ def test_submit_steps_dry_run_resolves_prepare_containers_dependency_when_enable
 
     assert by_key["prepare_containers"]["command"][-1] == str((slurm_dir / "prepare_containers.sh").resolve())
     assert by_key["conformance"]["command"][2:4] == ["--dependency", "afterok:<PREPARE_CONTAINERS_JOB_ID>"]
+    assert by_key["calibrate"]["command"][2:4] == ["--dependency", "afterok:<CONFORMANCE_JOB_ID>"]
+
+
+def test_submit_steps_dry_run_threads_prepare_containers_through_dataset_pipeline(tmp_path: Path) -> None:
+    slurm_dir = tmp_path / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    for script_name in (
+        "prepare_containers.sh",
+        "download_datasets.sh",
+        "preprocess_datasets.sh",
+        "conformance_matrix.sh",
+        "calibrate_d3.sh",
+        "cpu_array.sh",
+    ):
+        (slurm_dir / script_name).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    summary = submit_steps(
+        slurm_dir=slurm_dir,
+        steps=build_submit_steps(
+            include_gpu=False,
+            prepare_containers=True,
+            download_datasets=True,
+            preprocess_datasets=True,
+        ),
+        seed=42,
+        dry_run=True,
+    )
+    by_key = {step["key"]: step for step in summary["steps"]}
+
+    assert by_key["prepare_containers"]["command"][-1] == str((slurm_dir / "prepare_containers.sh").resolve())
+    assert by_key["download_datasets"]["command"][2:4] == ["--dependency", "afterok:<PREPARE_CONTAINERS_JOB_ID>"]
+    assert by_key["preprocess_datasets"]["command"][2:4] == [
+        "--dependency",
+        "afterok:<DOWNLOAD_DATASETS_JOB_ID>:<PREPARE_CONTAINERS_JOB_ID>",
+    ]
+    assert by_key["conformance"]["command"][2:4] == [
+        "--dependency",
+        "afterok:<PREPROCESS_DATASETS_JOB_ID>:<PREPARE_CONTAINERS_JOB_ID>",
+    ]
     assert by_key["calibrate"]["command"][2:4] == ["--dependency", "afterok:<CONFORMANCE_JOB_ID>"]
 
 
@@ -512,6 +566,7 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
 
     steps = build_submit_steps(
         include_gpu=True,
+        prepare_containers=True,
         download_datasets=True,
         preprocess_datasets=True,
         include_postprocess=True,
@@ -520,6 +575,7 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
     by_key = {step.key: step for step in steps}
 
     assert [step.key for step in steps] == [
+        "prepare_containers",
         "download_datasets",
         "preprocess_datasets",
         "conformance",
@@ -530,9 +586,10 @@ def test_build_submit_steps_supports_manifest_dataset_pipeline_and_postprocess()
         "gpu_non_d3",
         "postprocess",
     ]
-    assert by_key["download_datasets"].depends_on == ()
-    assert by_key["preprocess_datasets"].depends_on == ("download_datasets",)
-    assert by_key["conformance"].depends_on == ("preprocess_datasets",)
+    assert by_key["prepare_containers"].depends_on == ()
+    assert by_key["download_datasets"].depends_on == ("prepare_containers",)
+    assert by_key["preprocess_datasets"].depends_on == ("download_datasets", "prepare_containers")
+    assert by_key["conformance"].depends_on == ("preprocess_datasets", "prepare_containers")
     assert by_key["calibrate"].depends_on == ("conformance",)
     assert by_key["cpu_d3_baseline"].array == "0"
     assert by_key["cpu_d3_workloads"].array == "1"

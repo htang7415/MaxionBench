@@ -46,6 +46,14 @@ def build_submit_steps(
     manifest: RunManifest | None = None,
 ) -> list[SubmitStep]:
     steps: list[SubmitStep] = []
+
+    def _dedupe_depends(*keys: str | None) -> tuple[str, ...]:
+        ordered: list[str] = []
+        for key in keys:
+            if key and key not in ordered:
+                ordered.append(key)
+        return tuple(ordered)
+
     container_stage_key: str | None = None
     if prepare_containers:
         steps.append(
@@ -61,6 +69,7 @@ def build_submit_steps(
             SubmitStep(
                 key="download_datasets",
                 script_name="download_datasets.sh",
+                depends_on=_dedupe_depends(container_stage_key),
             )
         )
         last_dataset_stage_key = "download_datasets"
@@ -69,7 +78,7 @@ def build_submit_steps(
             SubmitStep(
                 key="preprocess_datasets",
                 script_name="preprocess_datasets.sh",
-                depends_on=((last_dataset_stage_key,) if last_dataset_stage_key else ()),
+                depends_on=_dedupe_depends(last_dataset_stage_key, container_stage_key),
             )
         )
         last_dataset_stage_key = "preprocess_datasets"
@@ -78,21 +87,15 @@ def build_submit_steps(
             SubmitStep(
                 key="prefetch_datasets",
                 script_name="prefetch_datasets.sh",
-                depends_on=((last_dataset_stage_key,) if last_dataset_stage_key else ()),
+                depends_on=_dedupe_depends(last_dataset_stage_key, container_stage_key),
             )
         )
         last_dataset_stage_key = "prefetch_datasets"
-    conformance_depends_list: list[str] = []
-    if last_dataset_stage_key:
-        conformance_depends_list.append(last_dataset_stage_key)
-    if container_stage_key:
-        conformance_depends_list.append(container_stage_key)
-    conformance_depends_on = tuple(conformance_depends_list)
     steps.append(
         SubmitStep(
             key="conformance",
             script_name="conformance_matrix.sh",
-            depends_on=conformance_depends_on,
+            depends_on=_dedupe_depends(last_dataset_stage_key, container_stage_key),
         )
     )
     calibrate_depends_on: tuple[str, ...] = ("conformance",)

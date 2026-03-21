@@ -7,7 +7,7 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     text = Path("command.md").read_text(encoding="utf-8")
 
     assert "# MaxionBench Slurm Commands" in text
-    assert "prepare_containers + download_datasets -> preprocess_datasets -> prefetch_datasets -> conformance -> calibrate_d3 -> benchmark arrays -> postprocess" in text
+    assert "prepare_containers -> download_datasets -> preprocess_datasets -> prefetch_datasets -> conformance -> calibrate_d3 -> benchmark arrays -> postprocess" in text
     assert "maxionbench/orchestration/slurm/profiles_local.yaml" in text
     assert ".env.slurm.euler" in text
     assert ".env.slurm.nrel" in text
@@ -23,7 +23,7 @@ def test_command_md_is_concise_slurm_operator_doc() -> None:
     assert "bash run_slurm_pipeline.sh --cluster nrel" in text
     assert "bash test_slrum_pipeline.sh --cluster nrel" in text
     assert "Dry-run only prints the submit plan." in text
-    assert "`--launch` prepares the shared directory tree locally, then submits a cluster-side `prepare_containers` job before the containerized Slurm steps." in text
+    assert "`--launch` prepares the shared directory tree locally, then submits a cluster-side `prepare_containers` job. All containerized Slurm steps, including dataset download/preprocess/prefetch, wait for that image-prep job." in text
     assert "run_slurm_pipeline.sh` rejects `--skip-gpu` and `MAXIONBENCH_ALLOW_GPU_UNAVAILABLE=1`" in text
     assert "It stages a reduced matrix and then calls `run_slurm_pipeline.sh` with `--allow-reduced-matrix`." in text
     assert "Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission." in text
