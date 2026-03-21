@@ -518,6 +518,8 @@ ports = allocate_named_ports(
         "qdrant",
         "qdrant_grpc",
         "weaviate",
+        "weaviate_gossip",
+        "weaviate_data",
         "opensearch",
         "opensearch_transport",
         "lancedb",
@@ -552,6 +554,8 @@ PY
   export MAXIONBENCH_WEAVIATE_HOST="127.0.0.1"
   export MAXIONBENCH_WEAVIATE_PORT="${MAXIONBENCH_PORT_WEAVIATE}"
   export MAXIONBENCH_WEAVIATE_SCHEME="http"
+  export MAXIONBENCH_WEAVIATE_GOSSIP_PORT="${MAXIONBENCH_PORT_WEAVIATE_GOSSIP}"
+  export MAXIONBENCH_WEAVIATE_DATA_PORT="${MAXIONBENCH_PORT_WEAVIATE_DATA}"
   export MAXIONBENCH_PGVECTOR_PORT="${MAXIONBENCH_PORT_PGVECTOR}"
   export MAXIONBENCH_PGVECTOR_DSN="postgresql://postgres:postgres@127.0.0.1:${MAXIONBENCH_PORT_PGVECTOR}/postgres"
   export MAXIONBENCH_LANCEDB_SERVICE_URL="http://127.0.0.1:${MAXIONBENCH_PORT_LANCEDB}"
@@ -815,6 +819,22 @@ mb_assert_service_runtime_bind_contract() {
   done
 }
 
+mb_assert_service_internal_port_contract() {
+  local service_name="$1"
+  local -a internal_port_envs=()
+  local env_name=""
+
+  mb_service_internal_port_envs "${service_name}" internal_port_envs || mb_die "missing internal port contract for ${service_name}"
+  for env_name in "${internal_port_envs[@]-}"; do
+    if [[ -z "${env_name}" ]]; then
+      continue
+    fi
+    if [[ -z "${!env_name:-}" ]]; then
+      mb_die "managed service ${service_name} missing allocated internal port env ${env_name}"
+    fi
+  done
+}
+
 mb_service_startup_adapter_options_json() {
   local service_name="$1"
   mb_python - <<'PY' "${service_name}"
@@ -1043,6 +1063,7 @@ mb_start_qdrant_service() {
   )
   local -a bind_specs=("${storage_dir}:/qdrant/storage")
   mb_assert_service_runtime_bind_contract "qdrant" bind_specs
+  mb_assert_service_internal_port_contract "qdrant"
   local cmd="${MAXIONBENCH_QDRANT_START_CMD:-./entrypoint.sh}"
   mb_start_apptainer_service_process "qdrant" "${image_path}" "${cmd}" env_specs bind_specs "/qdrant"
 }
@@ -1070,6 +1091,7 @@ mb_start_pgvector_service() {
     "${run_dir}:/var/run/postgresql"
   )
   mb_assert_service_runtime_bind_contract "pgvector" bind_specs
+  mb_assert_service_internal_port_contract "pgvector"
   if [[ -n "${MAXIONBENCH_PGVECTOR_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "pgvector" "${image_path}" "${MAXIONBENCH_PGVECTOR_START_CMD}" env_specs bind_specs
   else
@@ -1111,6 +1133,7 @@ EOF
     "${config_dir}:/usr/share/opensearch/config"
   )
   mb_assert_service_runtime_bind_contract "opensearch" bind_specs
+  mb_assert_service_internal_port_contract "opensearch"
   if [[ -n "${MAXIONBENCH_OPENSEARCH_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "opensearch" "${image_path}" "${MAXIONBENCH_OPENSEARCH_START_CMD}" env_specs bind_specs
   else
@@ -1133,9 +1156,14 @@ mb_start_weaviate_service() {
     "DEFAULT_VECTORIZER_MODULE=none"
     "ENABLE_MODULES="
     "CLUSTER_HOSTNAME=node1"
+    "CLUSTER_GOSSIP_BIND_PORT=${MAXIONBENCH_PORT_WEAVIATE_GOSSIP}"
+    "CLUSTER_DATA_BIND_PORT=${MAXIONBENCH_PORT_WEAVIATE_DATA}"
+    "RAFT_BOOTSTRAP_EXPECT=1"
+    "RAFT_BOOTSTRAP_TIMEOUT=90"
   )
   local -a bind_specs=("${data_dir}:/var/lib/weaviate")
   mb_assert_service_runtime_bind_contract "weaviate" bind_specs
+  mb_assert_service_internal_port_contract "weaviate"
   if [[ -n "${MAXIONBENCH_WEAVIATE_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "weaviate" "${image_path}" "${MAXIONBENCH_WEAVIATE_START_CMD}" env_specs bind_specs
   else
@@ -1164,6 +1192,7 @@ mb_start_milvus_services() {
   local -a etcd_env=()
   local -a etcd_binds=("${etcd_dir}:/etcd")
   mb_assert_service_runtime_bind_contract "milvus-etcd" etcd_binds
+  mb_assert_service_internal_port_contract "milvus-etcd"
   if [[ -n "${MAXIONBENCH_MILVUS_ETCD_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus-etcd" "${etcd_image}" "${MAXIONBENCH_MILVUS_ETCD_START_CMD}" etcd_env etcd_binds
   else
@@ -1180,6 +1209,7 @@ mb_start_milvus_services() {
   )
   local -a minio_binds=("${minio_dir}:/minio_data")
   mb_assert_service_runtime_bind_contract "milvus-minio" minio_binds
+  mb_assert_service_internal_port_contract "milvus-minio"
   if [[ -n "${MAXIONBENCH_MILVUS_MINIO_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus-minio" "${minio_image}" "${MAXIONBENCH_MILVUS_MINIO_START_CMD}" minio_env minio_binds
   else
@@ -1198,6 +1228,7 @@ mb_start_milvus_services() {
   )
   local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
   mb_assert_service_runtime_bind_contract "milvus" milvus_binds
+  mb_assert_service_internal_port_contract "milvus"
   if [[ -n "${MAXIONBENCH_MILVUS_START_CMD:-}" ]]; then
     mb_start_apptainer_service_process "milvus" "${milvus_image}" "${MAXIONBENCH_MILVUS_START_CMD}" milvus_env milvus_binds
   else

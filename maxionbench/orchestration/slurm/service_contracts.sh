@@ -135,6 +135,25 @@ mb_service_runtime_seed_paths() {
   esac
 }
 
+mb_service_internal_port_envs() {
+  local service_name="$1"
+  local array_name="$2"
+
+  case "${service_name}" in
+    weaviate)
+      mb_assign_shell_array "${array_name}" \
+        "MAXIONBENCH_PORT_WEAVIATE_GOSSIP" \
+        "MAXIONBENCH_PORT_WEAVIATE_DATA"
+      ;;
+    qdrant|pgvector|opensearch|milvus|milvus-etcd|milvus-minio)
+      mb_assign_shell_array "${array_name}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 mb_service_probe_args() {
   local service_name="$1"
   local array_name="$2"
@@ -173,6 +192,8 @@ mb_service_default_start_args() {
     weaviate)
       mb_assign_shell_array "${array_name}" \
         "weaviate" \
+        "--scheme" \
+        "http" \
         "--host" \
         "0.0.0.0" \
         "--port" \

@@ -237,6 +237,7 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_start_milvus_services()" in text
     assert "mb_start_apptainer_service_process()" in text
     assert "mb_start_apptainer_service_argv_process()" in text
+    assert "mb_assert_service_internal_port_contract()" in text
     assert "mb_assert_service_runtime_bind_contract()" in text
     assert "mb_service_startup_adapter_options_json()" in text
     assert "mb_verify_managed_service_startup()" in text
@@ -248,6 +249,12 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_capture_local_diagnostics()" in text
     assert "mb_finalize_job()" in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
+    assert "MAXIONBENCH_PORT_WEAVIATE_GOSSIP" in text
+    assert "MAXIONBENCH_PORT_WEAVIATE_DATA" in text
+    assert "CLUSTER_GOSSIP_BIND_PORT=" in text
+    assert "CLUSTER_DATA_BIND_PORT=" in text
+    assert "RAFT_BOOTSTRAP_EXPECT=1" in text
+    assert "RAFT_BOOTSTRAP_TIMEOUT=90" in text
     assert "MAXIONBENCH_PGVECTOR_DSN=" in text
     assert "apptainer inspect" in text
     assert "command -v" in text
@@ -269,8 +276,9 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
                 'adapter_name="$(mb_service_startup_adapter_name "${service}")"; '
                 'mb_service_runtime_writable_paths "${service}" writable_paths; '
                 'mb_service_runtime_seed_paths "${service}" seeded_paths; '
-                'printf "SERVICE|%s|%s|%s|%s|%s|%s|%s\\n" '
-                '"${service}" "${kind}" "${start_mode}" "${verify_mode}" "${adapter_name}" "${#writable_paths[@]}" "${#seeded_paths[@]}"; '
+                'mb_service_internal_port_envs "${service}" internal_port_envs; '
+                'printf "SERVICE|%s|%s|%s|%s|%s|%s|%s|%s\\n" '
+                '"${service}" "${kind}" "${start_mode}" "${verify_mode}" "${adapter_name}" "${#writable_paths[@]}" "${#seeded_paths[@]}" "${#internal_port_envs[@]}"; '
                 'if [[ "${kind}" == "probe" ]]; then '
                 '  mb_service_probe_args "${service}" probe_args; '
                 '  printf "PROBE|%s|%s\\n" "${service}" "${#probe_args[@]}"; '
@@ -297,6 +305,7 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
                 "adapter_name": parts[5],
                 "writable_count": parts[6],
                 "seed_count": parts[7],
+                "internal_port_count": parts[8],
             }
         elif parts[0] == "PROBE":
             probe_rows[parts[1]] = int(parts[2])
@@ -326,12 +335,46 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
     assert int(service_rows["opensearch"]["seed_count"]) == 1
     assert int(service_rows["qdrant"]["seed_count"]) == 0
     assert int(service_rows["weaviate"]["seed_count"]) == 0
+    assert int(service_rows["weaviate"]["internal_port_count"]) == 2
+    assert int(service_rows["qdrant"]["internal_port_count"]) == 0
+    assert int(service_rows["opensearch"]["internal_port_count"]) == 0
     assert probe_rows == {
         "weaviate": 2,
         "milvus": 2,
         "milvus-etcd": 2,
         "milvus-minio": 2,
     }
+
+
+def test_slurm_service_contracts_weaviate_start_args_include_http_scheme() -> None:
+    service_contracts_path = Path("maxionbench/orchestration/slurm/service_contracts.sh").resolve()
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{service_contracts_path}"; '
+                'export MAXIONBENCH_PORT_WEAVIATE="28080"; '
+                'mb_service_default_start_args "weaviate" start_args; '
+                'printf "%s\\n" "${start_args[@]}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout.splitlines() == [
+        "weaviate",
+        "--scheme",
+        "http",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "28080",
+    ]
 
 
 def test_slurm_common_health_startup_verifier_uses_adapter_metadata(tmp_path: Path) -> None:
@@ -376,6 +419,49 @@ def test_slurm_common_health_startup_verifier_uses_adapter_metadata(tmp_path: Pa
     assert adapter_options["host"] == "127.0.0.1"
     assert isinstance(adapter_options["port"], int)
     assert set(adapter_options.keys()) == {"host", "port"}
+
+
+def test_slurm_common_allocate_ports_exports_weaviate_internal_ports(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'printf "HTTP=%s\\n" "${MAXIONBENCH_PORT_WEAVIATE}"; '
+                'printf "GOSSIP=%s\\n" "${MAXIONBENCH_PORT_WEAVIATE_GOSSIP}"; '
+                'printf "DATA=%s\\n" "${MAXIONBENCH_PORT_WEAVIATE_DATA}"; '
+                'printf "GOSSIP_ALIAS=%s\\n" "${MAXIONBENCH_WEAVIATE_GOSSIP_PORT}"; '
+                'printf "DATA_ALIAS=%s\\n" "${MAXIONBENCH_WEAVIATE_DATA_PORT}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    assert payload["GOSSIP"] == payload["GOSSIP_ALIAS"]
+    assert payload["DATA"] == payload["DATA_ALIAS"]
+    allocated_ports = {int(payload["HTTP"]), int(payload["GOSSIP"]), int(payload["DATA"])}
+    assert len(allocated_ports) == 3
+    assert int(payload["HTTP"]) != 8300
+    assert int(payload["GOSSIP"]) != 8300
+    assert int(payload["DATA"]) != 8301
 
 
 def test_slurm_common_loads_apptainer_module_when_binary_missing(tmp_path: Path) -> None:
@@ -1051,6 +1137,7 @@ def test_slurm_common_weaviate_startup_accepts_detached_parent_when_health_recov
     fake_image.write_text("image\n", encoding="utf-8")
     slurm_tmpdir = tmp_path / "slurm_tmp"
     health_log = tmp_path / "weaviate_health.txt"
+    post_image_log = tmp_path / "weaviate_post_image.log"
 
     fake_apptainer = fake_bin_dir / "apptainer"
     fake_apptainer.write_text(
@@ -1077,11 +1164,12 @@ done
 if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
 post_args="${args[*]:${index}}"
 if [[ "${post_args}" == "weaviate --help" ]]; then
   exit 0
 fi
-if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"weaviate --host 0.0.0.0 --port"* ]]; then
+if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${post_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${post_args}" == *"RAFT_BOOTSTRAP_EXPECT=1"* && "${post_args}" == *"RAFT_BOOTSTRAP_TIMEOUT=90"* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
   echo "grpc server listening on detached child"
   exit 0
 fi
@@ -1099,6 +1187,7 @@ exit 1
                 f'source "{common_path}"; '
                 f'export PATH="{fake_bin_dir}:$PATH"; '
                 f'export MAXIONBENCH_WEAVIATE_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
                 f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="9"; '
@@ -1126,6 +1215,22 @@ exit 1
     assert health_options["host"] == "127.0.0.1"
     assert health_options["scheme"] == "http"
     assert isinstance(health_options["port"], int)
+    post_image_args = post_image_log.read_text(encoding="utf-8")
+    assert post_image_args.startswith("env\n")
+    assert "CLUSTER_HOSTNAME=node1" in post_image_args
+    assert "CLUSTER_GOSSIP_BIND_PORT=" in post_image_args
+    assert "CLUSTER_DATA_BIND_PORT=" in post_image_args
+    assert "RAFT_BOOTSTRAP_EXPECT=1" in post_image_args
+    assert "RAFT_BOOTSTRAP_TIMEOUT=90" in post_image_args
+    assert "PERSISTENCE_DATA_PATH=/var/lib/weaviate" in post_image_args
+    assert "AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true" in post_image_args
+    assert "DEFAULT_VECTORIZER_MODULE=none" in post_image_args
+    assert "ENABLE_MODULES=" in post_image_args
+    assert "weaviate" in post_image_args
+    assert "\n--scheme\nhttp\n" in post_image_args
+    assert "\n--host\n0.0.0.0\n" in post_image_args
+    assert "8300" not in post_image_args
+    assert "8301" not in post_image_args
 
 
 def test_slurm_common_weaviate_startup_fails_when_parent_exits_before_health(tmp_path: Path) -> None:
@@ -1165,7 +1270,7 @@ post_args="${args[*]:${index}}"
 if [[ "${post_args}" == "weaviate --help" ]]; then
   exit 0
 fi
-if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"weaviate --host 0.0.0.0 --port"* ]]; then
+if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${post_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
   echo "weaviate bootstrap failed after parent exit"
   exit 0
 fi
@@ -1202,6 +1307,96 @@ exit 1
     output = completed.stdout + completed.stderr
     assert "weaviate bootstrap failed after parent exit" in output
     assert "managed engine service weaviate exited before adapter health became reachable" in output
+
+
+def test_slurm_common_weaviate_startup_uses_allocated_internal_cluster_ports(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_image = tmp_path / "weaviate.sif"
+    fake_image.write_text("image\n", encoding="utf-8")
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+    post_image_log = tmp_path / "weaviate_collision_post_image.log"
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  index=$((index + 1))
+fi
+printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
+post_args="${args[*]:${index}}"
+if [[ "${post_args}" == "weaviate --help" ]]; then
+  exit 0
+fi
+if [[ "${post_args}" != *"CLUSTER_GOSSIP_BIND_PORT="* || "${post_args}" != *"CLUSTER_DATA_BIND_PORT="* ]]; then
+  echo "shared-node port collision on implicit weaviate cluster ports" >&2
+  exit 1
+fi
+if [[ "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT=8300"* || "${post_args}" == *"CLUSTER_DATA_BIND_PORT=8301"* ]]; then
+  echo "shared-node port collision on default weaviate cluster ports" >&2
+  exit 1
+fi
+if [[ "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
+  sleep 30
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_WEAVIATE_IMAGE="{fake_image}"; '
+                f'export MAXIONBENCH_TEST_POST_IMAGE_LOG="{post_image_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="11"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_weaviate_service; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    post_image_args = post_image_log.read_text(encoding="utf-8")
+    assert "CLUSTER_GOSSIP_BIND_PORT=" in post_image_args
+    assert "CLUSTER_DATA_BIND_PORT=" in post_image_args
+    assert "CLUSTER_GOSSIP_BIND_PORT=8300" not in post_image_args
+    assert "CLUSTER_DATA_BIND_PORT=8301" not in post_image_args
 
 
 def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Path) -> None:
