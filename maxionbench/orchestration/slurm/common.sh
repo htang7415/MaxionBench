@@ -419,6 +419,10 @@ mb_python() {
       fi
 
       local -a container_cmd=(apptainer exec --cleanenv)
+      local -a env_specs=(
+        "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}"
+        "PYTHONNOUSERSITE=1"
+      )
       if mb_apptainer_use_nv; then
         container_cmd+=(--nv)
       fi
@@ -428,12 +432,11 @@ mb_python() {
           container_cmd+=(--bind "${bind_spec}")
         fi
       done < <(mb_container_bind_specs)
-      container_cmd+=("${resolved_image}" env "PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}" "PYTHONNOUSERSITE=1")
       local env_name=""
       while IFS='=' read -r env_name _; do
         case "${env_name}" in
           MAXIONBENCH_*)
-            container_cmd+=("${env_name}=${!env_name}")
+            env_specs+=("${env_name}=${!env_name}")
             ;;
         esac
       done < <(env)
@@ -441,12 +444,18 @@ mb_python() {
       if [[ -n "${MAXIONBENCH_HF_CACHE_DIR:-}" ]]; then
         local resolved_hf_cache
         resolved_hf_cache="$(mb_resolve_host_path "${MAXIONBENCH_HF_CACHE_DIR}")"
-        container_cmd+=(
+        env_specs+=(
           "HF_HOME=${resolved_hf_cache}"
           "HUGGINGFACE_HUB_CACHE=${resolved_hf_cache}/hub"
           "TRANSFORMERS_CACHE=${resolved_hf_cache}/transformers"
         )
       fi
+      local env_arg=""
+      mb_join_apptainer_env_specs env_arg "${env_specs[@]}"
+      if [[ -n "${env_arg}" ]]; then
+        container_cmd+=(--env "${env_arg}")
+      fi
+      container_cmd+=("${resolved_image}")
       container_cmd+=(python -s "$@")
       "${container_cmd[@]}"
       ;;
@@ -650,6 +659,23 @@ mb_pgvector_path_env() {
   printf '%s\n' "${MAXIONBENCH_PGVECTOR_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 }
 
+mb_join_apptainer_env_specs() {
+  local output_var_name="$1"
+  shift
+  local joined=""
+  local env_spec=""
+  for env_spec in "$@"; do
+    if [[ -z "${env_spec}" ]]; then
+      continue
+    fi
+    if [[ -n "${joined}" ]]; then
+      joined+=","
+    fi
+    joined+="${env_spec}"
+  done
+  printf -v "${output_var_name}" '%s' "${joined}"
+}
+
 mb_validate_pgvector_service_image() {
   local image_path="$1"
   local pgvector_path
@@ -659,7 +685,7 @@ mb_validate_pgvector_service_image() {
     'command -v docker-entrypoint.sh >/dev/null 2>&1' >/dev/null 2>&1; then
     mb_die "pgvector Apptainer image does not expose required entrypoint `docker-entrypoint.sh`: ${image_path}"
   fi
-  if ! apptainer exec --cleanenv "${image_path}" env "PATH=${pgvector_path}" /bin/sh -c \
+  if ! apptainer exec --cleanenv --env "PATH=${pgvector_path}" "${image_path}" /bin/sh -c \
     'command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1' >/dev/null 2>&1; then
     mb_die "pgvector Apptainer image does not expose required PostgreSQL binaries `postgres` and `initdb` under preserved PATH ${pgvector_path}: ${image_path}"
   fi
@@ -690,6 +716,76 @@ mb_seed_opensearch_config_dir() {
     sh "${config_dir}" >/dev/null 2>&1; then
     mb_die "failed to seed writable OpenSearch config dir from image: ${image_path}"
   fi
+}
+
+mb_seed_milvus_config_dir() {
+  local image_path="$1"
+  local config_dir="$2"
+
+  if ! mb_ensure_apptainer; then
+    mb_die "Apptainer is required to seed Milvus runtime config"
+  fi
+
+  mkdir -p "${config_dir}"
+  if ! apptainer exec --cleanenv \
+    --bind "${config_dir}:${config_dir}" \
+    "${image_path}" \
+    /bin/sh -c 'set -eu; target="$1"; cp -R /milvus/configs/. "${target}/"' \
+    sh "${config_dir}" >/dev/null 2>&1; then
+    mb_die "failed to seed writable Milvus config dir from image: ${image_path}"
+  fi
+}
+
+mb_write_milvus_runtime_config() {
+  local config_dir="$1"
+  local config_path="${config_dir}/milvus.yaml"
+
+  mb_python - "${config_path}" \
+    "${MAXIONBENCH_PORT_MILVUS_ETCD}" \
+    "${MAXIONBENCH_PORT_MILVUS_MINIO}" \
+    "${MAXIONBENCH_PORT_MILVUS}" \
+    "${MAXIONBENCH_PORT_MILVUS_METRICS}" <<'PY'
+from pathlib import Path
+import sys
+
+import yaml
+
+cfg_path = Path(sys.argv[1])
+etcd_port = int(sys.argv[2])
+minio_port = int(sys.argv[3])
+proxy_port = int(sys.argv[4])
+http_port = int(sys.argv[5])
+
+payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+if not isinstance(payload, dict):
+    raise ValueError(f"Expected YAML mapping config: {cfg_path}")
+
+
+def ensure_mapping(parent: dict, key: str) -> dict:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        value = {}
+        parent[key] = value
+    return value
+
+
+etcd = ensure_mapping(payload, "etcd")
+etcd["endpoints"] = f"127.0.0.1:{etcd_port}"
+
+minio = ensure_mapping(payload, "minio")
+minio["address"] = "127.0.0.1"
+minio["port"] = minio_port
+
+proxy = ensure_mapping(payload, "proxy")
+proxy["ip"] = "0.0.0.0"
+proxy["port"] = proxy_port
+
+http = ensure_mapping(proxy, "http")
+http["enabled"] = True
+http["port"] = http_port
+
+cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+PY
 }
 
 mb_validate_named_service_image() {
@@ -916,13 +1012,12 @@ mb_build_apptainer_service_prefix() {
     fi
   done
 
-  container_cmd_ref+=("${image_path}" env)
-  local env_spec=""
-  for env_spec in "${env_specs_ref[@]}"; do
-    if [[ -n "${env_spec}" ]]; then
-      container_cmd_ref+=("${env_spec}")
-    fi
-  done
+  local env_arg=""
+  mb_join_apptainer_env_specs env_arg "${env_specs_ref[@]}"
+  if [[ -n "${env_arg}" ]]; then
+    container_cmd_ref+=(--env "${env_arg}")
+  fi
+  container_cmd_ref+=("${image_path}")
 
   mb_assign_shell_array "${output_array_name}" "${container_cmd_ref[@]}"
 }
@@ -942,6 +1037,39 @@ mb_launch_apptainer_service_process() {
   "${container_cmd_ref[@]}" >"${log_file}" 2>&1 &
   local pid=$!
   mb_verify_managed_service_startup "${name}" "${pid}" "${log_file}"
+}
+
+mb_wait_http_health_timeout() {
+  local url="$1"
+  local timeout_s="$2"
+  local poll_s="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
+  mb_log "waiting for startup HTTP health url=${url} timeout=${timeout_s}s"
+  mb_python - "${url}" "${timeout_s}" "${poll_s}" <<'PY'
+import sys
+import time
+import urllib.error
+import urllib.request
+
+url = sys.argv[1]
+timeout_s = float(sys.argv[2])
+poll_s = float(sys.argv[3])
+deadline = time.monotonic() + timeout_s
+last_error = "startup HTTP health check timed out"
+
+while True:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        print(last_error, file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        with urllib.request.urlopen(url, timeout=min(2.0, max(0.2, remaining))) as response:
+            if 200 <= response.status < 300:
+                raise SystemExit(0)
+            last_error = f"unexpected status {response.status} for {url}"
+    except Exception as exc:  # pragma: no cover - bash integration exercises this
+        last_error = str(exc)
+    time.sleep(min(poll_s, max(0.0, deadline - time.monotonic())))
+PY
 }
 
 mb_verify_managed_service_startup() {
@@ -974,6 +1102,35 @@ mb_verify_managed_service_startup() {
           mb_die "managed engine service ${name} failed adapter health startup verification within ${verify_timeout_s}s; see ${log_file}"
         fi
         mb_die "managed engine service ${name} exited before adapter health became reachable; see ${log_file}"
+      fi
+
+      if kill -0 "${pid}" >/dev/null 2>&1; then
+        mb_register_engine_pid "${name}" "${pid}"
+        mb_log "started engine service ${name} pid=${pid} log=${log_file} verify=${verify_mode}"
+      else
+        mb_log "started engine service ${name} detached_after_startup=1 log=${log_file} verify=${verify_mode}"
+      fi
+      ;;
+    http)
+      local health_url=""
+      local verify_timeout_s="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S:-30}"
+      local status=0
+      health_url="$(mb_service_startup_http_url "${name}")" || mb_die "missing startup HTTP health URL for managed engine service ${name}"
+      if [[ -z "${health_url}" ]]; then
+        mb_die "startup verification mode http requires a health URL for managed engine service ${name}"
+      fi
+
+      set +e
+      mb_wait_http_health_timeout "${health_url}" "${verify_timeout_s}" >/dev/null 2>&1
+      status=$?
+      set -e
+
+      if [[ "${status}" -ne 0 ]]; then
+        mb_log_file_tail "managed engine service ${name}" "${log_file}"
+        if kill -0 "${pid}" >/dev/null 2>&1; then
+          mb_die "managed engine service ${name} failed startup HTTP health verification within ${verify_timeout_s}s; see ${log_file}"
+        fi
+        mb_die "managed engine service ${name} exited before startup HTTP health became reachable; see ${log_file}"
       fi
 
       if kill -0 "${pid}" >/dev/null 2>&1; then
@@ -1220,13 +1377,17 @@ mb_start_milvus_services() {
 
   local milvus_dir="${runtime_root}/milvus/data"
   mkdir -p "${milvus_dir}"
+  local milvus_config_dir="${runtime_root}/milvus/config"
+  mb_seed_milvus_config_dir "${milvus_image}" "${milvus_config_dir}"
+  mb_write_milvus_runtime_config "${milvus_config_dir}"
   local -a milvus_env=(
     "ETCD_ENDPOINTS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_ETCD}"
     "MINIO_ADDRESS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_MINIO}"
-    "MILVUS_PROXY_PORT=${MAXIONBENCH_PORT_MILVUS}"
-    "MILVUS_METRICS_PORT=${MAXIONBENCH_PORT_MILVUS_METRICS}"
   )
-  local -a milvus_binds=("${milvus_dir}:/var/lib/milvus")
+  local -a milvus_binds=(
+    "${milvus_dir}:/var/lib/milvus"
+    "${milvus_config_dir}:/milvus/configs"
+  )
   mb_assert_service_runtime_bind_contract "milvus" milvus_binds
   mb_assert_service_internal_port_contract "milvus"
   if [[ -n "${MAXIONBENCH_MILVUS_START_CMD:-}" ]]; then

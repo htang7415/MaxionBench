@@ -254,7 +254,7 @@ service_image_is_valid() {
       local pgvector_path=""
       pgvector_path="$(default_pgvector_path)"
       apptainer inspect "${target}" >/dev/null 2>&1 && \
-        apptainer exec --cleanenv "${target}" env "PATH=${pgvector_path}" /bin/sh -c \
+        apptainer exec --cleanenv --env "PATH=${pgvector_path}" "${target}" /bin/sh -c \
         'command -v docker-entrypoint.sh >/dev/null 2>&1 && command -v postgres >/dev/null 2>&1 && command -v initdb >/dev/null 2>&1'
       ;;
     probe)
@@ -344,6 +344,6 @@ pull_service_image "${OUTPUT_DIR}/qdrant.sif" "docker://qdrant/qdrant:v1.13.0" "
 pull_service_image "${OUTPUT_DIR}/pgvector.sif" "docker://pgvector/pgvector:0.8.0-pg16" "pgvector"
 pull_service_image "${OUTPUT_DIR}/opensearch.sif" "docker://opensearchproject/opensearch:2.19.1" "opensearch"
 pull_service_image "${OUTPUT_DIR}/weaviate.sif" "docker://semitechnologies/weaviate:1.28.4" "weaviate"
-pull_service_image "${OUTPUT_DIR}/milvus.sif" "docker://milvusdb/milvus:v2.5.4" "milvus"
+pull_service_image "${OUTPUT_DIR}/milvus.sif" "docker://milvusdb/milvus:v2.5.27" "milvus"
 pull_service_image "${OUTPUT_DIR}/milvus-etcd.sif" "docker://quay.io/coreos/etcd:v3.5.18" "milvus-etcd"
 pull_service_image "${OUTPUT_DIR}/milvus-minio.sif" "docker://minio/minio:RELEASE.2024-11-07T00-52-20Z" "milvus-minio"

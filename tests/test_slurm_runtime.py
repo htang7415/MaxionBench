@@ -203,6 +203,7 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert "mb_ensure_apptainer()" in text
     assert "module load" in text
     assert "apptainer exec --cleanenv" in text
+    assert "--env" in text
     assert "PYTHONNOUSERSITE=1" in text
     assert "python -s" in text
     assert "mb_python()" in text
@@ -246,6 +247,10 @@ def test_slurm_common_has_managed_engine_service_lifecycle_helpers() -> None:
     assert "mb_validate_named_service_image()" in text
     assert "mb_wait_named_adapter_health_timeout()" in text
     assert "mb_wait_named_adapter_health()" in text
+    assert "mb_wait_http_health_timeout()" in text
+    assert "mb_service_startup_http_url" in text
+    assert "mb_seed_milvus_config_dir()" in text
+    assert "mb_write_milvus_runtime_config()" in text
     assert "mb_capture_local_diagnostics()" in text
     assert "mb_finalize_job()" in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${SLURM_TMPDIR}/lancedb/service"' in text
@@ -269,6 +274,8 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
             "-lc",
             (
                 f'source "{service_contracts_path}"; '
+                'export MAXIONBENCH_PORT_MILVUS_ETCD="12379"; '
+                'export MAXIONBENCH_PORT_MILVUS_MINIO="19000"; '
                 "for service in qdrant pgvector opensearch weaviate milvus milvus-etcd milvus-minio; do "
                 'kind="$(mb_service_contract_kind "${service}")"; '
                 'start_mode="$(mb_service_default_start_mode "${service}")"; '
@@ -283,6 +290,10 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
                 '  mb_service_probe_args "${service}" probe_args; '
                 '  printf "PROBE|%s|%s\\n" "${service}" "${#probe_args[@]}"; '
                 "fi; "
+                'if [[ "${verify_mode}" == "http" ]]; then '
+                '  health_url="$(mb_service_startup_http_url "${service}")"; '
+                '  printf "HTTP|%s|%s\\n" "${service}" "${health_url}"; '
+                "fi; "
                 "done"
             ),
         ],
@@ -295,6 +306,7 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     service_rows: dict[str, dict[str, str]] = {}
     probe_rows: dict[str, int] = {}
+    http_rows: dict[str, str] = {}
     for raw_line in completed.stdout.splitlines():
         parts = raw_line.split("|")
         if parts[0] == "SERVICE":
@@ -309,6 +321,8 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
             }
         elif parts[0] == "PROBE":
             probe_rows[parts[1]] = int(parts[2])
+        elif parts[0] == "HTTP":
+            http_rows[parts[1]] = parts[2]
 
     expected_verify_modes = {
         "qdrant": "health",
@@ -316,8 +330,8 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
         "opensearch": "health",
         "weaviate": "health",
         "milvus": "health",
-        "milvus-etcd": "liveness",
-        "milvus-minio": "liveness",
+        "milvus-etcd": "http",
+        "milvus-minio": "http",
     }
     for service_name, verify_mode in expected_verify_modes.items():
         row = service_rows[service_name]
@@ -325,14 +339,15 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
         assert row["verify_mode"] == verify_mode
         assert int(row["writable_count"]) >= 1
         if verify_mode == "health":
-          assert row["adapter_name"] == service_name
+            assert row["adapter_name"] == service_name
         else:
-          assert row["adapter_name"] == ""
+            assert row["adapter_name"] == ""
 
     assert service_rows["qdrant"]["kind"] == "qdrant-layout"
     assert service_rows["pgvector"]["kind"] == "pgvector"
     assert service_rows["opensearch"]["kind"] == "opensearch-layout"
     assert int(service_rows["opensearch"]["seed_count"]) == 1
+    assert int(service_rows["milvus"]["seed_count"]) == 1
     assert int(service_rows["qdrant"]["seed_count"]) == 0
     assert int(service_rows["weaviate"]["seed_count"]) == 0
     assert int(service_rows["weaviate"]["internal_port_count"]) == 2
@@ -343,6 +358,10 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
         "milvus": 2,
         "milvus-etcd": 2,
         "milvus-minio": 2,
+    }
+    assert http_rows == {
+        "milvus-etcd": "http://127.0.0.1:12379/readyz",
+        "milvus-minio": "http://127.0.0.1:19000/minio/health/live",
     }
 
 
@@ -464,6 +483,46 @@ def test_slurm_common_allocate_ports_exports_weaviate_internal_ports(tmp_path: P
     assert int(payload["DATA"]) != 8301
 
 
+def test_slurm_common_startup_http_verifier_uses_service_contract_url(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+    http_log = tmp_path / "startup_http.txt"
+    service_log = tmp_path / "service.log"
+    service_log.write_text("service still booting\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_http_health_timeout() { '
+                f'  printf "%s\\n%s\\n" "$1" "$2" > "{http_log}"; '
+                '  return 0; '
+                '}; '
+                'mb_require_tmpdir; '
+                'export MAXIONBENCH_PORT_MILVUS_ETCD="12379"; '
+                'sleep 30 & '
+                'pid=$!; '
+                f'mb_verify_managed_service_startup "milvus-etcd" "${{pid}}" "{service_log}"; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    health_url, timeout_s = http_log.read_text(encoding="utf-8").splitlines()
+    assert health_url == "http://127.0.0.1:12379/readyz"
+    assert timeout_s == "30"
+
+
 def test_slurm_common_loads_apptainer_module_when_binary_missing(tmp_path: Path) -> None:
     common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
     fake_bin_dir = tmp_path / "fake_bin"
@@ -566,6 +625,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -652,6 +714,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -701,17 +766,17 @@ sleep 30
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     post_image_args = post_image_log.read_text(encoding="utf-8")
-    assert post_image_args.startswith("env\n")
-    assert "QDRANT__SERVICE__HOST=0.0.0.0" in post_image_args
-    assert "QDRANT__SERVICE__HTTP_PORT=" in post_image_args
-    assert "QDRANT__SERVICE__GRPC_PORT=" in post_image_args
-    assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in post_image_args
+    assert post_image_args.startswith("/bin/sh\n")
     assert "/bin/sh" in post_image_args
     assert "\n-c\n" in post_image_args
     assert "-lc" not in post_image_args
     assert "cd /qdrant && exec ./entrypoint.sh" in post_image_args
     apptainer_calls = full_log.read_text(encoding="utf-8")
     assert f"inspect {fake_image}" in apptainer_calls
+    assert "--env QDRANT__SERVICE__HOST=0.0.0.0" in apptainer_calls
+    assert "QDRANT__SERVICE__HTTP_PORT=" in apptainer_calls
+    assert "QDRANT__SERVICE__GRPC_PORT=" in apptainer_calls
+    assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in apptainer_calls
     assert "/bin/sh -c [ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" in apptainer_calls
 
 
@@ -739,6 +804,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
   case "${args[${index}]}" in
     exec|--cleanenv|--nv)
       index=$((index + 1))
+      ;;
+    --env)
+      index=$((index + 2))
       ;;
     --bind)
       index=$((index + 2))
@@ -797,14 +865,11 @@ sleep 30
     runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7"
     assert f"--bind {runtime_root / 'pgvector' / 'data'}:/var/lib/postgresql/data" in apptainer_calls
     assert f"--bind {runtime_root / 'pgvector' / 'run'}:/var/run/postgresql" in apptainer_calls
-    assert "PATH=/usr/lib/postgresql/16/bin:" in apptainer_calls
+    assert "--env PATH=/usr/lib/postgresql/16/bin:" in apptainer_calls
     assert "/bin/sh -c command -v docker-entrypoint.sh" in apptainer_calls
     assert "/bin/sh -c command -v postgres" in apptainer_calls
     assert "/bin/sh -lc" not in apptainer_calls
-    assert post_image_args.startswith("env\n")
-    assert "PATH=/usr/lib/postgresql/16/bin:" in post_image_args
-    assert "docker-entrypoint.sh" in post_image_args
-    assert "postgres" in post_image_args
+    assert post_image_args.startswith("docker-entrypoint.sh\n")
     assert "\n-p\n" in post_image_args
     assert "/bin/sh" not in post_image_args
 
@@ -833,6 +898,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
   case "${args[${index}]}" in
     exec|--cleanenv|--nv)
       index=$((index + 1))
+      ;;
+    --env)
+      index=$((index + 2))
       ;;
     --bind)
       index=$((index + 2))
@@ -892,11 +960,11 @@ exit 1
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     post_image_args = post_image_log.read_text(encoding="utf-8")
-    assert post_image_args.startswith("env\n")
-    assert "PATH=/usr/lib/postgresql/16/bin:" in post_image_args
+    assert post_image_args.startswith("/bin/sh\n")
     assert "/bin/sh" in post_image_args
     assert "\n-c\n" in post_image_args
     assert "exec custom-pgvector-start --flag" in post_image_args
+    assert "--env PATH=/usr/lib/postgresql/16/bin:" in apptainer_log.read_text(encoding="utf-8")
 
 
 def test_slurm_common_opensearch_uses_layout_validation_and_writable_config(tmp_path: Path) -> None:
@@ -924,6 +992,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
   case "${args[${index}]}" in
     exec|--cleanenv|--nv)
       index=$((index + 1))
+      ;;
+    --env)
+      index=$((index + 2))
       ;;
     --bind)
       bind_specs+=("${args[$((index + 1))]}")
@@ -1014,9 +1085,9 @@ exit 1
     assert f"--bind {runtime_root / 'opensearch' / 'data'}:/usr/share/opensearch/data" in apptainer_calls
     assert f"--bind {runtime_root / 'opensearch' / 'logs'}:/usr/share/opensearch/logs" in apptainer_calls
     assert f"--bind {config_dir}:/usr/share/opensearch/config" in apptainer_calls
-    assert post_image_args.startswith("env\n")
-    assert "DISABLE_SECURITY_PLUGIN=true" in post_image_args
-    assert "OPENSEARCH_JAVA_OPTS=" in post_image_args
+    assert "--env DISABLE_SECURITY_PLUGIN=true" in apptainer_calls
+    assert "OPENSEARCH_JAVA_OPTS=" in apptainer_calls
+    assert post_image_args.startswith("/bin/sh\n")
     assert "/bin/sh" in post_image_args
     assert "\n-c\n" in post_image_args
     assert "-lc" not in post_image_args
@@ -1049,6 +1120,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
   case "${args[${index}]}" in
     exec|--cleanenv|--nv)
       index=$((index + 1))
+      ;;
+    --env)
+      index=$((index + 2))
       ;;
     --bind)
       bind_specs+=("${args[$((index + 1))]}")
@@ -1153,6 +1227,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -1166,10 +1243,11 @@ if [[ ${index} -lt ${#args[@]} ]]; then
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
 post_args="${args[*]:${index}}"
+all_args="$*"
 if [[ "${post_args}" == "weaviate --help" ]]; then
   exit 0
 fi
-if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${post_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${post_args}" == *"RAFT_BOOTSTRAP_EXPECT=1"* && "${post_args}" == *"RAFT_BOOTSTRAP_TIMEOUT=90"* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
+if [[ "${all_args}" == *"--env QUERY_DEFAULTS_LIMIT=20"* && "${all_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${all_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${all_args}" == *"RAFT_BOOTSTRAP_EXPECT=1"* && "${all_args}" == *"RAFT_BOOTSTRAP_TIMEOUT=90"* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
   echo "grpc server listening on detached child"
   exit 0
 fi
@@ -1216,16 +1294,7 @@ exit 1
     assert health_options["scheme"] == "http"
     assert isinstance(health_options["port"], int)
     post_image_args = post_image_log.read_text(encoding="utf-8")
-    assert post_image_args.startswith("env\n")
-    assert "CLUSTER_HOSTNAME=node1" in post_image_args
-    assert "CLUSTER_GOSSIP_BIND_PORT=" in post_image_args
-    assert "CLUSTER_DATA_BIND_PORT=" in post_image_args
-    assert "RAFT_BOOTSTRAP_EXPECT=1" in post_image_args
-    assert "RAFT_BOOTSTRAP_TIMEOUT=90" in post_image_args
-    assert "PERSISTENCE_DATA_PATH=/var/lib/weaviate" in post_image_args
-    assert "AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true" in post_image_args
-    assert "DEFAULT_VECTORIZER_MODULE=none" in post_image_args
-    assert "ENABLE_MODULES=" in post_image_args
+    assert post_image_args.startswith("weaviate\n")
     assert "weaviate" in post_image_args
     assert "\n--scheme\nhttp\n" in post_image_args
     assert "\n--host\n0.0.0.0\n" in post_image_args
@@ -1255,6 +1324,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -1267,10 +1339,11 @@ if [[ ${index} -lt ${#args[@]} ]]; then
   index=$((index + 1))
 fi
 post_args="${args[*]:${index}}"
+all_args="$*"
 if [[ "${post_args}" == "weaviate --help" ]]; then
   exit 0
 fi
-if [[ "${post_args}" == *"env QUERY_DEFAULTS_LIMIT=20"* && "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${post_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
+if [[ "${all_args}" == *"--env QUERY_DEFAULTS_LIMIT=20"* && "${all_args}" == *"CLUSTER_GOSSIP_BIND_PORT="* && "${all_args}" == *"CLUSTER_DATA_BIND_PORT="* && "${post_args}" == *"weaviate --scheme http --host 0.0.0.0 --port"* ]]; then
   echo "weaviate bootstrap failed after parent exit"
   exit 0
 fi
@@ -1332,6 +1405,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -1345,14 +1421,15 @@ if [[ ${index} -lt ${#args[@]} ]]; then
 fi
 printf '%s\\n' "${args[@]:${index}}" > "${MAXIONBENCH_TEST_POST_IMAGE_LOG}"
 post_args="${args[*]:${index}}"
+all_args="$*"
 if [[ "${post_args}" == "weaviate --help" ]]; then
   exit 0
 fi
-if [[ "${post_args}" != *"CLUSTER_GOSSIP_BIND_PORT="* || "${post_args}" != *"CLUSTER_DATA_BIND_PORT="* ]]; then
+if [[ "${all_args}" != *"CLUSTER_GOSSIP_BIND_PORT="* || "${all_args}" != *"CLUSTER_DATA_BIND_PORT="* ]]; then
   echo "shared-node port collision on implicit weaviate cluster ports" >&2
   exit 1
 fi
-if [[ "${post_args}" == *"CLUSTER_GOSSIP_BIND_PORT=8300"* || "${post_args}" == *"CLUSTER_DATA_BIND_PORT=8301"* ]]; then
+if [[ "${all_args}" == *"CLUSTER_GOSSIP_BIND_PORT=8300"* || "${all_args}" == *"CLUSTER_DATA_BIND_PORT=8301"* ]]; then
   echo "shared-node port collision on default weaviate cluster ports" >&2
   exit 1
 fi
@@ -1393,10 +1470,11 @@ exit 1
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     post_image_args = post_image_log.read_text(encoding="utf-8")
-    assert "CLUSTER_GOSSIP_BIND_PORT=" in post_image_args
-    assert "CLUSTER_DATA_BIND_PORT=" in post_image_args
-    assert "CLUSTER_GOSSIP_BIND_PORT=8300" not in post_image_args
-    assert "CLUSTER_DATA_BIND_PORT=8301" not in post_image_args
+    assert post_image_args.startswith("weaviate\n")
+    assert "\n--scheme\nhttp\n" in post_image_args
+    assert "\n--host\n0.0.0.0\n" in post_image_args
+    assert "8300" not in post_image_args
+    assert "8301" not in post_image_args
 
 
 def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Path) -> None:
@@ -1404,6 +1482,7 @@ def test_slurm_common_milvus_services_use_direct_exec_without_shell(tmp_path: Pa
     fake_bin_dir = tmp_path / "fake_bin"
     fake_bin_dir.mkdir(parents=True, exist_ok=True)
     apptainer_log = tmp_path / "apptainer_milvus.log"
+    http_log = tmp_path / "milvus_startup_http.log"
     slurm_tmpdir = tmp_path / "slurm_tmp"
 
     etcd_image = tmp_path / "milvus-etcd.sif"
@@ -1427,6 +1506,9 @@ while [[ ${index} -lt ${#args[@]} ]]; do
     exec|--cleanenv|--nv)
       index=$((index + 1))
       ;;
+    --env)
+      index=$((index + 2))
+      ;;
     --bind)
       index=$((index + 2))
       ;;
@@ -1442,6 +1524,18 @@ else
   image=""
 fi
 post_args="${args[*]:${index}}"
+all_args="$*"
+if [[ "${image##*/}" == "milvus.sif" && "${post_args}" == *"/milvus/configs/."* ]]; then
+  target="${args[$(( ${#args[@]} - 1 ))]}"
+  mkdir -p "${target}"
+  cat > "${target}/milvus.yaml" <<'EOF'
+etcd: {}
+minio: {}
+proxy:
+  http: {}
+EOF
+  exit 0
+fi
 if [[ "${post_args}" == *"/bin/sh"* ]]; then
   exit 1
 fi
@@ -1450,7 +1544,7 @@ case "${image##*/}" in
     if [[ "${post_args}" == "etcd --version" ]]; then
       exit 0
     fi
-    if [[ "${post_args}" == *"env etcd -advertise-client-urls=http://127.0.0.1:"* && "${post_args}" == *"--data-dir=/etcd"* ]]; then
+    if [[ "${post_args}" == *"etcd -advertise-client-urls=http://127.0.0.1:"* && "${post_args}" == *"--data-dir=/etcd"* ]]; then
       sleep 30
       exit 0
     fi
@@ -1459,7 +1553,7 @@ case "${image##*/}" in
     if [[ "${post_args}" == "minio --version" ]]; then
       exit 0
     fi
-    if [[ "${post_args}" == *"env MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin minio server /minio_data --address :"* && "${post_args}" == *"--console-address :"* ]]; then
+    if [[ "${all_args}" == *"--env MINIO_ROOT_USER=minioadmin,MINIO_ROOT_PASSWORD=minioadmin"* && "${post_args}" == *"minio server /minio_data --address :"* && "${post_args}" == *"--console-address :"* ]]; then
       sleep 30
       exit 0
     fi
@@ -1468,8 +1562,162 @@ case "${image##*/}" in
     if [[ "${post_args}" == "milvus --help" ]]; then
       exit 0
     fi
-    if [[ "${post_args}" == *"env ETCD_ENDPOINTS=127.0.0.1:"* && "${post_args}" == *"MINIO_ADDRESS=127.0.0.1:"* && "${post_args}" == *"milvus run standalone"* ]]; then
+    if [[ "${all_args}" == *"--env ETCD_ENDPOINTS=127.0.0.1:"* && "${all_args}" == *"MINIO_ADDRESS=127.0.0.1:"* && "${post_args}" == *"milvus run standalone"* ]]; then
       sleep 30
+      exit 0
+    fi
+    ;;
+esac
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_apptainer.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export PATH="{fake_bin_dir}:$PATH"; '
+                f'export MAXIONBENCH_MILVUS_ETCD_IMAGE="{etcd_image}"; '
+                f'export MAXIONBENCH_MILVUS_MINIO_IMAGE="{minio_image}"; '
+                f'export MAXIONBENCH_MILVUS_IMAGE="{milvus_image}"; '
+                f'export MAXIONBENCH_TEST_APPTAINER_LOG="{apptainer_log}"; '
+                f'export MAXIONBENCH_TEST_HTTP_LOG="{http_log}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
+                'mb_wait_http_health_timeout() { printf "%s\\n" "$1" >> "${MAXIONBENCH_TEST_HTTP_LOG}"; sleep 0.1; return 0; }; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'mb_start_milvus_services; '
+                'mb_stop_engine_services'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    apptainer_calls = apptainer_log.read_text(encoding="utf-8")
+    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7" / "milvus"
+    assert " milvus-etcd.sif env " not in apptainer_calls
+    assert " milvus-minio.sif env " not in apptainer_calls
+    assert " milvus.sif env " not in apptainer_calls
+    assert "milvus-etcd.sif etcd --version" in apptainer_calls
+    assert "milvus-minio.sif minio --version" in apptainer_calls
+    assert "milvus.sif milvus --help" in apptainer_calls
+    assert "/milvus/configs/." in apptainer_calls
+    assert "--env MINIO_ROOT_USER=minioadmin,MINIO_ROOT_PASSWORD=minioadmin" in apptainer_calls
+    assert "--env ETCD_ENDPOINTS=127.0.0.1:" in apptainer_calls
+    assert "MILVUS_PROXY_PORT=" not in apptainer_calls
+    assert "MILVUS_METRICS_PORT=" not in apptainer_calls
+    assert f"--bind {runtime_root / 'etcd'}:/etcd" in apptainer_calls
+    assert f"--bind {runtime_root / 'minio'}:/minio_data" in apptainer_calls
+    assert f"--bind {runtime_root / 'data'}:/var/lib/milvus" in apptainer_calls
+    assert f"--bind {runtime_root / 'config'}:/milvus/configs" in apptainer_calls
+    milvus_cfg = yaml.safe_load((runtime_root / "config" / "milvus.yaml").read_text(encoding="utf-8"))
+    assert milvus_cfg["etcd"]["endpoints"].startswith("127.0.0.1:")
+    assert milvus_cfg["minio"]["address"] == "127.0.0.1"
+    assert isinstance(milvus_cfg["minio"]["port"], int)
+    assert milvus_cfg["proxy"]["ip"] == "0.0.0.0"
+    assert isinstance(milvus_cfg["proxy"]["port"], int)
+    assert milvus_cfg["proxy"]["http"]["enabled"] is True
+    assert isinstance(milvus_cfg["proxy"]["http"]["port"], int)
+    health_urls = http_log.read_text(encoding="utf-8").splitlines()
+    assert len(health_urls) == 2
+    assert health_urls[0].startswith("http://127.0.0.1:")
+    assert health_urls[0].endswith("/readyz")
+    assert health_urls[1].startswith("http://127.0.0.1:")
+    assert health_urls[1].endswith("/minio/health/live")
+
+
+def test_slurm_common_milvus_services_fail_before_launching_milvus_when_etcd_health_never_recovers(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fake_bin_dir = tmp_path / "fake_bin"
+    fake_bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_milvus_fail.log"
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    etcd_image = tmp_path / "milvus-etcd.sif"
+    minio_image = tmp_path / "milvus-minio.sif"
+    milvus_image = tmp_path / "milvus.sif"
+    for image_path in (etcd_image, minio_image, milvus_image):
+        image_path.write_text("image\n", encoding="utf-8")
+
+    fake_apptainer = fake_bin_dir / "apptainer"
+    fake_apptainer.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+args=("$@")
+index=0
+while [[ ${index} -lt ${#args[@]} ]]; do
+  case "${args[${index}]}" in
+    exec|--cleanenv|--nv)
+      index=$((index + 1))
+      ;;
+    --env)
+      index=$((index + 2))
+      ;;
+    --bind)
+      index=$((index + 2))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [[ ${index} -lt ${#args[@]} ]]; then
+  image="${args[${index}]}"
+  index=$((index + 1))
+else
+  image=""
+fi
+post_args="${args[*]:${index}}"
+if [[ "${image##*/}" == "milvus.sif" && "${post_args}" == *"/milvus/configs/."* ]]; then
+  target="${args[$(( ${#args[@]} - 1 ))]}"
+  mkdir -p "${target}"
+  cat > "${target}/milvus.yaml" <<'EOF'
+etcd: {}
+minio: {}
+proxy:
+  http: {}
+EOF
+  exit 0
+fi
+if [[ "${post_args}" == *"/bin/sh"* ]]; then
+  exit 1
+fi
+case "${image##*/}" in
+  milvus-etcd.sif)
+    if [[ "${post_args}" == "etcd --version" ]]; then
+      exit 0
+    fi
+    if [[ "${post_args}" == *"etcd -advertise-client-urls=http://127.0.0.1:"* && "${post_args}" == *"--data-dir=/etcd"* ]]; then
+      sleep 30
+      exit 0
+    fi
+    ;;
+  milvus-minio.sif)
+    if [[ "${post_args}" == "minio --version" ]]; then
+      exit 0
+    fi
+    if [[ "${post_args}" == *"minio server /minio_data --address :"* && "${post_args}" == *"--console-address :"* ]]; then
+      sleep 30
+      exit 0
+    fi
+    ;;
+  milvus.sif)
+    if [[ "${post_args}" == "milvus --help" ]]; then
       exit 0
     fi
     ;;
@@ -1495,10 +1743,10 @@ exit 1
                 'export SLURM_JOB_ID="4242"; '
                 'export SLURM_ARRAY_TASK_ID="7"; '
                 'mb_wait_named_adapter_health_timeout() { sleep 0.1; return 0; }; '
+                'mb_wait_http_health_timeout() { return 1; }; '
                 'mb_require_tmpdir; '
                 'mb_allocate_ports; '
-                'mb_start_milvus_services; '
-                'mb_stop_engine_services'
+                'mb_start_milvus_services'
             ),
         ],
         check=False,
@@ -1507,16 +1755,12 @@ exit 1
         cwd=Path.cwd(),
     )
 
-    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.returncode != 0
+    output = completed.stdout + completed.stderr
+    assert "managed engine service milvus-etcd failed startup HTTP health verification within 30s" in output
     apptainer_calls = apptainer_log.read_text(encoding="utf-8")
-    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7" / "milvus"
-    assert "/bin/sh" not in apptainer_calls
     assert "milvus-etcd.sif etcd --version" in apptainer_calls
-    assert "milvus-minio.sif minio --version" in apptainer_calls
-    assert "milvus.sif milvus --help" in apptainer_calls
-    assert f"--bind {runtime_root / 'etcd'}:/etcd" in apptainer_calls
-    assert f"--bind {runtime_root / 'minio'}:/minio_data" in apptainer_calls
-    assert f"--bind {runtime_root / 'data'}:/var/lib/milvus" in apptainer_calls
+    assert "milvus.sif milvus run standalone" not in apptainer_calls
 
 
 def test_slurm_common_cleanup_local_runtime_removes_scratch_but_keeps_final_output(tmp_path: Path) -> None:

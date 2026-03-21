@@ -14,6 +14,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     script = Path("run_slurm_pipeline.sh")
     smoke_script = Path("test_slrum_pipeline.sh")
     build_script = Path("scripts/build_containers.sh")
+    compose_file = Path("docker-compose.yml")
     service_contracts = Path("maxionbench/orchestration/slurm/service_contracts.sh")
     definition = Path("maxionbench.def")
     prepare_containers = Path("maxionbench/orchestration/slurm/prepare_containers.sh")
@@ -24,7 +25,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     profiles = Path("maxionbench/orchestration/slurm/profiles_clusters.example.yaml")
     env_example = Path(".env.slurm.example")
 
-    for path in (script, smoke_script, build_script, service_contracts, definition, prepare_containers, download, preprocess, conformance, postprocess, profiles, env_example):
+    for path in (script, smoke_script, build_script, compose_file, service_contracts, definition, prepare_containers, download, preprocess, conformance, postprocess, profiles, env_example):
         assert path.exists(), path
 
     text = script.read_text(encoding="utf-8")
@@ -66,6 +67,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "apptainer build" in build_text
     assert "apptainer pull" in build_text
     assert "apptainer exec --cleanenv" in build_text
+    assert "--env" in build_text
     assert "/bin/sh -c" in build_text
     assert "apptainer inspect" in build_text
     assert "python -s" in build_text
@@ -73,6 +75,13 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "--only-missing" in build_text
     assert "service_contracts.sh" in build_text
     assert "[ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" in build_text
+    assert "docker://milvusdb/milvus:v2.5.27" in build_text
+
+    compose_text = compose_file.read_text(encoding="utf-8")
+    assert "quay.io/coreos/etcd:v3.5.18" in compose_text
+    assert "minio/minio:RELEASE.2024-11-07T00-52-20Z" in compose_text
+    assert "milvusdb/milvus:v2.5.27" in compose_text
+    assert "milvusdb/milvus:latest" not in compose_text
 
     prepare_text = prepare_containers.read_text(encoding="utf-8")
     assert "mb_ensure_apptainer" in prepare_text
@@ -216,8 +225,13 @@ if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "${2:-}" == "--cleanenv" ]]; then
-  image="${3:-}"
-  shift 3
+  raw_args="$*"
+  shift 2
+  while [[ "${1:-}" == "--env" ]]; do
+    shift 2
+  done
+  image="${1:-}"
+  shift
   post_args="$*"
   case "${image##*/}" in
     maxionbench.sif)
@@ -231,7 +245,7 @@ if [[ "${1:-}" == "exec" && "${2:-}" == "--cleanenv" ]]; then
       fi
       ;;
     pgvector.sif)
-      if [[ "${post_args}" == *"PATH=/usr/lib/postgresql/16/bin:"* && "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v docker-entrypoint.sh"* && "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
+      if [[ "${raw_args}" == *"--env PATH=/usr/lib/postgresql/16/bin:"* && "${post_args}" == *"/bin/sh -c"* && "${post_args}" == *"command -v docker-entrypoint.sh"* && "${post_args}" == *"command -v postgres"* && "${post_args}" == *"command -v initdb"* ]]; then
         exit 0
       fi
       ;;
@@ -292,7 +306,7 @@ exit 1
     log_text = apptainer_log.read_text(encoding="utf-8")
     assert "/bin/sh -c command -v docker-entrypoint.sh" in log_text
     assert "/bin/sh -lc" not in log_text
-    assert "PATH=/usr/lib/postgresql/16/bin:" in log_text
+    assert "--env PATH=/usr/lib/postgresql/16/bin:" in log_text
     assert "/bin/sh -c [ -x /usr/share/opensearch/bin/opensearch ] && [ -x /usr/share/opensearch/opensearch-docker-entrypoint.sh ] && [ -x /usr/share/opensearch/jdk/bin/java ]" in log_text
     assert "opensearch.sif opensearch --version" not in log_text
     assert "milvus-etcd.sif etcd --version" in log_text
