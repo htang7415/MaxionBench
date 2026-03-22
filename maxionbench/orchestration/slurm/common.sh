@@ -534,6 +534,9 @@ ports = allocate_named_ports(
         "lancedb",
         "milvus",
         "milvus_metrics",
+        "milvus_rootcoord",
+        "milvus_datacoord",
+        "milvus_querycoord",
         "milvus_etcd",
         "milvus_minio",
         "milvus_minio_console",
@@ -744,7 +747,10 @@ mb_write_milvus_runtime_config() {
     "${MAXIONBENCH_PORT_MILVUS_ETCD}" \
     "${MAXIONBENCH_PORT_MILVUS_MINIO}" \
     "${MAXIONBENCH_PORT_MILVUS}" \
-    "${MAXIONBENCH_PORT_MILVUS_METRICS}" <<'PY'
+    "${MAXIONBENCH_PORT_MILVUS_METRICS}" \
+    "${MAXIONBENCH_PORT_MILVUS_ROOTCOORD}" \
+    "${MAXIONBENCH_PORT_MILVUS_DATACOORD}" \
+    "${MAXIONBENCH_PORT_MILVUS_QUERYCOORD}" <<'PY'
 from pathlib import Path
 import sys
 
@@ -755,6 +761,9 @@ etcd_port = int(sys.argv[2])
 minio_port = int(sys.argv[3])
 proxy_port = int(sys.argv[4])
 http_port = int(sys.argv[5])
+rootcoord_port = int(sys.argv[6])
+datacoord_port = int(sys.argv[7])
+querycoord_port = int(sys.argv[8])
 
 payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 if not isinstance(payload, dict):
@@ -783,6 +792,15 @@ proxy["port"] = proxy_port
 http = ensure_mapping(proxy, "http")
 http["enabled"] = True
 http["port"] = http_port
+
+rootcoord = ensure_mapping(payload, "rootCoord")
+rootcoord["port"] = rootcoord_port
+
+datacoord = ensure_mapping(payload, "dataCoord")
+datacoord["port"] = datacoord_port
+
+querycoord = ensure_mapping(payload, "queryCoord")
+querycoord["port"] = querycoord_port
 
 cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 PY
@@ -1383,6 +1401,7 @@ mb_start_milvus_services() {
   local -a milvus_env=(
     "ETCD_ENDPOINTS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_ETCD}"
     "MINIO_ADDRESS=127.0.0.1:${MAXIONBENCH_PORT_MILVUS_MINIO}"
+    "MILVUSCONF=/milvus/configs"
   )
   local -a milvus_binds=(
     "${milvus_dir}:/var/lib/milvus"

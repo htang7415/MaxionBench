@@ -351,6 +351,7 @@ def test_slurm_service_contracts_define_startup_metadata_and_runtime_paths() -> 
     assert int(service_rows["qdrant"]["seed_count"]) == 0
     assert int(service_rows["weaviate"]["seed_count"]) == 0
     assert int(service_rows["weaviate"]["internal_port_count"]) == 2
+    assert int(service_rows["milvus"]["internal_port_count"]) == 3
     assert int(service_rows["qdrant"]["internal_port_count"]) == 0
     assert int(service_rows["opensearch"]["internal_port_count"]) == 0
     assert probe_rows == {
@@ -481,6 +482,52 @@ def test_slurm_common_allocate_ports_exports_weaviate_internal_ports(tmp_path: P
     assert int(payload["HTTP"]) != 8300
     assert int(payload["GOSSIP"]) != 8300
     assert int(payload["DATA"]) != 8301
+
+
+def test_slurm_common_allocate_ports_exports_milvus_internal_ports(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    slurm_tmpdir = tmp_path / "slurm_tmp"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                f'export SLURM_TMPDIR="{slurm_tmpdir}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                'mb_require_tmpdir; '
+                'mb_allocate_ports; '
+                'printf "PROXY=%s\\n" "${MAXIONBENCH_PORT_MILVUS}"; '
+                'printf "ROOTCOORD=%s\\n" "${MAXIONBENCH_PORT_MILVUS_ROOTCOORD}"; '
+                'printf "DATACOORD=%s\\n" "${MAXIONBENCH_PORT_MILVUS_DATACOORD}"; '
+                'printf "QUERYCOORD=%s\\n" "${MAXIONBENCH_PORT_MILVUS_QUERYCOORD}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    allocated_ports = {
+        int(payload["PROXY"]),
+        int(payload["ROOTCOORD"]),
+        int(payload["DATACOORD"]),
+        int(payload["QUERYCOORD"]),
+    }
+    assert len(allocated_ports) == 4
+    assert int(payload["PROXY"]) != 19530
+    assert int(payload["ROOTCOORD"]) != 53100
+    assert int(payload["DATACOORD"]) != 13333
+    assert int(payload["QUERYCOORD"]) != 19531
 
 
 def test_slurm_common_startup_http_verifier_uses_service_contract_url(tmp_path: Path) -> None:
@@ -1615,6 +1662,7 @@ exit 1
     assert "/milvus/configs/." in apptainer_calls
     assert "--env MINIO_ROOT_USER=minioadmin,MINIO_ROOT_PASSWORD=minioadmin" in apptainer_calls
     assert "--env ETCD_ENDPOINTS=127.0.0.1:" in apptainer_calls
+    assert "MILVUSCONF=/milvus/configs" in apptainer_calls
     assert "MILVUS_PROXY_PORT=" not in apptainer_calls
     assert "MILVUS_METRICS_PORT=" not in apptainer_calls
     assert f"--bind {runtime_root / 'etcd'}:/etcd" in apptainer_calls
@@ -1629,6 +1677,12 @@ exit 1
     assert isinstance(milvus_cfg["proxy"]["port"], int)
     assert milvus_cfg["proxy"]["http"]["enabled"] is True
     assert isinstance(milvus_cfg["proxy"]["http"]["port"], int)
+    assert isinstance(milvus_cfg["rootCoord"]["port"], int)
+    assert isinstance(milvus_cfg["dataCoord"]["port"], int)
+    assert isinstance(milvus_cfg["queryCoord"]["port"], int)
+    assert milvus_cfg["proxy"]["port"] != milvus_cfg["rootCoord"]["port"]
+    assert milvus_cfg["proxy"]["port"] != milvus_cfg["dataCoord"]["port"]
+    assert milvus_cfg["proxy"]["port"] != milvus_cfg["queryCoord"]["port"]
     health_urls = http_log.read_text(encoding="utf-8").splitlines()
     assert len(health_urls) == 2
     assert health_urls[0].startswith("http://127.0.0.1:")
