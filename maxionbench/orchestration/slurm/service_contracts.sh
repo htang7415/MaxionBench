@@ -162,7 +162,13 @@ mb_service_internal_port_envs() {
         "MAXIONBENCH_PORT_WEAVIATE_GOSSIP" \
         "MAXIONBENCH_PORT_WEAVIATE_DATA"
       ;;
-    qdrant|pgvector|opensearch|milvus|milvus-etcd|milvus-minio)
+    milvus)
+      mb_assign_shell_array "${array_name}" \
+        "MAXIONBENCH_PORT_MILVUS_ROOTCOORD" \
+        "MAXIONBENCH_PORT_MILVUS_DATACOORD" \
+        "MAXIONBENCH_PORT_MILVUS_QUERYCOORD"
+      ;;
+    qdrant|pgvector|opensearch|milvus-etcd|milvus-minio)
       mb_assign_shell_array "${array_name}"
       ;;
     *)
