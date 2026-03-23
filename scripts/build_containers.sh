@@ -232,6 +232,14 @@ for module_name in modules:
     except Exception as exc:
         print(f"main image validation failed while importing {module_name}: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise
+
+import faiss  # type: ignore
+
+if not hasattr(faiss, "StandardGpuResources"):
+    raise RuntimeError(
+        "main image validation failed: installed faiss module lacks GPU support "
+        "(missing StandardGpuResources); install a GPU-capable FAISS wheel"
+    )
 PY
 }
 
