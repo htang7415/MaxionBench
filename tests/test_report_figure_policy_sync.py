@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from maxionbench.reports import plots
@@ -23,6 +24,23 @@ def test_plot_policy_constants_match_prompt() -> None:
     assert plots.FONT_SIZE == 16
     assert plots.PANEL_PX == 600
     assert plots.DPI == 100
+
+
+def test_plot_style_rcparams_pin_font_sizes_and_palette() -> None:
+    plots._set_plot_style()
+
+    assert plt.rcParams["font.size"] == 16
+    assert plt.rcParams["axes.titlesize"] == 16
+    assert plt.rcParams["axes.labelsize"] == 16
+    assert plt.rcParams["xtick.labelsize"] == 16
+    assert plt.rcParams["ytick.labelsize"] == 16
+    assert plt.rcParams["legend.fontsize"] == 16
+    assert plt.rcParams["figure.titlesize"] == 16
+    assert plt.rcParams["axes.facecolor"] == plots.FIGURE_FACE_COLOR
+    assert plt.rcParams["savefig.facecolor"] == plots.FIGURE_FACE_COLOR
+    assert plt.rcParams["grid.color"] == plots.GRID_COLOR
+    assert plt.rcParams["text.color"] == plots.TEXT_COLOR
+    assert plt.rcParams["axes.prop_cycle"].by_key()["color"] == list(plots.ENGINE_PALETTE)
 
 
 def test_figure_specs_match_prompt_required_figure_names() -> None:

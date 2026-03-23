@@ -85,6 +85,12 @@ def test_report_bundle_smoke(tmp_path: Path) -> None:
     assert int(meta["font_size"]) == 16
     assert int(meta["panel_pixels"]) == 600
     assert int(meta["dpi"]) == 100
+    assert meta["style_version"] == "neurips_draft_v1"
+    assert meta["figure_facecolor"] == "#ffffff"
+    assert meta["text_color"]
+    assert meta["grid_color"]
+    assert isinstance(meta["engine_palette"], list)
+    assert len(meta["engine_palette"]) >= 6
     _assert_output_policy(meta, expected_path_class="milestones_noncanonical", expected_milestone_id=None)
 
     assert (out_dir / "m8_deferred_note.md").exists()
