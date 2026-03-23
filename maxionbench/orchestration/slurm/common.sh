@@ -786,7 +786,7 @@ minio["address"] = "127.0.0.1"
 minio["port"] = minio_port
 
 proxy = ensure_mapping(payload, "proxy")
-proxy["ip"] = "0.0.0.0"
+proxy["ip"] = "127.0.0.1"
 proxy["port"] = proxy_port
 
 http = ensure_mapping(proxy, "http")

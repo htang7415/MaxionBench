@@ -1673,7 +1673,7 @@ exit 1
     assert milvus_cfg["etcd"]["endpoints"].startswith("127.0.0.1:")
     assert milvus_cfg["minio"]["address"] == "127.0.0.1"
     assert isinstance(milvus_cfg["minio"]["port"], int)
-    assert milvus_cfg["proxy"]["ip"] == "0.0.0.0"
+    assert milvus_cfg["proxy"]["ip"] == "127.0.0.1"
     assert isinstance(milvus_cfg["proxy"]["port"], int)
     assert milvus_cfg["proxy"]["http"]["enabled"] is True
     assert isinstance(milvus_cfg["proxy"]["http"]["port"], int)
