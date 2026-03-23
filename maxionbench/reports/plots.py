@@ -19,10 +19,30 @@ if "MPLCONFIGDIR" not in os.environ:
     os.environ["MPLCONFIGDIR"] = str(mpl_dir)
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import BoundaryNorm, ListedColormap
 
 FONT_SIZE = 16
 PANEL_PX = 600
 DPI = 100
+STYLE_VERSION = "neurips_draft_v1"
+FIGURE_FACE_COLOR = "#ffffff"
+TEXT_COLOR = "#1f2933"
+GRID_COLOR = "#d9dee5"
+SPINE_COLOR = "#9aa5b1"
+ENGINE_PALETTE = (
+    "#4E79A7",
+    "#F28E2B",
+    "#59A14F",
+    "#E15759",
+    "#76B7B2",
+    "#B07AA1",
+    "#9C755F",
+    "#EDC948",
+)
+PASS_COLOR = "#2A9D8F"
+FAIL_COLOR = "#C8553D"
+NA_COLOR = "#D9DDE3"
+HEATMAP_CMAP = "cividis"
 
 
 @dataclass(frozen=True)
@@ -90,10 +110,11 @@ def generate_figures(
         if not has_s6_data and mode == "final" and spec.name == "F5_s6_fusion_results":
             continue
         subset = _subset(frame, scenario_hint=spec.scenario_hint)
-        fig, ax = plt.subplots(figsize=(PANEL_PX / DPI, PANEL_PX / DPI), dpi=DPI)
+        fig, ax = plt.subplots(figsize=(PANEL_PX / DPI, PANEL_PX / DPI), dpi=DPI, constrained_layout=True)
+        fig.patch.set_facecolor(FIGURE_FACE_COLOR)
         _render_plot(ax=ax, frame=subset, title=spec.name, conformance=conformance, behavior=behavior)
         out_png = out_dir / f"{spec.name}.png"
-        fig.savefig(out_png, dpi=DPI, format="png")
+        fig.savefig(out_png, dpi=DPI, format="png", facecolor=FIGURE_FACE_COLOR, edgecolor="none")
         plt.close(fig)
 
         run_ids = _unique_str_values(subset, "run_id")
@@ -117,6 +138,11 @@ def generate_figures(
             "font_size": FONT_SIZE,
             "panel_pixels": PANEL_PX,
             "dpi": DPI,
+            "style_version": STYLE_VERSION,
+            "figure_facecolor": FIGURE_FACE_COLOR,
+            "text_color": TEXT_COLOR,
+            "grid_color": GRID_COLOR,
+            "engine_palette": list(ENGINE_PALETTE),
             "output_policy": dict(output_policy or {}),
         }
         _write_meta(out_png, meta)
@@ -182,6 +208,24 @@ def _set_plot_style() -> None:
             "ytick.labelsize": FONT_SIZE,
             "legend.fontsize": FONT_SIZE,
             "figure.titlesize": FONT_SIZE,
+            "text.color": TEXT_COLOR,
+            "axes.labelcolor": TEXT_COLOR,
+            "axes.edgecolor": SPINE_COLOR,
+            "axes.facecolor": FIGURE_FACE_COLOR,
+            "figure.facecolor": FIGURE_FACE_COLOR,
+            "savefig.facecolor": FIGURE_FACE_COLOR,
+            "savefig.edgecolor": "none",
+            "xtick.color": TEXT_COLOR,
+            "ytick.color": TEXT_COLOR,
+            "grid.color": GRID_COLOR,
+            "grid.linestyle": "-",
+            "grid.linewidth": 0.8,
+            "axes.linewidth": 0.8,
+            "lines.linewidth": 2.0,
+            "lines.markersize": 6.0,
+            "patch.edgecolor": FIGURE_FACE_COLOR,
+            "patch.force_edgecolor": False,
+            "axes.prop_cycle": plt.cycler(color=ENGINE_PALETTE),
         }
     )
 
@@ -205,7 +249,8 @@ def _render_plot(
     conformance: pd.DataFrame,
     behavior: pd.DataFrame,
 ) -> None:
-    ax.set_title(title)
+    ax.set_facecolor(FIGURE_FACE_COLOR)
+    ax.set_title(title, pad=12, color=TEXT_COLOR)
     if title == "m1_conformance_coverage_matrix":
         _render_conformance_matrix(ax=ax, conformance=conformance)
         return
@@ -219,37 +264,55 @@ def _render_plot(
         _render_schema_validation(ax=ax, frame=frame)
         return
     if frame.empty:
-        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        _draw_placeholder(ax=ax, message="No data")
         ax.set_xticks([])
         ax.set_yticks([])
         return
 
+    engine_colors = _engine_color_map(frame)
     if {"recall_at_10", "p99_ms"}.issubset(frame.columns):
         for engine, sub in frame.groupby("engine", sort=True):
-            ax.scatter(sub["recall_at_10"], sub["p99_ms"], label=str(engine), s=36)
+            engine_name = str(engine)
+            ax.scatter(
+                sub["recall_at_10"],
+                sub["p99_ms"],
+                label=engine_name,
+                s=48,
+                color=engine_colors.get(engine_name),
+                alpha=0.9,
+            )
         ax.set_xlabel("Recall@10")
         ax.set_ylabel("p99 (ms)")
     elif {"clients_read", "p99_ms"}.issubset(frame.columns):
         for engine, sub in frame.groupby("engine", sort=True):
             sub2 = sub.sort_values("clients_read", kind="stable")
-            ax.plot(sub2["clients_read"], sub2["p99_ms"], marker="o", label=str(engine))
+            engine_name = str(engine)
+            ax.plot(
+                sub2["clients_read"],
+                sub2["p99_ms"],
+                marker="o",
+                label=engine_name,
+                color=engine_colors.get(engine_name),
+            )
         ax.set_xlabel("Clients")
         ax.set_ylabel("p99 (ms)")
     else:
         counts = frame.groupby("scenario", sort=True).size()
-        ax.bar(counts.index.tolist(), counts.values.tolist())
+        bar_colors = [ENGINE_PALETTE[idx % len(ENGINE_PALETTE)] for idx in range(len(counts))]
+        ax.bar(counts.index.tolist(), counts.values.tolist(), color=bar_colors, width=0.65)
         ax.set_xlabel("Scenario")
         ax.set_ylabel("Rows")
         ax.tick_params(axis="x", rotation=30)
 
     if frame["engine"].nunique() <= 8:
         ax.legend(loc="best", frameon=False)
-    ax.grid(alpha=0.2)
+    ax.grid(alpha=0.6)
+    _style_axes(ax)
 
 
 def _render_conformance_matrix(*, ax: Any, conformance: pd.DataFrame) -> None:
     if conformance.empty:
-        ax.text(0.5, 0.5, "No conformance data", ha="center", va="center")
+        _draw_placeholder(ax=ax, message="No conformance data")
         ax.set_xticks([])
         ax.set_yticks([])
         return
@@ -268,36 +331,47 @@ def _render_conformance_matrix(*, ax: Any, conformance: pd.DataFrame) -> None:
     matrix = np.zeros((len(operations), len(adapters)), dtype=np.float32)
     status_by_adapter = {str(row["adapter"]): str(row["status"]) for _, row in conformance.iterrows()}
     for j, adapter in enumerate(adapters):
-        passed = status_by_adapter.get(adapter) == "pass"
-        matrix[:, j] = 1.0 if passed else 0.0
-    im = ax.imshow(matrix, cmap="RdYlGn", vmin=0.0, vmax=1.0, aspect="auto")
+        status = status_by_adapter.get(adapter, "").strip().lower()
+        if status == "pass":
+            matrix[:, j] = 1.0
+        elif status in {"na", "n/a"}:
+            matrix[:, j] = 0.5
+        else:
+            matrix[:, j] = 0.0
+    cmap = ListedColormap([FAIL_COLOR, NA_COLOR, PASS_COLOR])
+    norm = BoundaryNorm([-0.25, 0.25, 0.75, 1.25], cmap.N)
+    im = ax.imshow(matrix, cmap=cmap, norm=norm, aspect="auto", interpolation="nearest")
     ax.set_xticks(range(len(adapters)))
     ax.set_xticklabels(adapters, rotation=30, ha="right")
     ax.set_yticks(range(len(operations)))
     ax.set_yticklabels(operations)
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    colorbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    _style_colorbar(colorbar, ticks=[0.0, 0.5, 1.0], ticklabels=["fail", "n/a", "pass"])
+    _style_axes(ax)
 
 
 def _render_behavior_matrix(*, ax: Any, behavior: pd.DataFrame) -> None:
     if behavior.empty:
-        ax.text(0.5, 0.5, "No behavior docs", ha="center", va="center")
+        _draw_placeholder(ax=ax, message="No behavior docs")
         ax.set_xticks([])
         ax.set_yticks([])
         return
     engines = behavior["engine"].tolist()
     columns = [col for col in behavior.columns if col != "engine"]
     matrix = behavior[columns].to_numpy(dtype=np.float32).T
-    im = ax.imshow(matrix, cmap="Blues", vmin=0.0, vmax=1.0, aspect="auto")
+    im = ax.imshow(matrix, cmap=HEATMAP_CMAP, vmin=0.0, vmax=1.0, aspect="auto", interpolation="nearest")
     ax.set_xticks(range(len(engines)))
     ax.set_xticklabels(engines, rotation=30, ha="right")
     ax.set_yticks(range(len(columns)))
     ax.set_yticklabels(columns)
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    colorbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    _style_colorbar(colorbar)
+    _style_axes(ax)
 
 
 def _render_stage_timing(*, ax: Any, frame: pd.DataFrame) -> None:
     if frame.empty:
-        ax.text(0.5, 0.5, "No run data", ha="center", va="center")
+        _draw_placeholder(ax=ax, message="No run data")
         ax.set_xticks([])
         ax.set_yticks([])
         return
@@ -307,14 +381,15 @@ def _render_stage_timing(*, ax: Any, frame: pd.DataFrame) -> None:
     export_s = float(frame.get("export_elapsed_s", pd.Series([0.0])).median())
     labels = ["setup", "warmup", "measure", "export"]
     values = [setup_s, warmup_s, measure_s, export_s]
-    ax.bar(labels, values)
+    ax.bar(labels, values, color=ENGINE_PALETTE[: len(labels)], width=0.65)
     ax.set_ylabel("Seconds (median)")
-    ax.grid(alpha=0.2, axis="y")
+    ax.grid(alpha=0.6, axis="y")
+    _style_axes(ax)
 
 
 def _render_schema_validation(*, ax: Any, frame: pd.DataFrame) -> None:
     if frame.empty or "__run_path" not in frame.columns:
-        ax.text(0.5, 0.5, "No run paths", ha="center", va="center")
+        _draw_placeholder(ax=ax, message="No run paths")
         ax.set_xticks([])
         ax.set_yticks([])
         return
@@ -329,9 +404,10 @@ def _render_schema_validation(*, ax: Any, frame: pd.DataFrame) -> None:
             success += 1
         except Exception:
             failed += 1
-    ax.bar(["valid", "invalid"], [success, failed], color=["#4daf4a", "#e41a1c"])
+    ax.bar(["valid", "invalid"], [success, failed], color=[PASS_COLOR, FAIL_COLOR], width=0.65)
     ax.set_ylabel("Run Count")
-    ax.grid(alpha=0.2, axis="y")
+    ax.grid(alpha=0.6, axis="y")
+    _style_axes(ax)
 
 
 def _load_conformance_matrix(input_dir: Path) -> pd.DataFrame:
@@ -399,6 +475,37 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _draw_placeholder(*, ax: Any, message: str) -> None:
+    ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=FONT_SIZE, color=TEXT_COLOR)
+    _style_axes(ax)
+
+
+def _engine_color_map(frame: pd.DataFrame) -> dict[str, str]:
+    if "engine" not in frame.columns:
+        return {}
+    engines = sorted({str(v) for v in frame["engine"].tolist() if str(v)})
+    return {engine: ENGINE_PALETTE[idx % len(ENGINE_PALETTE)] for idx, engine in enumerate(engines)}
+
+
+def _style_axes(ax: Any) -> None:
+    ax.set_facecolor(FIGURE_FACE_COLOR)
+    ax.tick_params(colors=TEXT_COLOR)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(SPINE_COLOR)
+        ax.spines[side].set_linewidth(0.8)
+
+
+def _style_colorbar(colorbar: Any, *, ticks: list[float] | None = None, ticklabels: list[str] | None = None) -> None:
+    if ticks is not None:
+        colorbar.set_ticks(ticks)
+    if ticklabels is not None:
+        colorbar.set_ticklabels(ticklabels)
+    colorbar.ax.tick_params(labelsize=FONT_SIZE, colors=TEXT_COLOR)
+    colorbar.outline.set_edgecolor(SPINE_COLOR)
 
 
 def _unique_str_values(frame: pd.DataFrame, column: str) -> list[str]:
