@@ -28,7 +28,7 @@ def test_filter_correctness(adapter, seed_records) -> None:
     adapter.bulk_upsert(seed_records)
     adapter.flush_or_commit()
     filtered = adapter.query(
-        QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=10, filters={"tenant": "t1"})
+        QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=10, filters={"tenant_id": "tenant-001"})
     )
     assert {item.id for item in filtered} == {"doc-1", "doc-3"}
 
@@ -51,10 +51,10 @@ def test_update_payload_semantics(adapter, seed_records) -> None:
     adapter.bulk_upsert(seed_records)
     adapter.flush_or_commit()
 
-    adapter.update_payload(ids=["doc-3"], payload={"acl": "a"})
+    adapter.update_payload(ids=["doc-3"], payload={"acl_bucket": 1})
     adapter.flush_or_commit()
     filtered = adapter.query(
-        QueryRequest(vector=[0.0, 0.0, 1.0, 0.0], top_k=10, filters={"acl": "a"})
+        QueryRequest(vector=[0.0, 0.0, 1.0, 0.0], top_k=10, filters={"acl_bucket": 1})
     )
     assert {item.id for item in filtered} == {"doc-1", "doc-2", "doc-3"}
 
@@ -71,7 +71,13 @@ def test_delete_semantics(adapter, seed_records) -> None:
 
 def test_insert_and_batch_query(adapter, seed_records) -> None:
     adapter.bulk_upsert(seed_records)
-    adapter.insert(UpsertRecord(id="doc-4", vector=[0.0, 1.0, 0.0, 0.0], payload={"tenant": "t3"}))
+    adapter.insert(
+        UpsertRecord(
+            id="doc-4",
+            vector=[0.0, 1.0, 0.0, 0.0],
+            payload={"tenant_id": "tenant-003", "acl_bucket": 3, "time_bucket": 29},
+        )
+    )
 
     before = adapter.query(QueryRequest(vector=[0.0, 1.0, 0.0, 0.0], top_k=10))
     if _expect_deferred_visibility():

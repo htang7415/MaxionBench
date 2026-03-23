@@ -21,6 +21,8 @@ if "MPLCONFIGDIR" not in os.environ:
 import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm, ListedColormap
 
+from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_status
+
 FONT_SIZE = 16
 PANEL_PX = 600
 DPI = 100
@@ -158,8 +160,14 @@ def load_results(input_dir: Path) -> pd.DataFrame:
         return pd.DataFrame()
     frames: list[pd.DataFrame] = []
     for path in paths:
-        frame = pd.read_parquet(path)
         run_dir = path.parent
+        status_path = run_dir / RUN_STATUS_FILENAME
+        if status_path.exists():
+            payload = read_run_status(status_path)
+            status = str(payload.get("status") or "").strip().lower()
+            if status != "success":
+                continue
+        frame = pd.read_parquet(path)
         frame["__run_path"] = str(run_dir)
         metadata = _load_run_metadata(run_dir)
         frame["__meta_run_id"] = str(metadata.get("run_id") or "")
@@ -191,6 +199,8 @@ def load_results(input_dir: Path) -> pd.DataFrame:
         frame["__meta_profile_disk_tb"] = _safe_float(resource_profile.get("disk_tb"))
         frame["__meta_profile_rhu_rate"] = _safe_float(resource_profile.get("rhu_rate"))
         frames.append(frame)
+    if not frames:
+        return pd.DataFrame()
     merged = pd.concat(frames, ignore_index=True)
     sort_cols = [col for col in ["scenario", "engine", "repeat_idx", "clients_read", "quality_target"] if col in merged.columns]
     if sort_cols:

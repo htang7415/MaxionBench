@@ -30,7 +30,19 @@ def adapter() -> Iterable[object]:
 @pytest.fixture()
 def seed_records() -> list[UpsertRecord]:
     return [
-        UpsertRecord(id="doc-1", vector=[0.9, 0.1, 0.0, 0.0], payload={"tenant": "t1", "acl": "a"}),
-        UpsertRecord(id="doc-2", vector=[0.1, 0.9, 0.0, 0.0], payload={"tenant": "t2", "acl": "a"}),
-        UpsertRecord(id="doc-3", vector=[0.0, 0.0, 1.0, 0.0], payload={"tenant": "t1", "acl": "b"}),
+        UpsertRecord(
+            id="doc-1",
+            vector=[0.9, 0.1, 0.0, 0.0],
+            payload={"tenant_id": "tenant-001", "acl_bucket": 1, "time_bucket": 11},
+        ),
+        UpsertRecord(
+            id="doc-2",
+            vector=[0.1, 0.9, 0.0, 0.0],
+            payload={"tenant_id": "tenant-002", "acl_bucket": 1, "time_bucket": 17},
+        ),
+        UpsertRecord(
+            id="doc-3",
+            vector=[0.0, 0.0, 1.0, 0.0],
+            payload={"tenant_id": "tenant-001", "acl_bucket": 2, "time_bucket": 23},
+        ),
     ]

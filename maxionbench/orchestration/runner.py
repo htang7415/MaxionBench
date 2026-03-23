@@ -51,11 +51,13 @@ from maxionbench.schemas.result_schema import (
     PINNED_RTT_BASELINE_REQUEST_PROFILE,
     ResultRow,
     RunMetadata,
+    RunStatus,
     stable_config_fingerprint,
     utc_now_iso,
     write_resolved_config,
     write_results_parquet,
     write_run_metadata,
+    write_run_status,
 )
 
 
@@ -158,132 +160,146 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     output_dir = Path(cfg.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "logs").mkdir(parents=True, exist_ok=True)
+    try:
+        if enforce_readiness:
+            from maxionbench.tools.pre_run_gate import evaluate_pre_run_gate
 
-    if enforce_readiness:
-        from maxionbench.tools.pre_run_gate import evaluate_pre_run_gate
+            gate_summary = evaluate_pre_run_gate(
+                config_path=config_path.resolve(),
+                conformance_matrix_path=conformance_matrix.resolve(),
+                behavior_dir=behavior_dir.resolve(),
+                allow_gpu_unavailable=allow_gpu_unavailable,
+                allow_mock=True,
+            )
+            if not bool(gate_summary.get("pass", False)):
+                raise RuntimeError(f"pre-run readiness gate failed: {json.dumps(gate_summary, sort_keys=True)}")
 
-        gate_summary = evaluate_pre_run_gate(
-            config_path=config_path.resolve(),
-            conformance_matrix_path=conformance_matrix.resolve(),
-            behavior_dir=behavior_dir.resolve(),
-            allow_gpu_unavailable=allow_gpu_unavailable,
-            allow_mock=True,
-        )
-        if not bool(gate_summary.get("pass", False)):
-            raise RuntimeError(f"pre-run readiness gate failed: {json.dumps(gate_summary, sort_keys=True)}")
-
-    config_payload = cfg.as_dict()
-    dataset_cache_checksums = _collect_dataset_cache_checksum_provenance(
-        cfg=cfg,
-        config_path=resolved_config_path,
-    )
-    config_payload["d3_params"] = d3_params_path
-    config_payload["readiness"] = {
-        "enforced": enforce_readiness,
-        "conformance_matrix": str(conformance_matrix),
-        "behavior_dir": str(behavior_dir),
-        "allow_gpu_unavailable": allow_gpu_unavailable,
-    }
-    config_fingerprint = stable_config_fingerprint(config_payload)
-
-    if cfg.scenario == "calibrate_d3":
-        rows = _run_calibrate_rows(
+        config_payload = cfg.as_dict()
+        dataset_cache_checksums = _collect_dataset_cache_checksum_provenance(
             cfg=cfg,
-            config_fingerprint=config_fingerprint,
-            d3_params_path=d3_params_path,
             config_path=resolved_config_path,
         )
-    elif cfg.scenario == "s1_ann_frontier":
-        rows = _run_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-    elif cfg.scenario == "s2_filtered_ann":
-        rows = _run_s2_rows(
-            cfg=cfg,
-            config_fingerprint=config_fingerprint,
-            d3_params_path=d3_params_path,
-            config_path=resolved_config_path,
-        )
-    elif cfg.scenario == "s3_churn_smooth":
-        rows = _run_s3_rows(
-            cfg=cfg,
-            config_fingerprint=config_fingerprint,
-            d3_params_path=d3_params_path,
-            config_path=resolved_config_path,
-        )
-    elif cfg.scenario == "s3b_churn_bursty":
-        rows = _run_s3b_rows(
-            cfg=cfg,
-            config_fingerprint=config_fingerprint,
-            d3_params_path=d3_params_path,
-            config_path=resolved_config_path,
-        )
-    elif cfg.scenario == "s4_hybrid":
-        rows = _run_s4_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-    elif cfg.scenario == "s5_rerank":
-        rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-    elif cfg.scenario == "s6_fusion":
-        rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-    else:
-        raise ValueError(f"Unsupported scenario: {cfg.scenario}")
+        config_payload["d3_params"] = d3_params_path
+        config_payload["readiness"] = {
+            "enforced": enforce_readiness,
+            "conformance_matrix": str(conformance_matrix),
+            "behavior_dir": str(behavior_dir),
+            "allow_gpu_unavailable": allow_gpu_unavailable,
+        }
+        config_fingerprint = stable_config_fingerprint(config_payload)
 
-    if not rows:
-        raise RuntimeError("No rows were produced.")
-    output_path = output_dir / "results.parquet"
-    log_path = output_dir / "logs" / "runner.log"
-    first = rows[0]
-    ground_truth = _ground_truth_descriptor(cfg)
-    hardware_runtime = collect_system_info()
-    configured_gpu_omission = bool(config_payload.get("readiness", {}).get("allow_gpu_unavailable", False))
-    observed_gpu_count = float(hardware_runtime.get("gpu_count", 0.0) or 0.0)
-    gpu_tracks_omitted = configured_gpu_omission and observed_gpu_count <= 0.0
-    gpu_tracks_omission_reason = (
-        "GPU-dependent workloads (Track B, Track C, S5) omitted because allow_gpu_unavailable=true and observed gpu_count=0"
-        if gpu_tracks_omitted
-        else None
-    )
-    metadata = RunMetadata(
-        run_id=first.run_id,
-        timestamp_utc=utc_now_iso(),
-        engine=cfg.engine,
-        engine_version=cfg.engine_version,
-        scenario=cfg.scenario,
-        dataset_bundle=cfg.dataset_bundle,
-        dataset_hash=cfg.dataset_hash,
-        seed=cfg.seed,
-        clients_read=cfg.clients_read,
-        clients_write=cfg.clients_write,
-        quality_target=cfg.quality_target,
-        ground_truth_source=ground_truth["source"],
-        ground_truth_metric=ground_truth["metric"],
-        ground_truth_k=ground_truth["k"],
-        ground_truth_engine=ground_truth["engine"],
-        rtt_baseline_ms_p50=first.rtt_baseline_ms_p50,
-        rtt_baseline_ms_p99=first.rtt_baseline_ms_p99,
-        rtt_baseline_request_profile=PINNED_RTT_BASELINE_REQUEST_PROFILE,
-        sla_threshold_ms=cfg.sla_threshold_ms,
-        rhu_weights=asdict(cfg.weights),
-        config_fingerprint=config_fingerprint,
-        repeats=cfg.repeats,
-        no_retry=cfg.no_retry,
-        clients_read_grid=list(cfg.clients_grid),
-        quality_targets=list(cfg.quality_targets),
-        rhu_references=_rhu_references_payload(cfg),
-        resource_profile=_summarize_resource_profile(rows),
-        hardware_runtime=hardware_runtime,
-        dataset_cache_checksums=dataset_cache_checksums,
-        gpu_tracks_omitted=gpu_tracks_omitted,
-        gpu_tracks_omission_reason=gpu_tracks_omission_reason,
-    )
-    export_start = time.perf_counter()
-    write_results_parquet(output_path, rows)
-    _write_runner_log(log_path, rows, config_fingerprint=config_fingerprint)
-    write_run_metadata(output_dir / "run_metadata.json", metadata)
-    write_resolved_config(output_dir / "config_resolved.yaml", config_payload)
-    export_elapsed_s = time.perf_counter() - export_start
+        if cfg.scenario == "calibrate_d3":
+            rows = _run_calibrate_rows(
+                cfg=cfg,
+                config_fingerprint=config_fingerprint,
+                d3_params_path=d3_params_path,
+                config_path=resolved_config_path,
+            )
+        elif cfg.scenario == "s1_ann_frontier":
+            rows = _run_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s2_filtered_ann":
+            rows = _run_s2_rows(
+                cfg=cfg,
+                config_fingerprint=config_fingerprint,
+                d3_params_path=d3_params_path,
+                config_path=resolved_config_path,
+            )
+        elif cfg.scenario == "s3_churn_smooth":
+            rows = _run_s3_rows(
+                cfg=cfg,
+                config_fingerprint=config_fingerprint,
+                d3_params_path=d3_params_path,
+                config_path=resolved_config_path,
+            )
+        elif cfg.scenario == "s3b_churn_bursty":
+            rows = _run_s3b_rows(
+                cfg=cfg,
+                config_fingerprint=config_fingerprint,
+                d3_params_path=d3_params_path,
+                config_path=resolved_config_path,
+            )
+        elif cfg.scenario == "s4_hybrid":
+            rows = _run_s4_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s5_rerank":
+            rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s6_fusion":
+            rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        else:
+            raise ValueError(f"Unsupported scenario: {cfg.scenario}")
 
-    rows_with_export = [replace(row, export_elapsed_s=export_elapsed_s) for row in rows]
-    write_results_parquet(output_path, rows_with_export)
-    _write_runner_log(log_path, rows_with_export, config_fingerprint=config_fingerprint)
-    return output_dir
+        if not rows:
+            raise RuntimeError("No rows were produced.")
+        output_path = output_dir / "results.parquet"
+        log_path = output_dir / "logs" / "runner.log"
+        first = rows[0]
+        ground_truth = _ground_truth_descriptor(cfg)
+        hardware_runtime = collect_system_info()
+        configured_gpu_omission = bool(config_payload.get("readiness", {}).get("allow_gpu_unavailable", False))
+        observed_gpu_count = float(hardware_runtime.get("gpu_count", 0.0) or 0.0)
+        gpu_tracks_omitted = configured_gpu_omission and observed_gpu_count <= 0.0
+        gpu_tracks_omission_reason = (
+            "GPU-dependent workloads (Track B, Track C, S5) omitted because allow_gpu_unavailable=true and observed gpu_count=0"
+            if gpu_tracks_omitted
+            else None
+        )
+        metadata = RunMetadata(
+            run_id=first.run_id,
+            timestamp_utc=utc_now_iso(),
+            engine=cfg.engine,
+            engine_version=cfg.engine_version,
+            scenario=cfg.scenario,
+            dataset_bundle=cfg.dataset_bundle,
+            dataset_hash=cfg.dataset_hash,
+            seed=cfg.seed,
+            clients_read=cfg.clients_read,
+            clients_write=cfg.clients_write,
+            quality_target=cfg.quality_target,
+            ground_truth_source=ground_truth["source"],
+            ground_truth_metric=ground_truth["metric"],
+            ground_truth_k=ground_truth["k"],
+            ground_truth_engine=ground_truth["engine"],
+            rtt_baseline_ms_p50=first.rtt_baseline_ms_p50,
+            rtt_baseline_ms_p99=first.rtt_baseline_ms_p99,
+            rtt_baseline_request_profile=PINNED_RTT_BASELINE_REQUEST_PROFILE,
+            sla_threshold_ms=cfg.sla_threshold_ms,
+            rhu_weights=asdict(cfg.weights),
+            config_fingerprint=config_fingerprint,
+            repeats=cfg.repeats,
+            no_retry=cfg.no_retry,
+            clients_read_grid=list(cfg.clients_grid),
+            quality_targets=list(cfg.quality_targets),
+            rhu_references=_rhu_references_payload(cfg),
+            resource_profile=_summarize_resource_profile(rows),
+            hardware_runtime=hardware_runtime,
+            dataset_cache_checksums=dataset_cache_checksums,
+            gpu_tracks_omitted=gpu_tracks_omitted,
+            gpu_tracks_omission_reason=gpu_tracks_omission_reason,
+        )
+        export_start = time.perf_counter()
+        write_results_parquet(output_path, rows)
+        _write_runner_log(log_path, rows, config_fingerprint=config_fingerprint)
+        write_run_metadata(output_dir / "run_metadata.json", metadata)
+        write_resolved_config(output_dir / "config_resolved.yaml", config_payload)
+        export_elapsed_s = time.perf_counter() - export_start
+
+        rows_with_export = [replace(row, export_elapsed_s=export_elapsed_s) for row in rows]
+        write_results_parquet(output_path, rows_with_export)
+        _write_runner_log(log_path, rows_with_export, config_fingerprint=config_fingerprint)
+        write_run_status(
+            output_dir / "run_status.json",
+            RunStatus(status="success", timestamp_utc=utc_now_iso(), exit_code=0),
+        )
+        return output_dir
+    except BaseException as exc:
+        detail = f"{type(exc).__name__}: {exc}"
+        try:
+            write_run_status(
+                output_dir / "run_status.json",
+                RunStatus(status="failed", timestamp_utc=utc_now_iso(), detail=detail[:512]),
+            )
+        except Exception:
+            pass
+        raise
 
 
 def _run_calibrate_rows(

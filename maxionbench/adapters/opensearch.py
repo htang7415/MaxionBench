@@ -34,12 +34,16 @@ class OpenSearchAdapter(BaseAdapter):
         timeout_s: float = 30.0,
         healthcheck_timeout_s: float | None = None,
         verify_ssl: bool = False,
+        bulk_max_records: int = 1000,
+        bulk_max_bytes: int = 5 * 1024 * 1024,
     ) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout_s = float(timeout_s)
         self._healthcheck_timeout_s = float(healthcheck_timeout_s) if healthcheck_timeout_s is not None else self._timeout_s
         self._verify_ssl = bool(verify_ssl)
         self._auth = (username, password) if username and password else None
+        self._bulk_max_records = max(1, int(bulk_max_records))
+        self._bulk_max_bytes = max(1024, int(bulk_max_bytes))
 
         self._index = ""
         self._dimension = 0
@@ -255,9 +259,27 @@ class OpenSearchAdapter(BaseAdapter):
             self._request("POST", f"/{self._index}/_refresh")
             return
         lines: list[str] = []
+        payload_bytes = 0
+        record_count = 0
         for doc_id, point in sorted(self._records.items(), key=lambda item: item[0]):
-            lines.append(json.dumps({"index": {"_index": self._index, "_id": doc_id}}, sort_keys=True))
-            lines.append(json.dumps({"vector": point.vector.tolist(), "payload": point.payload}, sort_keys=True))
+            meta_line = json.dumps({"index": {"_index": self._index, "_id": doc_id}}, sort_keys=True)
+            doc_line = json.dumps({"vector": point.vector.tolist(), "payload": point.payload}, sort_keys=True)
+            entry_bytes = len(meta_line.encode("utf-8")) + len(doc_line.encode("utf-8")) + 2
+            if lines and (
+                record_count >= self._bulk_max_records or payload_bytes + entry_bytes > self._bulk_max_bytes
+            ):
+                self._post_bulk_lines(lines)
+                lines = []
+                payload_bytes = 0
+                record_count = 0
+            lines.extend([meta_line, doc_line])
+            payload_bytes += entry_bytes
+            record_count += 1
+        if lines:
+            self._post_bulk_lines(lines)
+        self._request("POST", f"/{self._index}/_refresh")
+
+    def _post_bulk_lines(self, lines: Sequence[str]) -> None:
         payload = "\n".join(lines) + "\n"
         response = requests.post(
             f"{self._base_url}/_bulk",
@@ -267,11 +289,10 @@ class OpenSearchAdapter(BaseAdapter):
             timeout=self._timeout_s,
             verify=self._verify_ssl,
         )
-        response.raise_for_status()
+        self._raise_for_status_with_body(response, context="OpenSearch bulk request failed")
         body = response.json()
         if bool(body.get("errors")):
             raise RuntimeError(f"OpenSearch bulk operation reported errors: {body}")
-        self._request("POST", f"/{self._index}/_refresh")
 
     def _request(
         self,
@@ -292,13 +313,34 @@ class OpenSearchAdapter(BaseAdapter):
         )
         if allow_404 and response.status_code == 404:
             return {}
-        response.raise_for_status()
+        self._raise_for_status_with_body(response, context=f"OpenSearch {method} {path} failed")
         if not response.content:
             return {}
         body = response.json()
         if isinstance(body, dict):
             return body
         return {}
+
+    @staticmethod
+    def _raise_for_status_with_body(response: requests.Response, *, context: str) -> None:
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            body_preview = OpenSearchAdapter._response_body_preview(response)
+            message = context
+            if body_preview:
+                message = f"{message}: {body_preview}"
+            raise RuntimeError(message) from exc
+
+    @staticmethod
+    def _response_body_preview(response: requests.Response) -> str:
+        text = getattr(response, "text", "")
+        if text:
+            return text[:1000]
+        content = getattr(response, "content", b"") or b""
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="replace")[:1000]
+        return str(content)[:1000]
 
     def _to_vector(self, vector: Vector) -> np.ndarray:
         arr = np.asarray(vector, dtype=np.float32)

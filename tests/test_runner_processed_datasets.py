@@ -8,7 +8,12 @@ import pandas as pd
 import pytest
 import yaml
 
-from maxionbench.datasets.loaders.processed import PROCESSED_SCHEMA_VERSION, dataset_dir_sha256
+from maxionbench.datasets.loaders.processed import (
+    PROCESSED_SCHEMA_VERSION,
+    dataset_dir_sha256,
+    load_processed_ann_dataset,
+    load_processed_filtered_ann_dataset,
+)
 from maxionbench.orchestration.runner import run_from_config
 
 
@@ -102,6 +107,49 @@ def _make_processed_filtered_ann_dataset(root: Path) -> Path:
     return root
 
 
+def _make_processed_filtered_ann_dataset_with_explicit_filters(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "filtered_ann",
+            "metric": "angular",
+        },
+    )
+    np.save(
+        root / "base.npy",
+        np.asarray(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.8, 0.2],
+                [0.2, 0.8],
+            ],
+            dtype=np.float32,
+        ),
+    )
+    np.save(root / "queries.npy", np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(root / "gt_ids.npy", np.asarray([[0, 2], [1, 3]], dtype=np.int32))
+    _write_jsonl(
+        root / "filters.jsonl",
+        [
+            {"tenant_id": "tenant-000"},
+            {"tenant_id": "tenant-001"},
+        ],
+    )
+    _write_jsonl(
+        root / "payloads.jsonl",
+        [
+            {"tenant_id": "tenant-000"},
+            {"tenant_id": "tenant-001"},
+            {"tenant_id": "tenant-000"},
+            {"tenant_id": "tenant-001"},
+        ],
+    )
+    return root
+
+
 def _make_processed_d4_root(root: Path) -> Path:
     beir = root / "beir" / "fiqa"
     beir.mkdir(parents=True, exist_ok=True)
@@ -162,6 +210,16 @@ def test_runner_s1_uses_processed_d1_dataset(tmp_path: Path) -> None:
     assert float(frame.iloc[0]["recall_at_10"]) >= 0.0
 
 
+def test_load_processed_ann_dataset_recomputes_ground_truth_when_truncated(tmp_path: Path) -> None:
+    processed = _make_processed_ann_dataset(tmp_path / "processed" / "D1" / "glove-100-angular")
+    dataset = load_processed_ann_dataset(processed, max_vectors=2, max_queries=2, top_k=2)
+
+    assert dataset.ground_truth_ids == [
+        ["doc-0000000", "doc-0000001"],
+        ["doc-0000001", "doc-0000000"],
+    ]
+
+
 def test_runner_s1_uses_processed_d2_dataset(tmp_path: Path) -> None:
     processed = _make_processed_ann_dataset(tmp_path / "processed" / "D2" / "deep-image-96-angular")
     cfg = {
@@ -195,6 +253,16 @@ def test_runner_s1_uses_processed_d2_dataset(tmp_path: Path) -> None:
     frame = pd.read_parquet(out_dir / "results.parquet")
     assert len(frame) == 1
     assert float(frame.iloc[0]["qps"]) >= 0.0
+
+
+def test_load_processed_filtered_ann_dataset_recomputes_ground_truth_when_truncated(tmp_path: Path) -> None:
+    processed = _make_processed_filtered_ann_dataset_with_explicit_filters(tmp_path / "processed" / "D3" / "yfcc-10M")
+    dataset = load_processed_filtered_ann_dataset(processed, max_vectors=2, max_queries=2, top_k=2)
+
+    assert dataset.ground_truth_ids == [
+        ["doc-0000000"],
+        ["doc-0000001"],
+    ]
 
 
 def test_runner_s4_uses_processed_d4_bundle(tmp_path: Path) -> None:

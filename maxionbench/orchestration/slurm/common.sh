@@ -28,6 +28,7 @@ export MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S="${MAXIONBENCH_ENGINE_WAIT_TIMEOUT_S:-3
 export MAXIONBENCH_CONFORMANCE_TIMEOUT_S="${MAXIONBENCH_CONFORMANCE_TIMEOUT_S:-300}"
 export MAXIONBENCH_SERVICE_START_GRACE_S="${MAXIONBENCH_SERVICE_START_GRACE_S:-5}"
 export MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S:-30}"
+export MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_MILVUS_S="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_MILVUS_S:-120}"
 export MAXIONBENCH_SERVICE_START_POLL_S="${MAXIONBENCH_SERVICE_START_POLL_S:-0.25}"
 export MAXIONBENCH_SERVICE_LOG_TAIL_LINES="${MAXIONBENCH_SERVICE_LOG_TAIL_LINES:-80}"
 export MAXIONBENCH_PGVECTOR_BIN_DIR="${MAXIONBENCH_PGVECTOR_BIN_DIR:-/usr/lib/postgresql/16/bin}"
@@ -1103,6 +1104,9 @@ mb_verify_managed_service_startup() {
       local adapter_options_json=""
       local verify_timeout_s="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_S:-30}"
       local status=0
+      if [[ "${name}" == "milvus" ]]; then
+        verify_timeout_s="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_MILVUS_S:-120}"
+      fi
       adapter_name="$(mb_service_startup_adapter_name "${name}")" || mb_die "missing startup adapter mapping for managed engine service ${name}"
       if [[ -z "${adapter_name}" ]]; then
         mb_die "startup verification mode health requires an adapter mapping for managed engine service ${name}"
@@ -1630,6 +1634,48 @@ mb_copy_back_output() {
   mb_log "copied artifacts to ${MB_OUTPUT_FINAL}"
 }
 
+mb_write_run_status() {
+  local exit_code="${1:-0}"
+  if [[ -z "${MB_OUTPUT_TMP:-}" ]]; then
+    return 0
+  fi
+  local status="success"
+  local detail=""
+  case "${exit_code}" in
+    0)
+      status="success"
+      ;;
+    130|143)
+      status="cancelled"
+      detail="Slurm job terminated by signal or cancellation"
+      ;;
+    *)
+      status="failed"
+      detail="Slurm job finalized with non-zero exit status"
+      ;;
+  esac
+  mb_python - <<'PY' "${MB_OUTPUT_TMP}" "${status}" "${exit_code}" "${detail}"
+from pathlib import Path
+import sys
+
+from maxionbench.schemas.result_schema import RunStatus, utc_now_iso, write_run_status
+
+output_dir = Path(sys.argv[1])
+status = str(sys.argv[2]).strip()
+exit_code = int(sys.argv[3])
+detail = str(sys.argv[4]).strip()
+write_run_status(
+    output_dir / "run_status.json",
+    RunStatus(
+        status=status,
+        timestamp_utc=utc_now_iso(),
+        exit_code=exit_code,
+        detail=detail or None,
+    ),
+)
+PY
+}
+
 mb_capture_local_diagnostics() {
   if [[ -z "${MB_OUTPUT_TMP:-}" ]]; then
     return 0
@@ -1693,6 +1739,7 @@ mb_finalize_job() {
   if [[ "${service_started}" == "1" ]]; then
     mb_stop_engine_services
   fi
+  mb_write_run_status "${status}"
   mb_capture_local_diagnostics
   if [[ -n "${MB_OUTPUT_TMP:-}" && -d "${MB_OUTPUT_TMP:-}" && -n "${MB_OUTPUT_FINAL:-}" ]]; then
     mb_copy_back_output

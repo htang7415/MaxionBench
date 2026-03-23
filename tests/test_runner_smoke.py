@@ -10,6 +10,7 @@ import yaml
 
 from maxionbench.orchestration.runner import _gpu_count_for_cfg, _resolve_d3_params, run_from_config
 from maxionbench.orchestration.config_schema import RunConfig, expand_env_placeholders, load_run_config
+from maxionbench.schemas.result_schema import read_run_status
 from maxionbench.tools.validate_outputs import validate_run_directory
 
 
@@ -45,6 +46,7 @@ def test_runner_end_to_end(tmp_path: Path) -> None:
     assert (out_dir / "results.parquet").exists()
     assert (out_dir / "run_metadata.json").exists()
     assert (out_dir / "config_resolved.yaml").exists()
+    assert (out_dir / "run_status.json").exists()
     assert (out_dir / "logs" / "runner.log").exists()
 
     frame = pd.read_parquet(out_dir / "results.parquet")
@@ -81,6 +83,9 @@ def test_runner_end_to_end(tmp_path: Path) -> None:
     assert event["config_fingerprint"] == metadata["config_fingerprint"]
     assert event["scenario"] == row["scenario"]
     assert event["engine"] == row["engine"]
+    run_status = read_run_status(out_dir / "run_status.json")
+    assert run_status["status"] == "success"
+    assert int(run_status["exit_code"]) == 0
 
     summary = validate_run_directory(out_dir)
     assert summary["rows"] == 1
