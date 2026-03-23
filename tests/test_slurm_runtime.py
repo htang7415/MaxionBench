@@ -824,7 +824,10 @@ sleep 30
     assert "QDRANT__SERVICE__HTTP_PORT=" in apptainer_calls
     assert "QDRANT__SERVICE__GRPC_PORT=" in apptainer_calls
     assert "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" in apptainer_calls
+    assert "QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots" in apptainer_calls
     assert "/bin/sh -c [ -x /qdrant/entrypoint.sh ] && [ -x /qdrant/qdrant ]" in apptainer_calls
+    runtime_root = slurm_tmpdir / "maxionbench_engine_runtime" / "4242_7" / "qdrant"
+    assert (runtime_root / "storage" / "snapshots").is_dir()
 
 
 def test_slurm_common_pgvector_service_uses_writable_runtime_dirs_and_pg_bin_path(tmp_path: Path) -> None:

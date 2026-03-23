@@ -71,6 +71,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "/bin/sh -c" in build_text
     assert "apptainer inspect" in build_text
     assert "python -s" in build_text
+    assert "StandardGpuResources" in build_text
     assert "--output-dir" in build_text
     assert "--only-missing" in build_text
     assert "service_contracts.sh" in build_text
@@ -96,6 +97,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "%runscript" in definition_text
     assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"' in definition_text
+    assert "python -m pip uninstall -y faiss-cpu" in definition_text
+    assert "python -m pip install faiss-gpu-cu12==1.14.1.post1" in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -177,6 +180,7 @@ def test_main_container_definition_enables_fail_fast_post_install() -> None:
     assert "\n    set -eu\n" in definition_text
     assert "apt-get update && apt-get install -y --no-install-recommends" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"' in definition_text
+    assert "python -m pip install faiss-gpu-cu12==1.14.1.post1" in definition_text
 
 
 def test_build_containers_only_missing_accepts_opensearch_layout_and_shellless_milvus_images(tmp_path: Path) -> None:

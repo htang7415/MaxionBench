@@ -26,6 +26,8 @@ From: python:3.11-slim
     python -m pip install --upgrade pip setuptools wheel
     python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch
     python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"
+    python -m pip uninstall -y faiss-cpu
+    python -m pip install faiss-gpu-cu12==1.14.1.post1
 
 %runscript
     exec maxionbench "$@"

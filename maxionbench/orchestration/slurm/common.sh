@@ -1229,12 +1229,14 @@ mb_start_qdrant_service() {
   local runtime_root
   runtime_root="$(mb_engine_runtime_root)"
   local storage_dir="${runtime_root}/qdrant/storage"
-  mkdir -p "${storage_dir}"
+  local snapshots_dir="${storage_dir}/snapshots"
+  mkdir -p "${storage_dir}" "${snapshots_dir}"
   local -a env_specs=(
     "QDRANT__SERVICE__HOST=0.0.0.0"
     "QDRANT__SERVICE__HTTP_PORT=${MAXIONBENCH_PORT_QDRANT}"
     "QDRANT__SERVICE__GRPC_PORT=${MAXIONBENCH_PORT_QDRANT_GRPC}"
     "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage"
+    "QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots"
   )
   local -a bind_specs=("${storage_dir}:/qdrant/storage")
   mb_assert_service_runtime_bind_contract "qdrant" bind_specs
