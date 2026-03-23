@@ -217,6 +217,14 @@ def test_slurm_common_runs_pre_run_gate_before_runner() -> None:
     assert text.index(gate_marker) < text.index(runner_marker)
 
 
+def test_slurm_common_uses_longer_default_startup_timeout_for_milvus() -> None:
+    text = Path("maxionbench/orchestration/slurm/common.sh").read_text(encoding="utf-8")
+
+    assert "MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_MILVUS_S" in text
+    assert 'if [[ "${name}" == "milvus" ]]; then' in text
+    assert 'verify_timeout_s="${MAXIONBENCH_SERVICE_START_VERIFY_TIMEOUT_MILVUS_S:-120}"' in text
+
+
 def test_slurm_common_revalidates_fallback_config_after_preflight_failure() -> None:
     text = Path("maxionbench/orchestration/slurm/common.sh").read_text(encoding="utf-8")
     assert 'mb_log "scratch preflight failed, validating fallback config ${resolved_fallback}"' in text
@@ -1929,6 +1937,9 @@ def test_slurm_common_finalize_job_captures_runtime_logs_before_cleanup(tmp_path
     final_output = Path(stdout_lines["FINAL"])
     assert final_output.exists()
     assert (final_output / "results.parquet").read_text(encoding="utf-8") == "result\n"
+    run_status = json.loads((final_output / "run_status.json").read_text(encoding="utf-8"))
+    assert run_status["status"] == "failed"
+    assert int(run_status["exit_code"]) == 9
     service_logs = list(final_output.glob("logs/local_runtime/engine_runtime/**/service.log"))
     assert service_logs, list(final_output.rglob("*"))
     assert service_logs[0].read_text(encoding="utf-8") == "service\n"

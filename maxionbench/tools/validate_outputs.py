@@ -17,7 +17,9 @@ from maxionbench.schemas.result_schema import (
     PINNED_RTT_BASELINE_REQUEST_PROFILE,
     REQUIRED_HARDWARE_RUNTIME_FIELDS,
     REQUIRED_METADATA_FIELDS,
+    RUN_STATUS_FILENAME,
     read_metadata,
+    read_run_status,
 )
 
 REQUIRED_STAGE_TIMING_COLUMNS = (
@@ -151,13 +153,34 @@ def _is_run_directory(path: Path) -> bool:
     )
 
 
+def _read_run_status_payload(path: Path) -> Mapping[str, Any] | None:
+    status_path = path / RUN_STATUS_FILENAME
+    if not status_path.exists():
+        return None
+    payload = read_run_status(status_path)
+    return payload if isinstance(payload, Mapping) else None
+
+
+def _has_reportable_run_status(path: Path) -> bool:
+    payload = _read_run_status_payload(path)
+    if payload is None:
+        return True
+    return str(payload.get("status") or "").strip().lower() == "success"
+
+
 def discover_run_directories(path: Path) -> list[Path]:
     resolved = path.resolve()
     if not resolved.exists():
         raise FileNotFoundError(f"Input path does not exist: {resolved}")
-    if _is_run_directory(resolved):
+    if _is_run_directory(resolved) and _has_reportable_run_status(resolved):
         return [resolved]
-    run_dirs = sorted({candidate.parent.resolve() for candidate in resolved.rglob("results.parquet")})
+    run_dirs = sorted(
+        {
+            candidate.parent.resolve()
+            for candidate in resolved.rglob("results.parquet")
+            if _has_reportable_run_status(candidate.parent.resolve())
+        }
+    )
     return run_dirs
 
 
@@ -176,6 +199,11 @@ def validate_run_directory(
     missing = [str(item) for item in required_files if not item.exists()]
     if missing:
         raise FileNotFoundError(f"Missing required artifacts: {missing}")
+    run_status = _read_run_status_payload(path)
+    if run_status is not None:
+        run_status_value = str(run_status.get("status") or "").strip().lower()
+        if run_status_value != "success":
+            raise ValueError(f"{RUN_STATUS_FILENAME} marks run as non-success: {run_status_value or 'unknown'}")
 
     frame = pd.read_parquet(path / "results.parquet")
     if frame.empty:
@@ -273,6 +301,7 @@ def validate_run_directory(
         "resource_metadata_ok": resource_metadata_ok,
         "runtime_protocol_ok": runtime_protocol_ok,
         "logs_ok": logs_ok,
+        "run_status_ok": run_status is None or str(run_status.get("status") or "").strip().lower() == "success",
         "warnings": warnings,
     }
 

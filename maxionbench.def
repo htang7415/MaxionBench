@@ -25,9 +25,29 @@ From: python:3.11-slim
     cd /opt/maxionbench
     python -m pip install --upgrade pip setuptools wheel
     python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch
-    python -m pip install --no-build-isolation ".[dev,engines,reporting,datasets,rerank]"
-    python -m pip uninstall -y faiss-cpu
-    python -m pip install faiss-gpu-cu12==1.14.1.post1
+    python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"
+    python -m pip install \
+        "lancedb>=0.7.0" \
+        "opensearch-py>=2.6.0" \
+        "psycopg[binary]>=3.2.0" \
+        "pymilvus>=2.4.0" \
+        "qdrant-client>=1.9.0" \
+        "weaviate-client>=4.6.0"
+    # The default PyPI faiss-cpu wheel is CPU-only; the GPU adapter needs CUDA symbols.
+    python -m pip install "faiss-gpu-cu12>=1.8.0.2"
+    export HF_HOME=/opt/maxionbench/.cache/huggingface
+    export HUGGINGFACE_HUB_CACHE="${HF_HOME}/hub"
+    export TRANSFORMERS_CACHE="${HF_HOME}/transformers"
+    mkdir -p "${HF_HOME}" "${HUGGINGFACE_HUB_CACHE}" "${TRANSFORMERS_CACHE}"
+    python - <<'PY'
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+MODEL_ID = "BAAI/bge-reranker-base"
+REVISION = "2026-03-04"
+
+AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
+AutoModelForSequenceClassification.from_pretrained(MODEL_ID, revision=REVISION)
+PY
 
 %runscript
     exec maxionbench "$@"

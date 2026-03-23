@@ -129,9 +129,9 @@ class QdrantAdapter(BaseAdapter):
             return len(records)
         points = [
             {
-                "id": record.id,
+                "id": self._encode_local_id(record.id),
                 "vector": list(record.vector),
-                "payload": dict(record.payload),
+                "payload": self._with_local_id_payload(record.id, record.payload),
             }
             for record in records
         ]
@@ -174,9 +174,9 @@ class QdrantAdapter(BaseAdapter):
         results = payload.get("result", [])
         return [
             QueryResult(
-                id=str(item.get("id")),
+                id=self._decode_local_id(item.get("id"), item.get("payload")),
                 score=float(item.get("score", 0.0)),
-                payload=dict(item.get("payload") or {}),
+                payload=self._without_local_id_payload(item.get("payload")),
             )
             for item in results
         ]
@@ -197,7 +197,10 @@ class QdrantAdapter(BaseAdapter):
             ]
             self._local_client.update_vectors(collection_name=self._collection, points=points, wait=True)
             return len(points)
-        points = [{"id": doc_id, "vector": list(vector)} for doc_id, vector in zip(ids, vectors)]
+        points = [
+            {"id": self._encode_local_id(doc_id), "vector": list(vector)}
+            for doc_id, vector in zip(ids, vectors)
+        ]
         self._request(
             "PUT",
             f"/collections/{self._collection}/points/vectors?wait=true",
@@ -218,7 +221,7 @@ class QdrantAdapter(BaseAdapter):
         self._request(
             "POST",
             f"/collections/{self._collection}/points/payload?wait=true",
-            json={"points": list(ids), "payload": dict(payload)},
+            json={"points": [self._encode_local_id(doc_id) for doc_id in ids], "payload": dict(payload)},
         )
         return len(ids)
 
@@ -230,7 +233,7 @@ class QdrantAdapter(BaseAdapter):
         self._request(
             "POST",
             f"/collections/{self._collection}/points/delete?wait=true",
-            json={"points": list(ids)},
+            json={"points": [self._encode_local_id(doc_id) for doc_id in ids]},
         )
         return len(ids)
 
@@ -294,7 +297,14 @@ class QdrantAdapter(BaseAdapter):
         )
         if allow_404 and response.status_code == 404:
             return {}
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            preview = self._response_body_preview(response)
+            message = f"Qdrant {method} {path} failed with HTTP {response.status_code}"
+            if preview:
+                message = f"{message}: {preview}"
+            raise RuntimeError(message) from exc
         if not response.content:
             return {}
         body = response.json()
@@ -365,3 +375,13 @@ class QdrantAdapter(BaseAdapter):
         if "__maxionbench_id" in payload_map:
             return str(payload_map["__maxionbench_id"])
         return str(point_id)
+
+    @staticmethod
+    def _response_body_preview(response: requests.Response) -> str:
+        text = getattr(response, "text", "")
+        if text:
+            return text[:1000]
+        content = getattr(response, "content", b"") or b""
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="replace")[:1000]
+        return str(content)[:1000]

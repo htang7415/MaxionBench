@@ -224,6 +224,8 @@ modules = (
     "pytz",
     "scipy",
     "sklearn",
+    "torch",
+    "transformers",
 )
 
 for module_name in modules:
@@ -233,14 +235,42 @@ for module_name in modules:
         print(f"main image validation failed while importing {module_name}: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise
 
-import faiss  # type: ignore
+import faiss
 
 if not hasattr(faiss, "StandardGpuResources"):
-    raise RuntimeError(
-        "main image validation failed: installed faiss module lacks GPU support "
-        "(missing StandardGpuResources); install a GPU-capable FAISS wheel"
-    )
+    raise RuntimeError("main image validation failed: installed faiss module does not expose GPU support")
 PY
+}
+
+prefetch_s5_reranker_cache() {
+  local image_path="$1"
+  local hf_cache_dir="${MAXIONBENCH_HF_CACHE_DIR:-}"
+  local model_id="BAAI/bge-reranker-base"
+  local revision="2026-03-04"
+  local resolved_hf_cache=""
+
+  if [[ -z "${hf_cache_dir}" ]]; then
+    printf '%s\n' "+ skipping shared HF cache prefetch; MAXIONBENCH_HF_CACHE_DIR is empty"
+    return 0
+  fi
+
+  resolved_hf_cache="$(resolve_root_path "${hf_cache_dir}")"
+  mkdir -p "${resolved_hf_cache}/hub" "${resolved_hf_cache}/transformers"
+  printf '%s\n' "+ prefetching ${model_id}@${revision} into ${resolved_hf_cache}"
+  apptainer exec --cleanenv \
+    --env "HF_HOME=${resolved_hf_cache}" \
+    --env "HUGGINGFACE_HUB_CACHE=${resolved_hf_cache}/hub" \
+    --env "TRANSFORMERS_CACHE=${resolved_hf_cache}/transformers" \
+    "${image_path}" python -s - <<'PY'
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+MODEL_ID = "BAAI/bge-reranker-base"
+REVISION = "2026-03-04"
+
+AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
+AutoModelForSequenceClassification.from_pretrained(MODEL_ID, revision=REVISION)
+PY
+  printf '%s\n' "+ validated shared HF cache for ${model_id}@${revision}"
 }
 
 service_image_is_valid() {
@@ -348,6 +378,7 @@ pull_service_image() {
 }
 
 build_main_image "${OUTPUT_DIR}/maxionbench.sif"
+prefetch_s5_reranker_cache "${OUTPUT_DIR}/maxionbench.sif"
 pull_service_image "${OUTPUT_DIR}/qdrant.sif" "docker://qdrant/qdrant:v1.13.0" "qdrant"
 pull_service_image "${OUTPUT_DIR}/pgvector.sif" "docker://pgvector/pgvector:0.8.0-pg16" "pgvector"
 pull_service_image "${OUTPUT_DIR}/opensearch.sif" "docker://opensearchproject/opensearch:2.19.1" "opensearch"

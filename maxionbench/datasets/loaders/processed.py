@@ -71,17 +71,28 @@ def load_processed_ann_dataset(
     vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors).astype(np.float32, copy=False)
     queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries).astype(np.float32, copy=False)
     ids = SequentialDocIdSequence(int(vectors_np.shape[0]))
-    gt_rows = _resolve_ground_truth_ids(
-        gt_ids=gt_ids[: queries_np.shape[0]],
-        ids=ids,
-        top_k=top_k,
+    metric = str(meta.get("metric", "ip")).lower()
+    gt_rows = (
+        _recompute_ground_truth_ids(
+            ids=ids,
+            vectors=vectors_np,
+            queries=queries_np,
+            top_k=top_k,
+            metric=metric,
+        )
+        if int(vectors_np.shape[0]) != int(vectors.shape[0])
+        else _resolve_ground_truth_ids(
+            gt_ids=gt_ids[: queries_np.shape[0]],
+            ids=ids,
+            top_k=top_k,
+        )
     )
     return ProcessedAnnDataset(
         ids=ids,
         vectors=vectors_np,
         queries=queries_np,
         ground_truth_ids=gt_rows,
-        metric=str(meta.get("metric", "ip")).lower(),
+        metric=metric,
         meta=meta,
     )
 
@@ -109,12 +120,6 @@ def load_processed_filtered_ann_dataset(
     vectors_np = np.asarray(vectors[:max_vectors] if max_vectors is not None else vectors).astype(np.float32, copy=False)
     queries_np = np.asarray(queries[:max_queries] if max_queries is not None else queries).astype(np.float32, copy=False)
     ids = SequentialDocIdSequence(int(vectors_np.shape[0]))
-    gt_rows = _resolve_ground_truth_ids(
-        gt_ids=gt_ids[: queries_np.shape[0]],
-        ids=ids,
-        top_k=top_k,
-    )
-
     limited_filters = filters[: queries_np.shape[0]]
     if len(limited_filters) < int(queries_np.shape[0]):
         raise ValueError("processed filtered ANN dataset does not include one filter row per query")
@@ -127,6 +132,24 @@ def load_processed_filtered_ann_dataset(
             len(ids),
         )
     padded_payloads = payloads[: len(ids)] if payloads else [{} for _ in range(len(ids))]
+    metric = str(meta.get("metric", "ip")).lower()
+    gt_rows = (
+        _recompute_filtered_ground_truth_ids(
+            ids=ids,
+            vectors=vectors_np,
+            queries=queries_np,
+            top_k=top_k,
+            metric=metric,
+            query_filters=limited_filters,
+            payloads=padded_payloads,
+        )
+        if int(vectors_np.shape[0]) != int(vectors.shape[0])
+        else _resolve_ground_truth_ids(
+            gt_ids=gt_ids[: queries_np.shape[0]],
+            ids=ids,
+            top_k=top_k,
+        )
+    )
 
     return ProcessedFilteredAnnDataset(
         ids=ids,
@@ -135,7 +158,7 @@ def load_processed_filtered_ann_dataset(
         ground_truth_ids=gt_rows,
         query_filters=list(limited_filters),
         payloads=padded_payloads,
-        metric=str(meta.get("metric", "ip")).lower(),
+        metric=metric,
         meta=meta,
     )
 
@@ -238,6 +261,124 @@ def _resolve_ground_truth_ids(
     for row in indexed[:, :top_k]:
         rows.append([ids[int(idx)] for idx in row])
     return rows
+
+
+def _recompute_ground_truth_ids(
+    *,
+    ids: Sequence[str],
+    vectors: np.ndarray,
+    queries: np.ndarray,
+    top_k: int,
+    metric: str,
+) -> list[list[str]]:
+    _LOG.warning(
+        "processed dataset vectors were truncated from ground-truth source size; recomputing exact top-%d ids for %d queries",
+        int(top_k),
+        int(queries.shape[0]),
+    )
+    return [_exact_topk_ids(ids=ids, vectors=vectors, query=query, top_k=top_k, metric=metric) for query in queries]
+
+
+def _recompute_filtered_ground_truth_ids(
+    *,
+    ids: Sequence[str],
+    vectors: np.ndarray,
+    queries: np.ndarray,
+    top_k: int,
+    metric: str,
+    query_filters: Sequence[Mapping[str, Any]],
+    payloads: Sequence[Mapping[str, Any]],
+) -> list[list[str]]:
+    _LOG.warning(
+        "processed filtered dataset vectors were truncated from ground-truth source size; recomputing exact filtered top-%d ids for %d queries",
+        int(top_k),
+        int(queries.shape[0]),
+    )
+    rows: list[list[str]] = []
+    for query, filt in zip(queries, query_filters, strict=False):
+        rows.append(
+            _exact_topk_ids(
+                ids=ids,
+                vectors=vectors,
+                query=query,
+                top_k=top_k,
+                metric=metric,
+                payloads=payloads,
+                filters=filt,
+            )
+        )
+    return rows
+
+
+def _exact_topk_ids(
+    *,
+    ids: Sequence[str],
+    vectors: np.ndarray,
+    query: np.ndarray,
+    top_k: int,
+    metric: str,
+    payloads: Sequence[Mapping[str, Any]] | None = None,
+    filters: Mapping[str, Any] | None = None,
+) -> list[str]:
+    normalized_metric = _normalize_metric(metric)
+    vectors_np = np.asarray(vectors, dtype=np.float32)
+    query_np = np.asarray(query, dtype=np.float32)
+    if payloads is not None and filters:
+        mask = np.asarray([_matches_processed_filter(payload, filters) for payload in payloads], dtype=bool)
+    else:
+        mask = np.ones(vectors_np.shape[0], dtype=bool)
+    if not np.any(mask):
+        return []
+    masked_vectors = vectors_np[mask]
+    masked_indices = np.flatnonzero(mask)
+    if normalized_metric == "cos":
+        masked_vectors = _unit_rows(masked_vectors)
+        query_np = _unit_vector(query_np)
+        scores = masked_vectors @ query_np
+        order = np.argsort(-scores, kind="mergesort")
+    elif normalized_metric == "l2":
+        distances = np.sum((masked_vectors - query_np) ** 2, axis=1)
+        order = np.argsort(distances, kind="mergesort")
+    else:
+        scores = masked_vectors @ query_np
+        order = np.argsort(-scores, kind="mergesort")
+    selected = masked_indices[order[:top_k]]
+    return [str(ids[int(index)]) for index in selected]
+
+
+def _normalize_metric(metric: str) -> str:
+    normalized = str(metric).strip().lower()
+    if normalized in {"ip", "inner_product", "dot"}:
+        return "ip"
+    if normalized in {"l2", "euclid", "euclidean"}:
+        return "l2"
+    if normalized in {"cos", "cosine", "angular"}:
+        return "cos"
+    raise ValueError(f"Unsupported processed dataset metric: {metric}")
+
+
+def _matches_processed_filter(payload: Mapping[str, Any], filters: Mapping[str, Any]) -> bool:
+    for key, expected in filters.items():
+        if key == "must_have_tags":
+            payload_tags = payload.get("tags")
+            if not isinstance(payload_tags, (list, tuple, set)):
+                return False
+            expected_tags = list(expected) if isinstance(expected, (list, tuple, set)) else [expected]
+            if any(tag not in payload_tags for tag in expected_tags):
+                return False
+            continue
+        if payload.get(key) != expected:
+            return False
+    return True
+
+
+def _unit_rows(vectors: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-12
+    return vectors / norms
+
+
+def _unit_vector(vector: np.ndarray) -> np.ndarray:
+    return vector / (float(np.linalg.norm(vector)) + 1e-12)
 
 
 def _load_processed_text_bundle(dataset_dir: Path) -> _ProcessedTextBundle:

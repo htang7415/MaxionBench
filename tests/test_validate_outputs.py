@@ -9,6 +9,7 @@ import yaml
 
 from maxionbench.cli import main as cli_main
 from maxionbench.orchestration.runner import run_from_config
+from maxionbench.schemas.result_schema import RunStatus, write_run_status, utc_now_iso
 from maxionbench.tools.migrate_stage_timing import backfill_path
 from maxionbench.tools.validate_outputs import validate_path, validate_run_directory
 
@@ -289,6 +290,31 @@ def test_validate_path_supports_parent_directory(tmp_path: Path) -> None:
     assert summary["warning_count"] == 0
     assert int(summary["run_count"]) == 2
     assert int(summary["total_rows"]) == 2
+
+
+def test_validate_path_skips_non_success_run_status(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs_status"
+    run1 = _make_run(runs_root, name="run-ok", seed=41)
+    run2 = _make_run(runs_root, name="run-failed", seed=43)
+    write_run_status(
+        run2 / "run_status.json",
+        RunStatus(status="failed", timestamp_utc=utc_now_iso(), exit_code=9, detail="simulated failure"),
+    )
+
+    summary = validate_path(runs_root)
+    assert {Path(item["run_path"]) for item in summary["runs"]} == {run1}
+    assert int(summary["run_count"]) == 1
+
+
+def test_validate_run_directory_rejects_non_success_run_status(tmp_path: Path) -> None:
+    run_dir = _make_run(tmp_path, name="run-non-success", seed=47)
+    write_run_status(
+        run_dir / "run_status.json",
+        RunStatus(status="cancelled", timestamp_utc=utc_now_iso(), exit_code=143, detail="simulated cancel"),
+    )
+
+    with pytest.raises(ValueError, match="run_status.json marks run as non-success"):
+        validate_run_directory(run_dir)
 
 
 def test_migrate_stage_timing_backfills_legacy_results(tmp_path: Path) -> None:

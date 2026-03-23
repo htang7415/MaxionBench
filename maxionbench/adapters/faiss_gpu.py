@@ -14,7 +14,8 @@ class FaissGpuAdapter(FaissCpuAdapter):
         super().__init__()
         if not hasattr(self._faiss, "StandardGpuResources"):
             raise RuntimeError(
-                "Installed FAISS does not include GPU support. Install `faiss-gpu` for FaissGpuAdapter."
+                "Installed FAISS does not include GPU support. Install a GPU-enabled FAISS wheel such as "
+                "`faiss-gpu-cu12` for FaissGpuAdapter."
             )
         self._device_id = int(device_id)
         self._gpu_res = self._faiss.StandardGpuResources()

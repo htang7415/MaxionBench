@@ -11,6 +11,8 @@ import yaml
 from maxionbench.cli import main as cli_main
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.paper_exports import generate_report_bundle
+from maxionbench.reports.plots import load_results
+from maxionbench.schemas.result_schema import RunStatus, write_run_status, utc_now_iso
 
 
 def _make_run(tmp_path: Path, *, overrides: dict[str, object] | None = None) -> Path:
@@ -155,6 +157,23 @@ def test_report_cli_smoke(tmp_path: Path) -> None:
     assert (out_dir / "F5_deferred_note.meta.json").exists()
     summary_meta = json.loads((out_dir / "final_summary.meta.json").read_text(encoding="utf-8"))
     _assert_output_policy(summary_meta, expected_path_class="final", expected_milestone_id=None)
+
+
+def test_load_results_skips_non_success_run_status(tmp_path: Path) -> None:
+    ok_root = tmp_path / "ok"
+    failed_root = tmp_path / "failed"
+    ok_root.mkdir(parents=True, exist_ok=True)
+    failed_root.mkdir(parents=True, exist_ok=True)
+    run_dir = _make_run(ok_root)
+    failed_dir = _make_run(failed_root)
+    write_run_status(
+        failed_dir / "run_status.json",
+        RunStatus(status="failed", timestamp_utc=utc_now_iso(), exit_code=9, detail="simulated failure"),
+    )
+
+    frame = load_results(tmp_path)
+    assert not frame.empty
+    assert set(frame["__run_path"].astype(str).tolist()) == {str(run_dir)}
 
 
 def test_report_cli_milestone_id_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

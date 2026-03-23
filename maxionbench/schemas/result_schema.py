@@ -48,6 +48,9 @@ REQUIRED_HARDWARE_RUNTIME_FIELDS = (
     "gpu_count",
 )
 
+RUN_STATUS_FILENAME = "run_status.json"
+VALID_RUN_STATUSES = ("success", "failed", "cancelled")
+
 
 @dataclass(frozen=True)
 class ResultRow:
@@ -185,6 +188,24 @@ class RunMetadata:
             raise ValueError("gpu_tracks_omission_reason must be non-empty when provided")
 
 
+@dataclass(frozen=True)
+class RunStatus:
+    """Terminal status for a run directory."""
+
+    status: str
+    timestamp_utc: str
+    exit_code: int | None = None
+    detail: str | None = None
+
+    def validate(self) -> None:
+        if self.status not in VALID_RUN_STATUSES:
+            raise ValueError(f"run status must be one of {list(VALID_RUN_STATUSES)}, got {self.status!r}")
+        if not self.timestamp_utc.strip():
+            raise ValueError("run status timestamp_utc must be non-empty")
+        if self.detail is not None and not str(self.detail).strip():
+            raise ValueError("run status detail must be non-empty when provided")
+
+
 def utc_now_iso() -> str:
     """Return UTC timestamp in stable ISO-8601 format."""
 
@@ -221,6 +242,16 @@ def write_run_metadata(path: Path, metadata: RunMetadata) -> None:
         handle.write("\n")
 
 
+def write_run_status(path: Path, status: RunStatus) -> None:
+    """Write terminal run status JSON with deterministic key ordering."""
+
+    status.validate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(asdict(status), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 def write_resolved_config(path: Path, config: Mapping[str, Any]) -> None:
     """Write resolved config as YAML."""
 
@@ -232,3 +263,11 @@ def write_resolved_config(path: Path, config: Mapping[str, Any]) -> None:
 def read_metadata(path: Path) -> Mapping[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def read_run_status(path: Path) -> Mapping[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"run status payload must be a mapping: {path}")
+    return payload
