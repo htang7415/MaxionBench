@@ -265,15 +265,20 @@ class MilvusAdapter(BaseAdapter):
         self._create_remote_collection(drop_existing=True)
         if not snapshot:
             return
-        ids = sorted(snapshot.keys())
-        vectors = [snapshot[doc_id].vector.tolist() for doc_id in ids]
-        payloads = [json.dumps(snapshot[doc_id].payload, sort_keys=True) for doc_id in ids]
-        tenants = [str(snapshot[doc_id].payload.get("tenant_id", "")) for doc_id in ids]
-        acl_buckets = [int(snapshot[doc_id].payload.get("acl_bucket", 0)) for doc_id in ids]
-        time_buckets = [int(snapshot[doc_id].payload.get("time_bucket", 0)) for doc_id in ids]
         if self._obj is None:
             return
-        self._obj.insert([ids, vectors, payloads, tenants, acl_buckets, time_buckets])
+        rows = [
+            {
+                "id": doc_id,
+                "vector": snapshot[doc_id].vector.tolist(),
+                "payload_json": json.dumps(snapshot[doc_id].payload, sort_keys=True),
+                "tenant_id": str(snapshot[doc_id].payload.get("tenant_id", "")),
+                "acl_bucket": int(snapshot[doc_id].payload.get("acl_bucket", 0)),
+                "time_bucket": int(snapshot[doc_id].payload.get("time_bucket", 0)),
+            }
+            for doc_id in sorted(snapshot.keys())
+        ]
+        self._obj.insert(rows)
         self._obj.flush()
         self._obj.load()
 

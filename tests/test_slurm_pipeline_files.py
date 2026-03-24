@@ -97,6 +97,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
+    assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text
     assert "maxionbench_mirrors" in definition_text
     assert "save_pretrained" in definition_text
 
@@ -173,6 +174,70 @@ def test_slurm_pipeline_shell_scripts_are_bash_parseable() -> None:
         assert completed.returncode == 0, f"{path}: {completed.stdout}{completed.stderr}"
 
 
+def test_smoke_wrapper_expands_s1_ann_frontier_family_into_paper_templates(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+
+    smoke_script = repo_dir / "test_slrum_pipeline.sh"
+    smoke_script.write_text(Path("test_slrum_pipeline.sh").read_text(encoding="utf-8"), encoding="utf-8")
+    smoke_script.chmod(0o755)
+
+    pipeline_script = repo_dir / "run_slurm_pipeline.sh"
+    pipeline_script.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" > "${MAXIONBENCH_TEST_PIPELINE_LOG}"
+""",
+        encoding="utf-8",
+    )
+    pipeline_script.chmod(0o755)
+
+    scenarios_dir = repo_dir / "configs" / "scenarios_paper"
+    scenarios_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("s1_ann_frontier_d1_glove.yaml", "s1_ann_frontier_d3.yaml", "s5_rerank.yaml"):
+        (scenarios_dir / name).write_text(f"scenario: {name[:-5]}\n", encoding="utf-8")
+
+    engines_dir = repo_dir / "configs" / "engines"
+    engines_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("faiss_gpu.yaml", "milvus.yaml"):
+        (engines_dir / name).write_text(f"engine: {name[:-5]}\n", encoding="utf-8")
+
+    pipeline_log = tmp_path / "pipeline_args.log"
+    completed = subprocess.run(
+        [
+            "bash",
+            str(smoke_script),
+            "--cluster",
+            "nrel",
+            "--scenarios",
+            "s1_ann_frontier,s5_rerank",
+            "--engines",
+            "faiss_gpu,milvus",
+            "--smoke-root",
+            "artifacts/slurm_manifests/smoke_latest",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_dir,
+        env={**os.environ, "MAXIONBENCH_TEST_PIPELINE_LOG": str(pipeline_log)},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "+ smoke scenario templates (3): s1_ann_frontier_d1_glove.yaml, s1_ann_frontier_d3.yaml, s5_rerank.yaml" in completed.stdout
+    assert "+ smoke benchmark configs: 6" in completed.stdout
+
+    staged_dir = repo_dir / "artifacts" / "slurm_manifests" / "smoke_latest" / "scenarios"
+    assert (staged_dir / "s1_ann_frontier_d1_glove.yaml").exists()
+    assert (staged_dir / "s1_ann_frontier_d3.yaml").exists()
+    assert (staged_dir / "s5_rerank.yaml").exists()
+
+    pipeline_args = pipeline_log.read_text(encoding="utf-8")
+    assert "--scenario-config-dir" in pipeline_args
+    assert "--engine-config-dir" in pipeline_args
+    assert "--run-manifest-dir" in pipeline_args
+    assert "--allow-reduced-matrix" in pipeline_args
+
+
 def test_main_container_definition_enables_fail_fast_post_install() -> None:
     definition_text = Path("maxionbench.def").read_text(encoding="utf-8")
 
@@ -181,6 +246,7 @@ def test_main_container_definition_enables_fail_fast_post_install() -> None:
     assert "apt-get update && apt-get install -y --no-install-recommends" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
+    assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text
     assert 'MODEL_ID = "BAAI/bge-reranker-base"' in definition_text
     assert "maxionbench_mirrors" in definition_text
     assert "save_pretrained" in definition_text

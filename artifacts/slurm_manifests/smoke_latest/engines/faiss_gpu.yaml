@@ -1,0 +1,4 @@
+engine: faiss-gpu
+engine_version: "gpu"
+adapter_options:
+  device_id: 0

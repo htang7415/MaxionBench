@@ -33,6 +33,7 @@ class PgVectorAdapter(BaseAdapter):
         dsn: str = "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
         schema: str = "public",
         connect_timeout_s: float = 10.0,
+        index_method: str | None = None,
     ) -> None:
         try:
             import psycopg
@@ -48,6 +49,8 @@ class PgVectorAdapter(BaseAdapter):
         self._dimension = 0
         self._metric = "ip"
         self._index_params: dict[str, Any] = {}
+        if index_method is not None:
+            self._index_params["index_method"] = str(index_method)
         self._search_params: dict[str, Any] = {}
         self._deleted_total = 0
         self._created_at = time.monotonic()
@@ -82,19 +85,20 @@ class PgVectorAdapter(BaseAdapter):
                 )
             )
             method = str(self._index_params.get("index_method", "ivfflat")).strip().lower()
-            if method not in {"ivfflat", "hnsw"}:
+            if method not in {"ivfflat", "hnsw", "none", "flat"}:
                 method = "ivfflat"
-            cur.execute(
-                self._sql(
-                    (
-                        "CREATE INDEX {index_name} ON {schema}.{table} "
-                        f"USING {method} (embedding {metric_ops})"
-                    ),
-                    index_name=index_ident,
-                    schema=self._cfg.schema,
-                    table=table_ident,
+            if method not in {"none", "flat"}:
+                cur.execute(
+                    self._sql(
+                        (
+                            "CREATE INDEX {index_name} ON {schema}.{table} "
+                            f"USING {method} (embedding {metric_ops})"
+                        ),
+                        index_name=index_ident,
+                        schema=self._cfg.schema,
+                        table=table_ident,
+                    )
                 )
-            )
         self._writer.commit()
         self._created_at = time.monotonic()
         self._deleted_total = 0

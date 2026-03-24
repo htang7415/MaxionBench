@@ -27,9 +27,13 @@ class _FakeCursor:
 class _FakeWriter:
     def __init__(self, cursor: _FakeCursor) -> None:
         self._cursor = cursor
+        self.commit_calls = 0
 
     def cursor(self) -> _FakeCursor:
         return self._cursor
+
+    def commit(self) -> None:
+        self.commit_calls += 1
 
 
 def test_pgvector_bulk_upsert_batches_into_one_insert() -> None:
@@ -52,6 +56,33 @@ def test_pgvector_bulk_upsert_batches_into_one_insert() -> None:
     assert "ON CONFLICT (id) DO UPDATE" in str(stmt)
     assert str(stmt).count("(%s, %s::vector, %s::jsonb)") == 2
     assert len(params) == 6
+
+
+def test_pgvector_create_skips_index_when_index_method_none() -> None:
+    cursor = _FakeCursor()
+    writer = _FakeWriter(cursor)
+    adapter = object.__new__(PgVectorAdapter)
+    adapter._cfg = type("Cfg", (), {"schema": "public"})()
+    adapter._writer = writer
+    adapter._index_params = {"index_method": "none"}
+    adapter._deleted_total = 0
+    adapter._created_at = 0.0
+
+    def _fake_sql(query: str, **identifiers: str) -> str:
+        rendered = query
+        for key, value in identifiers.items():
+            rendered = rendered.replace("{" + key + "}", value)
+        return rendered
+
+    adapter._sql = _fake_sql  # type: ignore[assignment]
+    adapter._table_ident = lambda collection: collection  # type: ignore[assignment]
+    adapter._index_ident = lambda collection: f"{collection}_embedding_idx"  # type: ignore[assignment]
+    adapter.create(collection="bench", dimension=4, metric="ip")
+
+    statements = [str(stmt) for stmt, _ in cursor.calls]
+    assert any("CREATE TABLE public.bench" in stmt for stmt in statements)
+    assert all("CREATE INDEX" not in stmt for stmt in statements)
+    assert writer.commit_calls == 1
 
 
 def test_lancedb_stats_use_measured_disk_bytes(tmp_path: Path) -> None:

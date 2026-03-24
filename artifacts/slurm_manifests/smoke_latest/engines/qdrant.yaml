@@ -1,0 +1,6 @@
+engine: qdrant
+engine_version: "server"
+adapter_options:
+  host: ${MAXIONBENCH_QDRANT_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_QDRANT_PORT:-6333}
+  timeout_s: 30.0
