@@ -97,6 +97,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
+    assert "maxionbench_mirrors" in definition_text
+    assert "save_pretrained" in definition_text
 
     download_text = download.read_text(encoding="utf-8")
     assert "maxionbench.cli download-datasets" in download_text
@@ -180,6 +182,8 @@ def test_main_container_definition_enables_fail_fast_post_install() -> None:
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
     assert 'MODEL_ID = "BAAI/bge-reranker-base"' in definition_text
+    assert "maxionbench_mirrors" in definition_text
+    assert "save_pretrained" in definition_text
     assert "AutoModelForSequenceClassification.from_pretrained" in definition_text
 
 
@@ -191,6 +195,7 @@ def test_build_containers_prefetches_pinned_reranker_into_shared_hf_cache() -> N
     assert "AutoTokenizer.from_pretrained" in text
     assert "prefetch_s5_reranker_cache" in text
     assert 'hasattr(faiss, "StandardGpuResources")' in text
+    assert "maxionbench_mirrors" in text
 
 
 def test_build_containers_only_missing_accepts_opensearch_layout_and_shellless_milvus_images(tmp_path: Path) -> None:
