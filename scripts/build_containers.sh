@@ -262,13 +262,21 @@ prefetch_s5_reranker_cache() {
     --env "HUGGINGFACE_HUB_CACHE=${resolved_hf_cache}/hub" \
     --env "TRANSFORMERS_CACHE=${resolved_hf_cache}/transformers" \
     "${image_path}" python -s - <<'PY'
+import os
+from pathlib import Path
+
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL_ID = "BAAI/bge-reranker-base"
 REVISION = "2026-03-04"
+hf_home = Path(os.environ["HF_HOME"])
+mirror_dir = hf_home / "maxionbench_mirrors" / MODEL_ID.replace("/", "__") / REVISION
 
-AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
-AutoModelForSequenceClassification.from_pretrained(MODEL_ID, revision=REVISION)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
+mirror_dir.mkdir(parents=True, exist_ok=True)
+tokenizer.save_pretrained(mirror_dir)
+model.save_pretrained(mirror_dir)
 PY
   printf '%s\n' "+ validated shared HF cache for ${model_id}@${revision}"
 }

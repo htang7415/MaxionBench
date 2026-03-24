@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import time
 from typing import Any, Callable, Mapping
 
@@ -74,6 +75,10 @@ class _RerankerRuntime:
     fallback_reason: str | None = None
     device: str | None = None
     local_files_only: bool = True
+
+
+_HF_MIRROR_SUBDIR = "maxionbench_mirrors"
+_BUILTIN_HF_HOME = Path("/opt/maxionbench/.cache/huggingface")
 
 
 def run(
@@ -330,11 +335,12 @@ def _build_reranker_runtime(cfg: S5Config) -> _RerankerRuntime:
     try:
         model_id = str(cfg.reranker_model_id)
         revision = str(cfg.reranker_revision_tag)
+        model_source, resolved_revision = _resolve_reranker_model_source(model_id=model_id, revision=revision)
         device = "cuda" if bool(getattr(torch.cuda, "is_available", lambda: False)()) else "cpu"
         local_files_only = True
         tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            revision=revision,
+            model_source,
+            revision=resolved_revision,
             local_files_only=local_files_only,
         )
         tokenizer.truncation_side = cfg.reranker_truncation
@@ -345,8 +351,8 @@ def _build_reranker_runtime(cfg: S5Config) -> _RerankerRuntime:
             torch_module=torch,
         )
         model = AutoModelForSequenceClassification.from_pretrained(
-            model_id,
-            revision=revision,
+            model_source,
+            revision=resolved_revision,
             torch_dtype=torch_dtype,
             local_files_only=local_files_only,
         )
@@ -402,6 +408,57 @@ def _heuristic_runtime(reason: str) -> _RerankerRuntime:
         device=None,
         local_files_only=True,
     )
+
+
+def _resolve_reranker_model_source(*, model_id: str, revision: str) -> tuple[str, str | None]:
+    mirror_dir = _find_local_reranker_mirror(model_id=model_id, revision=revision)
+    if mirror_dir is not None:
+        return str(mirror_dir), None
+    return model_id, revision
+
+
+def _find_local_reranker_mirror(*, model_id: str, revision: str) -> Path | None:
+    for root in _candidate_hf_cache_roots():
+        candidate = root / _HF_MIRROR_SUBDIR / _sanitize_model_id(model_id) / revision
+        if (candidate / "config.json").is_file():
+            return candidate
+    return None
+
+
+def _candidate_hf_cache_roots() -> list[Path]:
+    seen: set[str] = set()
+    roots: list[Path] = []
+    raw_candidates = [
+        os.environ.get("MAXIONBENCH_HF_CACHE_DIR"),
+        os.environ.get("HF_HOME"),
+        _hf_root_from_cache_path(os.environ.get("HUGGINGFACE_HUB_CACHE")),
+        _hf_root_from_cache_path(os.environ.get("TRANSFORMERS_CACHE")),
+        str(_BUILTIN_HF_HOME),
+    ]
+    for raw in raw_candidates:
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(path)
+    return roots
+
+
+def _hf_root_from_cache_path(raw_path: str | None) -> str | None:
+    if not raw_path:
+        return None
+    path = Path(raw_path).expanduser()
+    name = path.name
+    if name in {"hub", "transformers"}:
+        return str(path.parent)
+    return str(path)
+
+
+def _sanitize_model_id(model_id: str) -> str:
+    return model_id.strip().replace("\\", "__").replace("/", "__")
 
 
 def _resolve_torch_dtype(*, precision: str, device: str, torch_module: Any) -> Any:

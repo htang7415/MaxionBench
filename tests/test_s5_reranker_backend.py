@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -195,3 +196,30 @@ def test_s5_require_hf_backend_fails_fast_on_cpu_device() -> None:
         assert adapter.bulk_upsert_calls == 0
     finally:
         s5_mod._build_reranker_runtime = original_builder
+
+
+def test_resolve_reranker_model_source_prefers_local_mirror(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    mirror_dir = tmp_path / "maxionbench_mirrors" / "BAAI__bge-reranker-base" / "2026-03-04"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    (mirror_dir / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+
+    source, revision = s5_mod._resolve_reranker_model_source(
+        model_id="BAAI/bge-reranker-base",
+        revision="2026-03-04",
+    )
+
+    assert source == str(mirror_dir)
+    assert revision is None
+
+
+def test_resolve_reranker_model_source_falls_back_to_repo_revision(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+
+    source, revision = s5_mod._resolve_reranker_model_source(
+        model_id="BAAI/bge-reranker-base",
+        revision="2026-03-04",
+    )
+
+    assert source == "BAAI/bge-reranker-base"
+    assert revision == "2026-03-04"

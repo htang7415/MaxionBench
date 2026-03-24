@@ -40,13 +40,19 @@ From: python:3.11-slim
     export TRANSFORMERS_CACHE="${HF_HOME}/transformers"
     mkdir -p "${HF_HOME}" "${HUGGINGFACE_HUB_CACHE}" "${TRANSFORMERS_CACHE}"
     python - <<'PY'
+from pathlib import Path
+
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL_ID = "BAAI/bge-reranker-base"
 REVISION = "2026-03-04"
+MIRROR_DIR = Path("/opt/maxionbench/.cache/huggingface") / "maxionbench_mirrors" / MODEL_ID.replace("/", "__") / REVISION
 
-AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
-AutoModelForSequenceClassification.from_pretrained(MODEL_ID, revision=REVISION)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
+MIRROR_DIR.mkdir(parents=True, exist_ok=True)
+tokenizer.save_pretrained(MIRROR_DIR)
+model.save_pretrained(MIRROR_DIR)
 PY
 
 %runscript
