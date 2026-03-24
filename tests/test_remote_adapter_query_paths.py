@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 
+from maxionbench.adapters._exact import StoredPoint
 from maxionbench.adapters.milvus import MilvusAdapter
 from maxionbench.adapters.weaviate import WeaviateAdapter
 from maxionbench.schemas.adapter_contract import QueryRequest
@@ -100,12 +102,20 @@ class _FakeMilvusHit:
 class _FakeMilvusCollection:
     def __init__(self) -> None:
         self.search_kwargs: dict[str, object] | None = None
+        self.insert_rows: list[dict[str, object]] | None = None
+        self.flushed = False
         self.loaded = False
         self.schema = None
 
     def search(self, **kwargs):  # type: ignore[no-untyped-def]
         self.search_kwargs = dict(kwargs)
         return [[_FakeMilvusHit("doc-1", 0.9, {"tenant_id": "tenant-001"})]]
+
+    def insert(self, rows):  # type: ignore[no-untyped-def]
+        self.insert_rows = list(rows)
+
+    def flush(self) -> None:
+        self.flushed = True
 
     def load(self) -> None:
         self.loaded = True
@@ -177,3 +187,46 @@ def test_milvus_query_surfaces_remote_errors() -> None:
     adapter._obj = _RaisingCollection()
     with pytest.raises(RuntimeError, match="remote failure"):
         adapter.query(QueryRequest(vector=[1.0, 0.0], top_k=3))
+
+
+def test_milvus_sync_remote_inserts_row_dicts_in_sorted_id_order() -> None:
+    adapter = _make_milvus_adapter()
+    collection = _FakeMilvusCollection()
+    adapter._records = {
+        "doc-2": StoredPoint(
+            vector=np.asarray([0.1, 0.9], dtype=np.float32),
+            payload={"tenant_id": "tenant-002", "acl_bucket": 1, "time_bucket": 17},
+        ),
+        "doc-1": StoredPoint(
+            vector=np.asarray([0.9, 0.1], dtype=np.float32),
+            payload={"tenant_id": "tenant-001", "acl_bucket": 3, "time_bucket": 11},
+        ),
+    }
+
+    def _create_remote_collection(*, drop_existing: bool) -> None:
+        assert drop_existing is True
+        adapter._obj = collection
+
+    adapter._create_remote_collection = _create_remote_collection  # type: ignore[method-assign]
+    adapter._sync_remote()
+
+    assert collection.insert_rows == [
+        {
+            "id": "doc-1",
+            "vector": [0.8999999761581421, 0.10000000149011612],
+            "payload_json": '{"acl_bucket": 3, "tenant_id": "tenant-001", "time_bucket": 11}',
+            "tenant_id": "tenant-001",
+            "acl_bucket": 3,
+            "time_bucket": 11,
+        },
+        {
+            "id": "doc-2",
+            "vector": [0.10000000149011612, 0.8999999761581421],
+            "payload_json": '{"acl_bucket": 1, "tenant_id": "tenant-002", "time_bucket": 17}',
+            "tenant_id": "tenant-002",
+            "acl_bucket": 1,
+            "time_bucket": 17,
+        },
+    ]
+    assert collection.flushed is True
+    assert collection.loaded is True

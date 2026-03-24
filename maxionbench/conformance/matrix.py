@@ -7,6 +7,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -25,10 +26,15 @@ class ConformanceMatrixRow:
     duration_s: float
     command: str
     note: str | None = None
+    stdout_path: str | None = None
+    stderr_path: str | None = None
 
 
 def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float = 300.0) -> list[ConformanceMatrixRow]:
     resolved_config_dir = config_dir.resolve()
+    resolved_out_dir = out_dir.resolve()
+    artifacts_dir = resolved_out_dir / "adapter_logs"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     if not resolved_config_dir.exists():
         raise FileNotFoundError(f"Conformance config directory does not exist: {resolved_config_dir}")
     if not resolved_config_dir.is_dir():
@@ -43,6 +49,13 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
         try:
             payload = _read_json_mapping(cfg_path)
         except (ValueError, json.JSONDecodeError) as exc:
+            stdout_path, stderr_path = _write_adapter_artifacts(
+                artifacts_dir=artifacts_dir,
+                adapter="invalid-config",
+                config_file=cfg_path,
+                stdout="",
+                stderr=str(exc),
+            )
             rows.append(
                 ConformanceMatrixRow(
                     adapter="",
@@ -52,11 +65,20 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                     duration_s=0.0,
                     command="",
                     note=_truncate(str(exc)),
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
                 )
             )
             continue
         adapter = str(payload.get("adapter", "")).strip()
         if not adapter:
+            stdout_path, stderr_path = _write_adapter_artifacts(
+                artifacts_dir=artifacts_dir,
+                adapter="missing-adapter",
+                config_file=cfg_path,
+                stdout="",
+                stderr="missing adapter key",
+            )
             rows.append(
                 ConformanceMatrixRow(
                     adapter="",
@@ -66,6 +88,8 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                     duration_s=0.0,
                     command="",
                     note="missing adapter key",
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
                 )
             )
             continue
@@ -99,7 +123,16 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
             ended = datetime.now(tz=timezone.utc)
             duration_s = max((ended - started).total_seconds(), 0.0)
             status = "pass" if proc.returncode == 0 else "fail"
-            note = _truncate((proc.stdout or "") + "\n" + (proc.stderr or ""))
+            stdout_text = _coerce_text(proc.stdout)
+            stderr_text = _coerce_text(proc.stderr)
+            stdout_path, stderr_path = _write_adapter_artifacts(
+                artifacts_dir=artifacts_dir,
+                adapter=adapter,
+                config_file=cfg_path,
+                stdout=stdout_text,
+                stderr=stderr_text,
+            )
+            note = _truncate(stdout_text + "\n" + stderr_text)
             rows.append(
                 ConformanceMatrixRow(
                     adapter=adapter,
@@ -109,11 +142,22 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                     duration_s=duration_s,
                     command=command,
                     note=note,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
                 )
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             ended = datetime.now(tz=timezone.utc)
             duration_s = max((ended - started).total_seconds(), 0.0)
+            stdout_text = _coerce_text(exc.stdout)
+            stderr_text = _coerce_text(exc.stderr)
+            stdout_path, stderr_path = _write_adapter_artifacts(
+                artifacts_dir=artifacts_dir,
+                adapter=adapter,
+                config_file=cfg_path,
+                stdout=stdout_text,
+                stderr=stderr_text,
+            )
             rows.append(
                 ConformanceMatrixRow(
                     adapter=adapter,
@@ -123,10 +167,12 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                     duration_s=duration_s,
                     command=command,
                     note=f"timeout after {timeout_s}s",
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
                 )
             )
 
-    _write_outputs(rows=rows, out_dir=out_dir, config_dir=resolved_config_dir)
+    _write_outputs(rows=rows, out_dir=resolved_out_dir, config_dir=resolved_config_dir)
     return rows
 
 
@@ -176,6 +222,36 @@ def _truncate(text: str, max_len: int = 4000) -> str:
     if len(clean) <= max_len:
         return clean
     return clean[:max_len] + "...(truncated)"
+
+
+def _write_adapter_artifacts(
+    *,
+    artifacts_dir: Path,
+    adapter: str,
+    config_file: Path,
+    stdout: str,
+    stderr: str,
+) -> tuple[str, str]:
+    stem = f"{_slug(config_file.stem)}__{_slug(adapter)}"
+    stdout_path = artifacts_dir / f"{stem}.stdout.txt"
+    stderr_path = artifacts_dir / f"{stem}.stderr.txt"
+    stdout_path.write_text(stdout, encoding="utf-8")
+    stderr_path.write_text(stderr, encoding="utf-8")
+    return str(stdout_path.resolve()), str(stderr_path.resolve())
+
+
+def _coerce_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _slug(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    cleaned = cleaned.strip("._")
+    return cleaned or "unknown"
 
 
 def parse_args(argv: list[str] | None = None) -> ArgumentParser:

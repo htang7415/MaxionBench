@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import pandas as pd
 import pytest
 
+from maxionbench.conformance import matrix as conformance_matrix_mod
 from maxionbench.conformance.matrix import main as conformance_matrix_main
 from maxionbench.conformance.matrix import run_conformance_matrix
 from maxionbench.conformance.provenance import conformance_provenance_path
@@ -39,6 +41,14 @@ def test_conformance_matrix_smoke_with_mock_only(tmp_path: Path) -> None:
     frame = pd.read_csv(out_dir / "conformance_matrix.csv")
     assert len(frame) == 1
     assert frame.iloc[0]["status"] == "pass"
+    assert "stdout_path" in frame.columns
+    assert "stderr_path" in frame.columns
+    assert Path(str(frame.iloc[0]["stdout_path"])).exists()
+    assert Path(str(frame.iloc[0]["stderr_path"])).exists()
+    assert rows[0].stdout_path is not None
+    assert rows[0].stderr_path is not None
+    assert Path(rows[0].stdout_path).exists()
+    assert Path(rows[0].stderr_path).exists()
     assert (out_dir / "conformance_matrix.json").exists()
     provenance_path = conformance_provenance_path(out_dir / "conformance_matrix.csv")
     assert provenance_path.exists()
@@ -117,3 +127,43 @@ def test_conformance_matrix_main_returns_2_with_actionable_error(
     stderr = capsys.readouterr().err
     assert "conformance-matrix failed:" in stderr
     assert "does not exist" in stderr
+
+
+def test_conformance_matrix_timeout_writes_partial_adapter_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg_dir = tmp_path / "cfg_timeout"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "mock.json").write_text(
+        json.dumps(
+            {
+                "adapter": "mock",
+                "adapter_options_json": "{}",
+                "collection": "conformance",
+                "dimension": 4,
+                "metric": "ip",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    def _raise_timeout(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise subprocess.TimeoutExpired(
+            cmd=["python", "-m", "maxionbench.conformance.run"],
+            timeout=1.0,
+            output="partial stdout",
+            stderr="partial stderr",
+        )
+
+    monkeypatch.setattr(conformance_matrix_mod.subprocess, "run", _raise_timeout)
+    out_dir = tmp_path / "out_timeout"
+    rows = run_conformance_matrix(config_dir=cfg_dir, out_dir=out_dir, timeout_s=1.0)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.status == "timeout"
+    assert row.stdout_path is not None
+    assert row.stderr_path is not None
+    assert Path(row.stdout_path).read_text(encoding="utf-8") == "partial stdout"
+    assert Path(row.stderr_path).read_text(encoding="utf-8") == "partial stderr"
