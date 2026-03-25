@@ -49,6 +49,10 @@ def test_conformance_matrix_smoke_with_mock_only(tmp_path: Path) -> None:
     assert rows[0].stderr_path is not None
     assert Path(rows[0].stdout_path).exists()
     assert Path(rows[0].stderr_path).exists()
+    stdout_text = Path(rows[0].stdout_path).read_text(encoding="utf-8")
+    assert '"event": "conformance_adapter_context"' in stdout_text
+    assert '"event": "conformance_test_start"' in stdout_text
+    assert '"event": "conformance_test_end"' in stdout_text
     assert (out_dir / "conformance_matrix.json").exists()
     provenance_path = conformance_provenance_path(out_dir / "conformance_matrix.csv")
     assert provenance_path.exists()
@@ -167,3 +171,52 @@ def test_conformance_matrix_timeout_writes_partial_adapter_logs(
     assert row.stderr_path is not None
     assert Path(row.stdout_path).read_text(encoding="utf-8") == "partial stdout"
     assert Path(row.stderr_path).read_text(encoding="utf-8") == "partial stderr"
+
+
+def test_conformance_matrix_main_filters_to_selected_adapters(tmp_path: Path) -> None:
+    cfg_dir = tmp_path / "cfg_filter"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "mock.json").write_text(
+        json.dumps(
+            {
+                "adapter": "mock",
+                "adapter_options_json": "{}",
+                "collection": "conformance",
+                "dimension": 4,
+                "metric": "ip",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (cfg_dir / "qdrant.json").write_text(
+        json.dumps(
+            {
+                "adapter": "qdrant",
+                "adapter_options_json": "{\"host\":\"127.0.0.1\",\"port\":6333}",
+                "collection": "conformance",
+                "dimension": 4,
+                "metric": "ip",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out_filter"
+    code = conformance_matrix_main(
+        [
+            "--config-dir",
+            str(cfg_dir),
+            "--out-dir",
+            str(out_dir),
+            "--timeout-s",
+            "20",
+            "--adapters",
+            "mock",
+        ]
+    )
+
+    assert code == 0
+    frame = pd.read_csv(out_dir / "conformance_matrix.csv")
+    assert frame["adapter"].tolist() == ["mock"]

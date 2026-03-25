@@ -35,6 +35,7 @@ class MilvusAdapter(BaseAdapter):
         password: str | None = None,
         db_name: str | None = None,
         token: str | None = None,
+        remote_insert_batch_size: int = 1000,
     ) -> None:
         try:
             from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
@@ -72,6 +73,7 @@ class MilvusAdapter(BaseAdapter):
         self._records: dict[str, StoredPoint] = {}
         self._deleted_total = 0
         self._obj: Any | None = None
+        self._remote_insert_batch_size = max(1, int(remote_insert_batch_size))
 
     def create(self, collection: str, dimension: int, metric: str = "ip") -> None:
         self._collection = collection
@@ -267,20 +269,38 @@ class MilvusAdapter(BaseAdapter):
             return
         if self._obj is None:
             return
-        rows = [
-            {
-                "id": doc_id,
-                "vector": snapshot[doc_id].vector.tolist(),
-                "payload_json": json.dumps(snapshot[doc_id].payload, sort_keys=True),
-                "tenant_id": str(snapshot[doc_id].payload.get("tenant_id", "")),
-                "acl_bucket": int(snapshot[doc_id].payload.get("acl_bucket", 0)),
-                "time_bucket": int(snapshot[doc_id].payload.get("time_bucket", 0)),
-            }
-            for doc_id in sorted(snapshot.keys())
-        ]
-        self._obj.insert(rows)
+        rows = [self._build_remote_row(doc_id=doc_id, point=snapshot[doc_id]) for doc_id in sorted(snapshot.keys())]
+        for start in range(0, len(rows), self._remote_insert_batch_size):
+            stop = min(len(rows), start + self._remote_insert_batch_size)
+            self._obj.insert(rows[start:stop])
         self._obj.flush()
         self._obj.load()
+
+    def _build_remote_row(self, *, doc_id: str, point: StoredPoint) -> dict[str, Any]:
+        vector = np.asarray(point.vector, dtype=np.float32)
+        if vector.ndim != 1:
+            raise ValueError(f"Milvus remote row {doc_id!r} has non-1D vector")
+        if self._dimension and int(vector.shape[0]) != int(self._dimension):
+            raise ValueError(
+                f"Milvus remote row {doc_id!r} has vector dimension {int(vector.shape[0])}; expected {int(self._dimension)}"
+            )
+        payload = dict(point.payload)
+        payload_json = json.dumps(payload, sort_keys=True)
+        if len(doc_id) > 256:
+            raise ValueError(f"Milvus remote row {doc_id!r} exceeds id max_length=256")
+        tenant_id = str(payload.get("tenant_id", ""))
+        if len(tenant_id) > 256:
+            raise ValueError(f"Milvus remote row {doc_id!r} exceeds tenant_id max_length=256")
+        if len(payload_json) > 65535:
+            raise ValueError(f"Milvus remote row {doc_id!r} exceeds payload_json max_length=65535")
+        return {
+            "id": doc_id,
+            "vector": vector.tolist(),
+            "payload_json": payload_json,
+            "tenant_id": tenant_id,
+            "acl_bucket": int(payload.get("acl_bucket", 0)),
+            "time_bucket": int(payload.get("time_bucket", 0)),
+        }
 
     def _create_remote_collection(self, *, drop_existing: bool) -> None:
         if drop_existing and self._utility.has_collection(self._collection, using=self._alias):

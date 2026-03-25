@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 import requests
+from requests.adapters import HTTPAdapter
 
 from maxionbench.schemas.adapter_contract import (
     AdapterStats,
@@ -36,6 +37,7 @@ class OpenSearchAdapter(BaseAdapter):
         verify_ssl: bool = False,
         bulk_max_records: int = 1000,
         bulk_max_bytes: int = 5 * 1024 * 1024,
+        pool_maxsize: int = 96,
     ) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout_s = float(timeout_s)
@@ -44,6 +46,7 @@ class OpenSearchAdapter(BaseAdapter):
         self._auth = (username, password) if username and password else None
         self._bulk_max_records = max(1, int(bulk_max_records))
         self._bulk_max_bytes = max(1024, int(bulk_max_bytes))
+        self._session = self._build_session(pool_maxsize=max(1, int(pool_maxsize)))
 
         self._index = ""
         self._dimension = 0
@@ -64,7 +67,7 @@ class OpenSearchAdapter(BaseAdapter):
         self._pending_upserts.clear()
         self._pending_deletes.clear()
         self._deleted_total = 0
-        self._create_remote_index()
+        self._create_remote_index(drop_existing=True)
         self._created_at = time.monotonic()
 
     def drop(self, collection: str) -> None:
@@ -185,6 +188,9 @@ class OpenSearchAdapter(BaseAdapter):
         return len(ids)
 
     def flush_or_commit(self) -> None:
+        entries = self._build_pending_bulk_entries()
+        if entries:
+            self._post_bulk_entries(entries, refresh_wait_for=True)
         for doc_id in sorted(self._pending_deletes):
             if doc_id in self._records:
                 self._deleted_total += 1
@@ -193,7 +199,6 @@ class OpenSearchAdapter(BaseAdapter):
             self._records[doc_id] = self._pending_upserts[doc_id]
         self._pending_deletes.clear()
         self._pending_upserts.clear()
-        self._rewrite_remote_index()
 
     def set_index_params(self, params: Mapping[str, Any]) -> None:
         self._index_params = dict(params)
@@ -230,8 +235,9 @@ class OpenSearchAdapter(BaseAdapter):
             engine_uptime_s=time.monotonic() - self._created_at,
         )
 
-    def _create_remote_index(self) -> None:
-        self._request("DELETE", f"/{self._index}", allow_404=True)
+    def _create_remote_index(self, *, drop_existing: bool) -> None:
+        if drop_existing:
+            self._request("DELETE", f"/{self._index}", allow_404=True)
         space_type = {"ip": "innerproduct", "l2": "l2", "cos": "cosinesimil"}[self._metric]
         method = {
             "name": "hnsw",
@@ -253,36 +259,42 @@ class OpenSearchAdapter(BaseAdapter):
         }
         self._request("PUT", f"/{self._index}", json=body)
 
-    def _rewrite_remote_index(self) -> None:
-        self._create_remote_index()
-        if not self._records:
-            self._request("POST", f"/{self._index}/_refresh")
-            return
-        lines: list[str] = []
-        payload_bytes = 0
-        record_count = 0
-        for doc_id, point in sorted(self._records.items(), key=lambda item: item[0]):
+    def _build_pending_bulk_entries(self) -> list[tuple[str, ...]]:
+        entries: list[tuple[str, ...]] = []
+        for doc_id in sorted(self._pending_deletes):
+            entries.append((json.dumps({"delete": {"_index": self._index, "_id": doc_id}}, sort_keys=True),))
+        for doc_id, point in sorted(self._pending_upserts.items(), key=lambda item: item[0]):
             meta_line = json.dumps({"index": {"_index": self._index, "_id": doc_id}}, sort_keys=True)
             doc_line = json.dumps({"vector": point.vector.tolist(), "payload": point.payload}, sort_keys=True)
-            entry_bytes = len(meta_line.encode("utf-8")) + len(doc_line.encode("utf-8")) + 2
-            if lines and (
-                record_count >= self._bulk_max_records or payload_bytes + entry_bytes > self._bulk_max_bytes
-            ):
-                self._post_bulk_lines(lines)
-                lines = []
-                payload_bytes = 0
-                record_count = 0
-            lines.extend([meta_line, doc_line])
-            payload_bytes += entry_bytes
-            record_count += 1
-        if lines:
-            self._post_bulk_lines(lines)
-        self._request("POST", f"/{self._index}/_refresh")
+            entries.append((meta_line, doc_line))
+        return entries
 
-    def _post_bulk_lines(self, lines: Sequence[str]) -> None:
+    def _post_bulk_entries(self, entries: Sequence[Sequence[str]], *, refresh_wait_for: bool) -> None:
+        chunk: list[str] = []
+        payload_bytes = 0
+        action_count = 0
+        for entry in entries:
+            entry_lines = [str(line) for line in entry]
+            entry_bytes = sum(len(line.encode("utf-8")) + 1 for line in entry_lines)
+            if chunk and (
+                action_count >= self._bulk_max_records or payload_bytes + entry_bytes > self._bulk_max_bytes
+            ):
+                self._post_bulk_chunk(chunk, refresh_wait_for=refresh_wait_for)
+                chunk = []
+                payload_bytes = 0
+                action_count = 0
+            chunk.extend(entry_lines)
+            payload_bytes += entry_bytes
+            action_count += 1
+        if chunk:
+            self._post_bulk_chunk(chunk, refresh_wait_for=refresh_wait_for)
+
+    def _post_bulk_chunk(self, lines: Sequence[str], *, refresh_wait_for: bool) -> None:
         payload = "\n".join(lines) + "\n"
-        response = requests.post(
-            f"{self._base_url}/_bulk",
+        suffix = "?refresh=wait_for" if refresh_wait_for else ""
+        response = self._session.request(
+            method="POST",
+            url=f"{self._base_url}/_bulk{suffix}",
             data=payload,
             headers={"Content-Type": "application/x-ndjson"},
             auth=self._auth,
@@ -303,7 +315,7 @@ class OpenSearchAdapter(BaseAdapter):
         allow_404: bool = False,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
-        response = requests.request(
+        response = self._session.request(
             method=method,
             url=f"{self._base_url}{path}",
             json=json,
@@ -349,3 +361,17 @@ class OpenSearchAdapter(BaseAdapter):
         if self._dimension and arr.shape[0] != self._dimension:
             raise ValueError(f"vector dimension mismatch: expected {self._dimension}, got {arr.shape[0]}")
         return arr
+
+    @staticmethod
+    def _build_session(*, pool_maxsize: int) -> requests.Session:
+        session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=pool_maxsize, pool_maxsize=pool_maxsize, max_retries=0)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
+
+    def __del__(self) -> None:
+        try:
+            self._session.close()
+        except Exception:
+            pass

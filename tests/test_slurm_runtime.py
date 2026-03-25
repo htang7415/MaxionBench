@@ -449,6 +449,29 @@ def test_slurm_common_health_startup_verifier_uses_adapter_metadata(tmp_path: Pa
     assert set(adapter_options.keys()) == {"host", "port"}
 
 
+def test_slurm_common_require_tmpdir_fails_when_unset() -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'unset SLURM_TMPDIR; '
+                'mb_require_tmpdir'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode != 0
+    assert "SLURM_TMPDIR must be set to node-local scratch" in completed.stdout + completed.stderr
+
+
 def test_slurm_common_allocate_ports_exports_weaviate_internal_ports(tmp_path: Path) -> None:
     common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
     slurm_tmpdir = tmp_path / "slurm_tmp"

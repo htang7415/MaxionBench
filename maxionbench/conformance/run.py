@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         return pytest.main(
             [
                 "-q",
+                "-s",
                 str(Path("maxionbench/conformance/test_conformance.py")),
             ]
         )

@@ -296,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     conformance_matrix_parser.add_argument("--config-dir", default="configs/conformance")
     conformance_matrix_parser.add_argument("--out-dir", default="artifacts/conformance")
     conformance_matrix_parser.add_argument("--timeout-s", type=float, default=300.0)
+    conformance_matrix_parser.add_argument("--adapters", default="")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -743,6 +744,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.out_dir,
                 "--timeout-s",
                 str(args.timeout_s),
+                "--adapters",
+                args.adapters,
             ]
         )
     raise ValueError(f"Unsupported command {args.command}")

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 
@@ -31,6 +31,16 @@ class ConformanceMatrixRow:
 
 
 def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float = 300.0) -> list[ConformanceMatrixRow]:
+    return _run_conformance_matrix(config_dir=config_dir, out_dir=out_dir, timeout_s=timeout_s, adapters=None)
+
+
+def _run_conformance_matrix(
+    *,
+    config_dir: Path,
+    out_dir: Path,
+    timeout_s: float,
+    adapters: Sequence[str] | None,
+) -> list[ConformanceMatrixRow]:
     resolved_config_dir = config_dir.resolve()
     resolved_out_dir = out_dir.resolve()
     artifacts_dir = resolved_out_dir / "adapter_logs"
@@ -45,6 +55,7 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
         raise FileNotFoundError(f"No conformance config files (*.json) found in: {resolved_config_dir}")
 
     rows: list[ConformanceMatrixRow] = []
+    adapter_filter = _normalize_adapters(adapters)
     for cfg_path in configs:
         try:
             payload = _read_json_mapping(cfg_path)
@@ -92,6 +103,8 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
                     stderr_path=stderr_path,
                 )
             )
+            continue
+        if adapter_filter is not None and adapter not in adapter_filter:
             continue
 
         argv = [
@@ -178,8 +191,9 @@ def run_conformance_matrix(*, config_dir: Path, out_dir: Path, timeout_s: float 
 
 def _write_outputs(*, rows: list[ConformanceMatrixRow], out_dir: Path, config_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    frame = pd.DataFrame([asdict(row) for row in rows])
-    frame = frame.sort_values(["adapter", "config_file"], kind="stable").reset_index(drop=True)
+    frame = pd.DataFrame([asdict(row) for row in rows], columns=[field.name for field in fields(ConformanceMatrixRow)])
+    if not frame.empty:
+        frame = frame.sort_values(["adapter", "config_file"], kind="stable").reset_index(drop=True)
 
     csv_path = out_dir / "conformance_matrix.csv"
     frame.to_csv(csv_path, index=False)
@@ -259,6 +273,7 @@ def parse_args(argv: list[str] | None = None) -> ArgumentParser:
     parser.add_argument("--config-dir", default="configs/conformance")
     parser.add_argument("--out-dir", default="artifacts/conformance")
     parser.add_argument("--timeout-s", type=float, default=300.0)
+    parser.add_argument("--adapters", default="", help="Optional comma-separated adapter allowlist")
     return parser
 
 
@@ -266,15 +281,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = parse_args(argv)
     args = parser.parse_args(argv)
     try:
-        run_conformance_matrix(
+        _run_conformance_matrix(
             config_dir=Path(args.config_dir),
             out_dir=Path(args.out_dir),
             timeout_s=float(args.timeout_s),
+            adapters=[item for item in str(args.adapters).split(",") if item.strip()],
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"conformance-matrix failed: {exc}", file=sys.stderr)
         return 2
     return 0
+
+
+def _normalize_adapters(adapters: Sequence[str] | None) -> set[str] | None:
+    if adapters is None:
+        return None
+    normalized = {str(value).strip() for value in adapters if str(value).strip()}
+    return normalized or None
 
 
 if __name__ == "__main__":

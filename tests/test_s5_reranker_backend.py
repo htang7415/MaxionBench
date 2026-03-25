@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -142,8 +143,10 @@ def test_s5_require_hf_backend_fails_fast_on_proxy_runtime() -> None:
         search_params=cfg.search_params,
     )
     original_builder = s5_mod._build_reranker_runtime
+    original_precheck = s5_mod._collect_cuda_precheck
     try:
         s5_mod._build_reranker_runtime = lambda _cfg: runtime
+        s5_mod._collect_cuda_precheck = lambda: {"cuda_available": True, "cuda_device_count": 1}
         try:
             s5_mod.run(adapter=adapter, cfg=cfg, rng=np.random.default_rng(13))
         except RuntimeError as exc:
@@ -153,6 +156,7 @@ def test_s5_require_hf_backend_fails_fast_on_proxy_runtime() -> None:
             raise AssertionError("expected RuntimeError when require_hf_backend is true and backend is heuristic")
     finally:
         s5_mod._build_reranker_runtime = original_builder
+        s5_mod._collect_cuda_precheck = original_precheck
 
 
 def test_s5_require_hf_backend_fails_fast_on_cpu_device() -> None:
@@ -189,13 +193,88 @@ def test_s5_require_hf_backend_fails_fast_on_cpu_device() -> None:
         search_params=cfg.search_params,
     )
     original_builder = s5_mod._build_reranker_runtime
+    original_precheck = s5_mod._collect_cuda_precheck
     try:
         s5_mod._build_reranker_runtime = lambda _cfg: runtime
+        s5_mod._collect_cuda_precheck = lambda: {"cuda_available": True, "cuda_device_count": 1}
         with pytest.raises(RuntimeError, match="requires CUDA-backed hf_cross_encoder runtime"):
             s5_mod.run(adapter=adapter, cfg=cfg, rng=np.random.default_rng(19))
         assert adapter.bulk_upsert_calls == 0
     finally:
         s5_mod._build_reranker_runtime = original_builder
+        s5_mod._collect_cuda_precheck = original_precheck
+
+
+def test_s5_require_hf_backend_fails_before_ingest_when_cuda_precheck_unavailable() -> None:
+    runtime = s5_mod._RerankerRuntime(
+        backend="hf_cross_encoder",
+        score_pairs=lambda _query, docs: [float(idx) for idx, _ in enumerate(docs)],
+        uses_qrels_supervision=False,
+        fallback_reason=None,
+        device="cuda",
+        local_files_only=True,
+    )
+    adapter = _CountingMockAdapter()
+    adapter.create(collection="s5-test", dimension=16, metric="ip")
+    cfg = _base_cfg()
+    cfg = s5_mod.S5Config(
+        vector_dim=cfg.vector_dim,
+        num_vectors=cfg.num_vectors,
+        num_queries=cfg.num_queries,
+        top_k=cfg.top_k,
+        clients_read=cfg.clients_read,
+        sla_threshold_ms=cfg.sla_threshold_ms,
+        candidate_budgets=list(cfg.candidate_budgets),
+        warmup_s=cfg.warmup_s,
+        steady_state_s=cfg.steady_state_s,
+        phase_timing_mode=cfg.phase_timing_mode,
+        phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+        reranker_model_id=cfg.reranker_model_id,
+        reranker_revision_tag=cfg.reranker_revision_tag,
+        reranker_max_seq_len=cfg.reranker_max_seq_len,
+        reranker_precision=cfg.reranker_precision,
+        reranker_batch_size=cfg.reranker_batch_size,
+        reranker_truncation=cfg.reranker_truncation,
+        require_hf_backend=True,
+        search_params=cfg.search_params,
+    )
+    original_builder = s5_mod._build_reranker_runtime
+    original_precheck = s5_mod._collect_cuda_precheck
+    try:
+        s5_mod._build_reranker_runtime = lambda _cfg: runtime
+        s5_mod._collect_cuda_precheck = lambda: {"cuda_available": False, "cuda_device_count": 0, "driver_version": "550.54"}
+        with pytest.raises(RuntimeError, match="CUDA precheck failed"):
+            s5_mod.run(adapter=adapter, cfg=cfg, rng=np.random.default_rng(23))
+        assert adapter.bulk_upsert_calls == 0
+    finally:
+        s5_mod._build_reranker_runtime = original_builder
+        s5_mod._collect_cuda_precheck = original_precheck
+
+
+def test_collect_cuda_precheck_reports_torch_and_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+        @staticmethod
+        def device_count() -> int:
+            return 2
+
+    class _FakeTorch:
+        cuda = _FakeCuda()
+        version = type("Version", (), {"cuda": "12.4"})()
+
+    monkeypatch.setattr(s5_mod, "_detect_nvidia_driver_version", lambda: "550.54")
+    monkeypatch.setitem(sys.modules, "torch", _FakeTorch)
+
+    payload = s5_mod._collect_cuda_precheck()
+
+    assert payload["driver_version"] == "550.54"
+    assert payload["torch_import_ok"] is True
+    assert payload["torch_cuda_version"] == "12.4"
+    assert payload["cuda_available"] is True
+    assert payload["cuda_device_count"] == 2
 
 
 def test_resolve_reranker_model_source_prefers_local_mirror(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

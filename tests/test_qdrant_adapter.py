@@ -49,11 +49,41 @@ def test_qdrant_request_surfaces_http_response_body(
     def _fake_request(**kwargs):  # type: ignore[no-untyped-def]
         return _ErrorResponse()
 
-    monkeypatch.setattr("maxionbench.adapters.qdrant.requests.request", _fake_request)
     adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter._session, "request", _fake_request)
 
     with pytest.raises(RuntimeError, match="bad payload"):
         adapter._request("PUT", "/collections/maxionbench/points", json={"points": []})
+
+
+def test_qdrant_request_uses_pooled_session(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _OkResponse:
+        status_code = 200
+        content = b'{"status":"ok"}'
+        text = '{"status":"ok"}'
+
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict[str, object]:
+            return {"status": "ok"}
+
+    def _fake_request(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return _OkResponse()
+
+    adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter._session, "request", _fake_request)
+
+    payload = adapter._request("GET", "/collections")
+
+    assert payload == {"status": "ok"}
+    assert captured["method"] == "GET"
+    assert captured["url"] == "http://127.0.0.1:6333/collections"
 
 
 def test_qdrant_http_bulk_upsert_encodes_string_ids_and_preserves_original_id(
