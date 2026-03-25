@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Iterable
 
 import pytest
 
 from maxionbench.adapters import create_adapter
+from maxionbench.conformance.diagnostics import (
+    emit_adapter_context,
+    emit_post_create_diagnostics,
+    emit_pre_create_diagnostics,
+)
 from maxionbench.schemas.adapter_contract import UpsertRecord
 
 
@@ -21,7 +27,23 @@ def adapter() -> Iterable[object]:
     dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
     metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
 
+    emit_adapter_context(
+        adapter_name=adapter_name,
+        adapter_options=options,
+        collection=collection,
+        dimension=dimension,
+        metric=metric,
+    )
+    emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+    create_started = time.perf_counter()
     inst = create_adapter(adapter_name, **options)
+    create_adapter_latency_s = time.perf_counter() - create_started
+    emit_post_create_diagnostics(
+        adapter_name=adapter_name,
+        adapter=inst,
+        collection=collection,
+        create_adapter_latency_s=create_adapter_latency_s,
+    )
     inst.create(collection=collection, dimension=dimension, metric=metric)
     yield inst
     inst.drop(collection=collection)

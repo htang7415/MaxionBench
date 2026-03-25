@@ -45,3 +45,4 @@ def test_conformance_runner_expands_env_placeholders(monkeypatch: pytest.MonkeyP
     )
     assert code == 0
     assert captured["options"] == {"host": "qdrant", "port": "6333"}
+    assert "-s" in captured["argv"]

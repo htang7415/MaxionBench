@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import subprocess
 import time
 from typing import Any, Callable, Mapping
 
@@ -88,6 +89,15 @@ def run(
     *,
     dataset: D4SyntheticDataset | None = None,
 ) -> list[S5BudgetResult]:
+    cuda_precheck: dict[str, Any] = {"skipped": True}
+    if cfg.require_hf_backend:
+        cuda_precheck = _collect_cuda_precheck()
+        _log_cuda_precheck(cuda_precheck)
+        if not bool(cuda_precheck.get("cuda_available", False)):
+            raise RuntimeError(
+                "S5 requires CUDA-backed hf_cross_encoder runtime, "
+                f"but CUDA precheck failed: {json.dumps(cuda_precheck, sort_keys=True)}"
+            )
     reranker = _build_reranker_runtime(cfg)
     if cfg.require_hf_backend and reranker.backend != "hf_cross_encoder":
         reason = reranker.fallback_reason or "unknown fallback reason"
@@ -231,6 +241,7 @@ def run(
                 "device": reranker.device,
                 "local_files_only": reranker.local_files_only,
                 "runtime_errors": reranker_runtime_errors,
+                "cuda_precheck": cuda_precheck,
             },
             "latency_breakdown_ms": {
                 "candidate_p99": latency_summary(candidate_latencies_ms)["p99_ms"],
@@ -485,3 +496,56 @@ def _exc_summary(exc: Exception) -> str:
 def _env_flag_true(name: str) -> bool:
     raw = os.environ.get(name, "")
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _collect_cuda_precheck() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "driver_version": _detect_nvidia_driver_version(),
+        "torch_import_ok": False,
+        "torch_cuda_version": None,
+        "cuda_available": False,
+        "cuda_device_count": 0,
+    }
+    try:
+        import torch  # type: ignore[import-not-found]
+    except Exception as exc:
+        payload["torch_import_error"] = _exc_summary(exc)
+        return payload
+    payload["torch_import_ok"] = True
+    payload["torch_cuda_version"] = getattr(getattr(torch, "version", None), "cuda", None)
+    try:
+        payload["cuda_available"] = bool(getattr(torch.cuda, "is_available", lambda: False)())
+    except Exception as exc:
+        payload["cuda_available"] = False
+        payload["cuda_available_error"] = _exc_summary(exc)
+    try:
+        payload["cuda_device_count"] = int(getattr(torch.cuda, "device_count", lambda: 0)() or 0)
+    except Exception as exc:
+        payload["cuda_device_count"] = 0
+        payload["cuda_device_count_error"] = _exc_summary(exc)
+    return payload
+
+
+def _detect_nvidia_driver_version() -> str | None:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=driver_version",
+                "--format=csv,noheader",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+    except Exception:
+        return None
+    if completed.returncode != 0:
+        return None
+    first = next((line.strip() for line in completed.stdout.splitlines() if line.strip()), "")
+    return first or None
+
+
+def _log_cuda_precheck(payload: Mapping[str, Any]) -> None:
+    print(json.dumps({"event": "s5_cuda_precheck", **dict(payload)}, sort_keys=True), flush=True)

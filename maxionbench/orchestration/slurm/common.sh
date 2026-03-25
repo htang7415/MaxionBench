@@ -75,8 +75,7 @@ mb_flag_enabled() {
 
 mb_require_tmpdir() {
   if [[ -z "${SLURM_TMPDIR:-}" ]]; then
-    export SLURM_TMPDIR="/tmp"
-    mb_log "SLURM_TMPDIR is not set; falling back to /tmp"
+    mb_die "SLURM_TMPDIR must be set to node-local scratch before running benchmark jobs"
   fi
   mkdir -p "${SLURM_TMPDIR}"
 }
@@ -297,7 +296,7 @@ mb_ensure_apptainer() {
     local module_output=""
     local module_status=0
     local module_log_file=""
-    module_log_file="$(mktemp "${SLURM_TMPDIR:-/tmp}/maxionbench_apptainer_module.XXXXXX")"
+    module_log_file="$(mktemp "${SLURM_TMPDIR:-${TMPDIR:-/tmp}}/maxionbench_apptainer_module.XXXXXX")"
     set +e
     module load "${module_name}" >"${module_log_file}" 2>&1
     module_status=$?

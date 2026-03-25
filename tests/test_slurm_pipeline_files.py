@@ -115,6 +115,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     conformance_text = conformance.read_text(encoding="utf-8")
     assert "mb_wait_named_adapter_health" in conformance_text
     assert "maxionbench.cli conformance-matrix" in conformance_text
+    assert "MAXIONBENCH_CONFORMANCE_ADAPTERS" in conformance_text
+    assert "--adapters" in conformance_text
 
     postprocess_text = postprocess.read_text(encoding="utf-8")
     assert "maxionbench.cli validate" in postprocess_text

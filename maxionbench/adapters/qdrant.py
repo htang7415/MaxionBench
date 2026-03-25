@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 import uuid
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from maxionbench.schemas.adapter_contract import (
     AdapterStats,
@@ -30,6 +31,7 @@ class _QdrantConfig:
     api_key: str | None = None
     timeout_s: float = 30.0
     location: str | None = None
+    pool_maxsize: int = 96
 
 
 class QdrantAdapter(BaseAdapter):
@@ -42,6 +44,7 @@ class QdrantAdapter(BaseAdapter):
         api_key: str | None = None,
         timeout_s: float = 30.0,
         location: str | None = None,
+        pool_maxsize: int = 96,
     ) -> None:
         self._cfg = _QdrantConfig(
             host=host,
@@ -49,6 +52,7 @@ class QdrantAdapter(BaseAdapter):
             api_key=api_key,
             timeout_s=timeout_s,
             location=location,
+            pool_maxsize=max(1, int(pool_maxsize)),
         )
         self._base_url = f"http://{self._cfg.host}:{self._cfg.port}"
         self._headers = {"api-key": api_key} if api_key else {}
@@ -60,8 +64,11 @@ class QdrantAdapter(BaseAdapter):
         self._index_params: dict[str, Any] = {}
         self._local_client: Any | None = None
         self._qm: Any | None = None
+        self._session: requests.Session | None = None
         if self._cfg.location is not None:
             self._init_local_client()
+        else:
+            self._session = self._build_session(pool_maxsize=self._cfg.pool_maxsize)
 
     def create(self, collection: str, dimension: int, metric: str = "ip") -> None:
         self._collection = collection
@@ -288,7 +295,9 @@ class QdrantAdapter(BaseAdapter):
         allow_404: bool = False,
     ) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
-        response = requests.request(
+        if self._session is None:
+            raise RuntimeError("Qdrant HTTP session is not initialized")
+        response = self._session.request(
             method=method,
             url=url,
             headers=self._headers,
@@ -341,6 +350,14 @@ class QdrantAdapter(BaseAdapter):
         self._local_client = QdrantClient(location=self._cfg.location)
         self._qm = qm
 
+    @staticmethod
+    def _build_session(*, pool_maxsize: int) -> requests.Session:
+        session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=pool_maxsize, pool_maxsize=pool_maxsize, max_retries=0)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
+
     def _to_local_filter(self, filters: Mapping[str, Any]) -> Any:
         must = [
             self._qm.FieldCondition(
@@ -385,3 +402,16 @@ class QdrantAdapter(BaseAdapter):
         if isinstance(content, bytes):
             return content.decode("utf-8", errors="replace")[:1000]
         return str(content)[:1000]
+
+    def __del__(self) -> None:
+        try:
+            if self._session is not None:
+                self._session.close()
+        except Exception:
+            pass
+        try:
+            close = getattr(self._local_client, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
