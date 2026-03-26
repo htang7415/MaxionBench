@@ -29,7 +29,7 @@ def emit_adapter_context(
 
 
 def emit_pre_create_diagnostics(*, adapter_name: str, adapter_options: Mapping[str, Any]) -> None:
-    if adapter_name == "faiss_gpu":
+    if adapter_name == "faiss-gpu":
         _emit(_faiss_gpu_diagnostics(adapter_options=adapter_options))
 
 
@@ -53,7 +53,7 @@ def emit_post_create_diagnostics(
 def _faiss_gpu_diagnostics(*, adapter_options: Mapping[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "event": "conformance_adapter_diagnostics",
-        "adapter": "faiss_gpu",
+        "adapter": "faiss-gpu",
         "device_id": int(adapter_options.get("device_id", 0)),
     }
     try:

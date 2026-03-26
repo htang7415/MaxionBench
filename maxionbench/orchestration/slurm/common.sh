@@ -75,6 +75,18 @@ mb_flag_enabled() {
 
 mb_require_tmpdir() {
   if [[ -z "${SLURM_TMPDIR:-}" ]]; then
+    local fallback_name=""
+    local fallback_value=""
+    for fallback_name in TMPDIR LOCAL_SCRATCH JOBSCRATCH JOB_SCRATCH SCRATCH_LOCAL TMP; do
+      fallback_value="${!fallback_name:-}"
+      if [[ -n "${fallback_value}" ]]; then
+        export SLURM_TMPDIR="${fallback_value}"
+        mb_log "SLURM_TMPDIR is not set; using ${fallback_name}=${SLURM_TMPDIR}"
+        break
+      fi
+    done
+  fi
+  if [[ -z "${SLURM_TMPDIR:-}" ]]; then
     mb_die "SLURM_TMPDIR must be set to node-local scratch before running benchmark jobs"
   fi
   mkdir -p "${SLURM_TMPDIR}"
