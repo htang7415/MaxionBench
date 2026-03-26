@@ -1,0 +1,65 @@
+{
+  "clients_read": 1,
+  "clients_read_grid": [
+    1
+  ],
+  "clients_write": 0,
+  "config_fingerprint": "09d10cfda587d2e80dfaf1e7238ed778e6783769a06ac588c96ab4d49773f45a",
+  "dataset_bundle": "D3",
+  "dataset_cache_checksums": [],
+  "dataset_hash": "laion-subset-d3-10m-calibration",
+  "engine": "mock",
+  "engine_version": "0.1.0",
+  "gpu_tracks_omission_reason": null,
+  "gpu_tracks_omitted": false,
+  "ground_truth_engine": "synthetic_calibration",
+  "ground_truth_k": 0,
+  "ground_truth_metric": "calibration_proxy",
+  "ground_truth_source": "d3_calibration_eval",
+  "hardware_runtime": {
+    "container_runtime_hint": "apptainer",
+    "cpu_count_logical": 128,
+    "gpu_count": 1,
+    "hostname": "x3112c0s29b0n0",
+    "platform": "Linux-4.18.0-477.10.1.el8_8.x86_64-x86_64-with-glibc2.41",
+    "python_version": "3.11.15",
+    "slurm_array_task_id": null,
+    "slurm_job_id": null,
+    "total_memory_bytes": 810870775808
+  },
+  "no_retry": true,
+  "quality_target": 0.8,
+  "quality_targets": [
+    0.8,
+    0.9,
+    0.95
+  ],
+  "repeats": 3,
+  "resource_profile": {
+    "cpu_vcpu": 0.0,
+    "disk_tb": 0.0,
+    "gpu_count": 0.0,
+    "ram_gib": 0.0,
+    "rhu_rate": 0.0
+  },
+  "rhu_references": {
+    "c_ref_vcpu": 96.0,
+    "d_ref_tb": 7.68,
+    "g_ref_gpu": 1.0,
+    "r_ref_gib": 512.0
+  },
+  "rhu_weights": {
+    "w_c": 0.25,
+    "w_d": 0.25,
+    "w_g": 0.25,
+    "w_r": 0.25
+  },
+  "rtt_baseline_ms_p50": 0.0,
+  "rtt_baseline_ms_p99": 0.0,
+  "rtt_baseline_request_profile": "healthcheck_plus_query_topk1_zero_vector",
+  "run_id": "run-09d10cfda5-r0-c1-t80-calib",
+  "scenario": "calibrate_d3",
+  "seed": 42,
+  "sla_threshold_ms": 80.0,
+  "timestamp_utc": "2026-03-26T04:51:45+00:00"
+}
