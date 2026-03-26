@@ -94,7 +94,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "%post" in definition_text
     assert "set -eu" in definition_text
     assert "%runscript" in definition_text
-    assert "python -m pip install --extra-index-url https://download.pytorch.org/whl/cu124 torch" in definition_text
+    assert 'python -m pip install --index-url https://download.pytorch.org/whl/cu124 "torch==2.6.0"' in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
     assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text
@@ -246,6 +246,7 @@ def test_main_container_definition_enables_fail_fast_post_install() -> None:
     assert "%post" in definition_text
     assert "\n    set -eu\n" in definition_text
     assert "apt-get update && apt-get install -y --no-install-recommends" in definition_text
+    assert 'python -m pip install --index-url https://download.pytorch.org/whl/cu124 "torch==2.6.0"' in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
     assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
     assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text

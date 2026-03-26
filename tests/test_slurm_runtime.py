@@ -459,6 +459,12 @@ def test_slurm_common_require_tmpdir_fails_when_unset() -> None:
             (
                 f'source "{common_path}"; '
                 'unset SLURM_TMPDIR; '
+                'unset TMPDIR; '
+                'unset LOCAL_SCRATCH; '
+                'unset JOBSCRATCH; '
+                'unset JOB_SCRATCH; '
+                'unset SCRATCH_LOCAL; '
+                'unset TMP; '
                 'mb_require_tmpdir'
             ),
         ],
@@ -470,6 +476,34 @@ def test_slurm_common_require_tmpdir_fails_when_unset() -> None:
 
     assert completed.returncode != 0
     assert "SLURM_TMPDIR must be set to node-local scratch" in completed.stdout + completed.stderr
+
+
+def test_slurm_common_require_tmpdir_uses_tmpdir_fallback(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    fallback_tmpdir = tmp_path / "tmpdir_fallback"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'unset SLURM_TMPDIR; '
+                f'export TMPDIR="{fallback_tmpdir}"; '
+                'mb_require_tmpdir; '
+                'printf "%s\\n" "${SLURM_TMPDIR}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert str(fallback_tmpdir) in completed.stdout
+    assert "using TMPDIR=" in completed.stdout + completed.stderr
+    assert fallback_tmpdir.is_dir()
 
 
 def test_slurm_common_allocate_ports_exports_weaviate_internal_ports(tmp_path: Path) -> None:
