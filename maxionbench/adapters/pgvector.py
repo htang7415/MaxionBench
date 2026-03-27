@@ -74,12 +74,7 @@ class PgVectorAdapter(BaseAdapter):
             )
             cur.execute(
                 self._sql(
-                    (
-                        "CREATE TABLE {schema}.{table} ("
-                        "id TEXT PRIMARY KEY, "
-                        f"embedding {vector_type} NOT NULL, "
-                        "payload JSONB NOT NULL DEFAULT '{}'::jsonb)"
-                    ),
+                    self._create_table_query(vector_type=vector_type),
                     schema=self._cfg.schema,
                     table=table_ident,
                 )
@@ -345,6 +340,20 @@ class PgVectorAdapter(BaseAdapter):
     @staticmethod
     def _index_ident(collection: str) -> str:
         return f"{collection}_embedding_idx"
+
+    @classmethod
+    def _create_table_query(cls, *, vector_type: str) -> str:
+        return (
+            "CREATE TABLE {schema}.{table} ("
+            "id TEXT PRIMARY KEY, "
+            f"embedding {vector_type} NOT NULL, "
+            f"payload JSONB NOT NULL DEFAULT {cls._empty_jsonb_literal()})"
+        )
+
+    @staticmethod
+    def _empty_jsonb_literal() -> str:
+        # psycopg.sql.SQL.format() interprets bare `{}` as placeholders.
+        return "'{{}}'::jsonb"
 
     def _qualified_table(self) -> str:
         return f"{self._cfg.schema}.{self._collection}"

@@ -34,7 +34,8 @@ From: python:3.11-slim
         "qdrant-client>=1.9.0" \
         "weaviate-client>=4.6.0"
     # The default PyPI faiss-cpu wheel is CPU-only; the GPU adapter needs CUDA symbols.
-    python -m pip install "faiss-gpu-cu12>=1.8.0.2"
+    export MAXIONBENCH_FAISS_GPU_PIP_SPEC="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-faiss-gpu-cu12>=1.8.0.2}"
+    python -m pip install "${MAXIONBENCH_FAISS_GPU_PIP_SPEC}"
     # Keep the FAISS-required NumPy 2.x runtime, then refresh h5py to a wheel built
     # against the upgraded NumPy ABI.
     python -m pip install --upgrade "h5py>=3.11"

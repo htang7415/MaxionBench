@@ -1,0 +1,29 @@
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_healthcheck"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 4.9e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_healthcheck", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 9.8e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_flush_controls_visibility", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_filter_correctness"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 6.9e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_filter_correctness", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 7.9e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_vectors_semantics", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_payload_semantics"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 6.8e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_payload_semantics", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_delete_semantics"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 5.7e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_delete_semantics", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_insert_and_batch_query"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 7.4e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_insert_and_batch_query", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_stats_minimum_fields"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 5e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_stats_minimum_fields", "outcome": "passed"}
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path"}
+{"adapter": "mock", "adapter_options": {}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+.{"duration_s": 5.3e-05, "event": "conformance_test_end", "nodeid": "maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path", "outcome": "passed"}
+
+9 passed in 0.07s
