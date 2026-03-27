@@ -1,0 +1,448 @@
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_healthcheck"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 3.5e-05, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 1.3e-05, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_filter_correctness"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_payload_semantics"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_delete_semantics"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_insert_and_batch_query"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_stats_minimum_fields"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path"}
+{"adapter": "faiss-gpu", "adapter_options": {"device_id": 0}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+{"adapter": "faiss-gpu", "cuda_device_count": 1, "device_id": 0, "event": "conformance_adapter_diagnostics", "faiss_import_ok": true, "faiss_version": "1.14.1", "standard_gpu_resources_latency_s": 5e-06, "standard_gpu_resources_ok": true, "standard_gpu_resources_type": "StandardGpuResources"}
+E
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71b27dc5d0>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+                raise RuntimeError(cached_error)
+            return
+    
+        probe = subprocess.run(
+            [sys.executable, "-c", _FAISS_GPU_PROBE_SCRIPT, str(self._device_id)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if probe.returncode == 0:
+            self._runtime_probe_cache[cache_key] = ""
+            return
+    
+        detail = (probe.stderr or probe.stdout).strip()
+        if not detail:
+            detail = f"probe exited with code {probe.returncode}"
+        message = (
+            f"FAISS GPU runtime probe failed for device_id={self._device_id}: {detail}. "
+            "This typically means the installed FAISS GPU build does not support the visible GPU architecture."
+        )
+        self._runtime_probe_cache[cache_key] = message
+>       raise RuntimeError(message)
+E       RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:71: RuntimeError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847ed4d0>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+__________________ ERROR at setup of test_filter_correctness ___________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f7170def350>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+_______________ ERROR at setup of test_update_vectors_semantics ________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847ec890>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+_______________ ERROR at setup of test_update_payload_semantics ________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847bd710>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+___________________ ERROR at setup of test_delete_semantics ____________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f7170dea2d0>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+________________ ERROR at setup of test_insert_and_batch_query _________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847bf1d0>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+_________________ ERROR at setup of test_stats_minimum_fields __________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847bed50>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+_____ ERROR at setup of test_optimize_or_compact_does_not_break_read_path ______
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/faiss_gpu.py:40: in __init__
+    self._ensure_runtime_compatible()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <maxionbench.adapters.faiss_gpu.FaissGpuAdapter object at 0x7f71847d8150>
+
+    def _ensure_runtime_compatible(self) -> None:
+        cache_key = (str(getattr(self._faiss, "__version__", "unknown")), self._device_id)
+        cached_error = self._runtime_probe_cache.get(cache_key)
+        if cached_error is not None:
+            if cached_error:
+>               raise RuntimeError(cached_error)
+E               RuntimeError: FAISS GPU runtime probe failed for device_id=0: Faiss assertion 'err__ == cudaSuccess' failed in void faiss::gpu::runL2Norm(faiss::gpu::Tensor<T, 2, true>&, bool, faiss::gpu::Tensor<float, 1, true>&, bool, cudaStream_t) [with T = float; TVec = float4; cudaStream_t = CUstream_st*] at /project/faiss/faiss/gpu/impl/L2Norm.cu:257; details: CUDA error 209 no kernel image is available for execution on the device. This typically means the installed FAISS GPU build does not support the visible GPU architecture.
+
+maxionbench/adapters/faiss_gpu.py:50: RuntimeError
+=========================== short test summary info ============================
+ERROR maxionbench/conformance/test_conformance.py::test_healthcheck - Runtime...
+ERROR maxionbench/conformance/test_conformance.py::test_flush_controls_visibility
+ERROR maxionbench/conformance/test_conformance.py::test_filter_correctness - ...
+ERROR maxionbench/conformance/test_conformance.py::test_update_vectors_semantics
+ERROR maxionbench/conformance/test_conformance.py::test_update_payload_semantics
+ERROR maxionbench/conformance/test_conformance.py::test_delete_semantics - Ru...
+ERROR maxionbench/conformance/test_conformance.py::test_insert_and_batch_query
+ERROR maxionbench/conformance/test_conformance.py::test_stats_minimum_fields
+ERROR maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path
+9 errors in 2.04s

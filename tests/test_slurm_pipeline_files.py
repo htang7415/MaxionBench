@@ -96,7 +96,8 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "%runscript" in definition_text
     assert 'python -m pip install --index-url https://download.pytorch.org/whl/cu124 "torch==2.6.0"' in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
-    assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
+    assert 'export MAXIONBENCH_FAISS_GPU_PIP_SPEC="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-faiss-gpu-cu12>=1.8.0.2}"' in definition_text
+    assert 'python -m pip install "${MAXIONBENCH_FAISS_GPU_PIP_SPEC}"' in definition_text
     assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text
     assert "maxionbench_mirrors" in definition_text
     assert "save_pretrained" in definition_text
@@ -248,7 +249,8 @@ def test_main_container_definition_enables_fail_fast_post_install() -> None:
     assert "apt-get update && apt-get install -y --no-install-recommends" in definition_text
     assert 'python -m pip install --index-url https://download.pytorch.org/whl/cu124 "torch==2.6.0"' in definition_text
     assert 'python -m pip install --no-build-isolation ".[dev,reporting,datasets,rerank]"' in definition_text
-    assert 'python -m pip install "faiss-gpu-cu12>=1.8.0.2"' in definition_text
+    assert 'export MAXIONBENCH_FAISS_GPU_PIP_SPEC="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-faiss-gpu-cu12>=1.8.0.2}"' in definition_text
+    assert 'python -m pip install "${MAXIONBENCH_FAISS_GPU_PIP_SPEC}"' in definition_text
     assert 'python -m pip install --upgrade "h5py>=3.11"' in definition_text
     assert 'MODEL_ID = "BAAI/bge-reranker-base"' in definition_text
     assert "maxionbench_mirrors" in definition_text

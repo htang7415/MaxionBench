@@ -1,0 +1,12 @@
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
+[2026-03-26T17:57:54Z WARN  lance::dataset::write::insert] No existing dataset at /tmp/scratch/13224967/lancedb/service/conformance.lance, it will be created
