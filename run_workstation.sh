@@ -5,64 +5,44 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
 
 SCENARIO_CONFIG_DIR="configs/scenarios_paper"
+ENGINE_CONFIG_DIR="configs/engines"
+LANE="cpu"
 SEED="42"
-SLURM_PROFILE=""
-CPU_ONLY=0
 SKIP_S6=0
-LAUNCH=0
-SKIP_PYTEST=0
 SKIP_CALIBRATION=0
-PREFETCH_DATASETS=0
-CONTAINER_RUNTIME=""
-CONTAINER_IMAGE=""
-HF_CACHE_DIR=""
-CONTAINER_BINDS=()
+SCRATCH_DIR="${MAXIONBENCH_WORKSTATION_SCRATCH:-${ROOT_DIR}}"
 ORIGINAL_ARGS=("$@")
 
 usage() {
   cat <<'EOF'
 Usage: bash run_workstation.sh [options]
 
-Runs workstation preflight checks, D3 calibration verification, and Slurm plan validation.
-By default this script does NOT submit Slurm jobs.
-Each invocation writes a structured run bundle under artifacts/workstation_runs/<run_id>/.
+Run the canonical local workstation workflow for MaxionBench.
+The default full-run lane targets Linux workstations and uses:
+  - scenario templates: configs/scenarios_paper
+  - engine configs:     configs/engines
+  - lane:               cpu
 
-Bundle layout:
-  reports/   run logs and summary files
-  checks/    JSON validation artifacts
-  results/   local and Slurm run outputs
-  figures/   reserved figure output folders
-  helpers/   helper scripts (for example render_figures.sh)
+Execution flow:
+  verify pins/manifests -> optional D3 calibration -> build local run matrix
+  -> preflight D2/D3 storage -> run generated configs sequentially
+
+Each invocation writes a bundle under artifacts/workstation_runs/<run_id>/.
 
 Options:
-  --scenario-config-dir <dir>  Scenario config directory for paper lane (default: configs/scenarios_paper)
-  --slurm-profile <name>       Local Slurm profile key from your override file
-  --seed <int>                 Seed forwarded to submit-slurm-plan (default: 42)
-  --cpu-only                   Use skip-gpu mode when submitting Slurm jobs
-  --skip-s6                    Defer S6 by forwarding --skip-s6 to submit-slurm-plan
-  --launch                     Submit Slurm jobs after checks pass
-  --skip-pytest                Skip pytest -q
+  --scenario-config-dir <dir>  Scenario config directory (default: configs/scenarios_paper)
+  --engine-config-dir <dir>    Engine config directory (default: configs/engines)
+  --lane <cpu|gpu|all>         Matrix lane to run (default: cpu)
+  --seed <int>                 Seed forwarded to benchmark runs (default: 42)
+  --scratch-dir <path>         Filesystem root used for local preflight (default: repo root or MAXIONBENCH_WORKSTATION_SCRATCH)
+  --skip-s6                    Exclude S6 from generated run matrix
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
-  --prefetch-datasets         Prefetch required paper-lane datasets into the shared repo cache before checks
-  --container-runtime <name>   Container runtime for Slurm jobs (currently: apptainer)
-  --container-image <path>     Container image for Slurm jobs (for example /shared/maxionbench.sif)
-  --container-bind <spec>      Extra container bind spec for Slurm jobs; repeatable host[:container[:opts]]
-  --hf-cache-dir <path>        HF cache dir to bind/export inside containerized Slurm jobs
   -h, --help                   Show this help
 
-Private Slurm profile overrides:
-  - tracked docs/code do not ship named cluster presets
-  - start from maxionbench/orchestration/slurm/profiles_local.example.yaml
-  - keep your private overrides in a local YAML file outside the tracked repo surface
-  - point to it with:
-      MAXIONBENCH_SLURM_PROFILE_OVERRIDES=/abs/path/to/slurm_profiles.yaml
-
-Paper D3 calibration:
-  - if ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml sets `calibration_require_real_data: true`
-    and does not already contain a concrete `dataset_path`, export:
-      MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy
-  - optional checksum pin:
-      MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex>
+Notes:
+  - GPU lane is explicit because the A100 may be shared.
+  - Service engines are run through Docker Compose.
+  - Local/in-process engines run directly through `maxionbench run`.
 EOF
 }
 
@@ -72,53 +52,29 @@ while [[ $# -gt 0 ]]; do
       SCENARIO_CONFIG_DIR="${2:-}"
       shift 2
       ;;
+    --engine-config-dir)
+      ENGINE_CONFIG_DIR="${2:-}"
+      shift 2
+      ;;
+    --lane)
+      LANE="${2:-}"
+      shift 2
+      ;;
     --seed)
       SEED="${2:-}"
       shift 2
       ;;
-    --slurm-profile)
-      SLURM_PROFILE="${2:-}"
+    --scratch-dir)
+      SCRATCH_DIR="${2:-}"
       shift 2
-      ;;
-    --cpu-only)
-      CPU_ONLY=1
-      shift
       ;;
     --skip-s6)
       SKIP_S6=1
       shift
       ;;
-    --launch)
-      LAUNCH=1
-      shift
-      ;;
-    --skip-pytest)
-      SKIP_PYTEST=1
-      shift
-      ;;
     --skip-calibration)
       SKIP_CALIBRATION=1
       shift
-      ;;
-    --prefetch-datasets)
-      PREFETCH_DATASETS=1
-      shift
-      ;;
-    --container-runtime)
-      CONTAINER_RUNTIME="${2:-}"
-      shift 2
-      ;;
-    --container-image)
-      CONTAINER_IMAGE="${2:-}"
-      shift 2
-      ;;
-    --container-bind)
-      CONTAINER_BINDS+=("${2:-}")
-      shift 2
-      ;;
-    --hf-cache-dir)
-      HF_CACHE_DIR="${2:-}"
-      shift 2
       ;;
     -h|--help)
       usage
@@ -132,87 +88,51 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${LANE}" in
+  cpu|gpu|all)
+    ;;
+  *)
+    echo "error: --lane must be cpu, gpu, or all" >&2
+    exit 2
+    ;;
+esac
+
 if ! command -v maxionbench >/dev/null 2>&1; then
   echo "error: 'maxionbench' command not found in PATH" >&2
   exit 127
 fi
-
-if [[ ! -f "${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml" ]]; then
-  echo "error: missing ${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml" >&2
+if ! command -v python >/dev/null 2>&1; then
+  echo "error: 'python' command not found in PATH" >&2
+  exit 127
+fi
+if [[ ! -d "${SCENARIO_CONFIG_DIR}" ]]; then
+  echo "error: missing scenario config dir ${SCENARIO_CONFIG_DIR}" >&2
+  exit 2
+fi
+if [[ ! -d "${ENGINE_CONFIG_DIR}" ]]; then
+  echo "error: missing engine config dir ${ENGINE_CONFIG_DIR}" >&2
+  exit 2
+fi
+if [[ ! -d "${SCRATCH_DIR}" ]]; then
+  echo "error: scratch dir does not exist: ${SCRATCH_DIR}" >&2
   exit 2
 fi
 
 CALIBRATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
-
-SLURM_PROFILE_ARGS=()
-if [[ -n "${SLURM_PROFILE}" ]]; then
-  SLURM_PROFILE_ARGS=(--slurm-profile "${SLURM_PROFILE}")
-fi
-SLURM_S6_ARGS=()
-if [[ "${SKIP_S6}" -eq 1 ]]; then
-  SLURM_S6_ARGS=(--skip-s6)
-fi
-SLURM_PREFETCH_ARGS=()
-if [[ "${PREFETCH_DATASETS}" -eq 1 ]]; then
-  SLURM_PREFETCH_ARGS=(--prefetch-datasets)
-fi
-SLURM_CONTAINER_ARGS=()
-if [[ -n "${CONTAINER_RUNTIME}" ]]; then
-  case "${CONTAINER_RUNTIME}" in
-    apptainer)
-      ;;
-    *)
-      echo "error: --container-runtime must be: apptainer" >&2
-      exit 2
-      ;;
-  esac
-  if [[ -z "${CONTAINER_IMAGE}" ]]; then
-    echo "error: --container-image is required when --container-runtime is set" >&2
-    exit 2
-  fi
-  SLURM_CONTAINER_ARGS+=(--container-runtime "${CONTAINER_RUNTIME}" --container-image "${CONTAINER_IMAGE}")
-fi
-if [[ -n "${CONTAINER_IMAGE}" && -z "${CONTAINER_RUNTIME}" ]]; then
-  echo "error: --container-runtime is required when --container-image is set" >&2
+if [[ "${SKIP_CALIBRATION}" -eq 0 && ! -f "${CALIBRATE_CONFIG_PATH}" ]]; then
+  echo "error: missing ${CALIBRATE_CONFIG_PATH}" >&2
   exit 2
 fi
-if [[ -n "${HF_CACHE_DIR}" ]]; then
-  SLURM_CONTAINER_ARGS+=(--hf-cache-dir "${HF_CACHE_DIR}")
-fi
-if [[ "${#CONTAINER_BINDS[@]}" -gt 0 ]]; then
-  for bind_spec in "${CONTAINER_BINDS[@]}"; do
-    if [[ -n "${bind_spec}" ]]; then
-      SLURM_CONTAINER_ARGS+=(--container-bind "${bind_spec}")
-    fi
-  done
-fi
-
-run_submit_slurm_plan() {
-  local -a cmd=("maxionbench" "submit-slurm-plan")
-  if [[ "${#SLURM_PROFILE_ARGS[@]}" -gt 0 ]]; then
-    cmd+=("${SLURM_PROFILE_ARGS[@]}")
-  fi
-  if [[ "${#SLURM_S6_ARGS[@]}" -gt 0 ]]; then
-    cmd+=("${SLURM_S6_ARGS[@]}")
-  fi
-  if [[ "${#SLURM_PREFETCH_ARGS[@]}" -gt 0 ]]; then
-    cmd+=("${SLURM_PREFETCH_ARGS[@]}")
-  fi
-  if [[ "${#SLURM_CONTAINER_ARGS[@]}" -gt 0 ]]; then
-    cmd+=("${SLURM_CONTAINER_ARGS[@]}")
-  fi
-  cmd+=("$@")
-  "${cmd[@]}"
-}
 
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_ID="workstation_${RUN_TS}"
 RUN_BUNDLE_ROOT="artifacts/workstation_runs/${RUN_ID}"
 RUN_REPORT_DIR="${RUN_BUNDLE_ROOT}/reports"
 RUN_CHECKS_DIR="${RUN_BUNDLE_ROOT}/checks"
+RUN_PREFLIGHT_DIR="${RUN_CHECKS_DIR}/preflight"
+RUN_MATRIX_DIR="${RUN_CHECKS_DIR}/run_matrix"
 RUN_RESULTS_ROOT="${RUN_BUNDLE_ROOT}/results"
 RUN_RESULTS_LOCAL="${RUN_RESULTS_ROOT}/local"
-RUN_RESULTS_SLURM="${RUN_RESULTS_ROOT}/slurm"
 RUN_FIGURES_ROOT="${RUN_BUNDLE_ROOT}/figures"
 RUN_FIGURES_MILESTONES="${RUN_FIGURES_ROOT}/milestones"
 RUN_FIGURES_FINAL="${RUN_FIGURES_ROOT}/final"
@@ -221,8 +141,9 @@ RUN_HELPERS_DIR="${RUN_BUNDLE_ROOT}/helpers"
 mkdir -p \
   "${RUN_REPORT_DIR}" \
   "${RUN_CHECKS_DIR}" \
+  "${RUN_PREFLIGHT_DIR}" \
+  "${RUN_MATRIX_DIR}" \
   "${RUN_RESULTS_LOCAL}" \
-  "${RUN_RESULTS_SLURM}" \
   "${RUN_FIGURES_MILESTONES}" \
   "${RUN_FIGURES_FINAL}" \
   "${RUN_HELPERS_DIR}"
@@ -230,25 +151,19 @@ mkdir -p \
 REPORT_LOG="${RUN_REPORT_DIR}/run.log"
 REPORT_SUMMARY_TXT="${RUN_REPORT_DIR}/summary.txt"
 REPORT_SUMMARY_MD="${RUN_REPORT_DIR}/summary.md"
+RUN_MATRIX_SUMMARY_JSON="${RUN_CHECKS_DIR}/run_matrix_summary.json"
+RUN_MATRIX_JSON="${RUN_MATRIX_DIR}/run_matrix.json"
 RENDER_FIGURES_HELPER="${RUN_HELPERS_DIR}/render_figures.sh"
 START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 START_EPOCH="$(date +%s)"
-LOG_PIPE="${RUN_REPORT_DIR}/run.pipe"
 
-SLURM_PLAN_VERIFY_JSON="${RUN_CHECKS_DIR}/slurm_plan_verify.json"
-SLURM_PLAN_VERIFY_SKIP_GPU_JSON="${RUN_CHECKS_DIR}/slurm_plan_verify_skip_gpu.json"
-SLURM_SUBMIT_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_dry_run.json"
-SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_skip_gpu_dry_run.json"
-SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON="${RUN_CHECKS_DIR}/slurm_submit_plan_paper_skip_gpu_dry_run.json"
-SLURM_SNAPSHOT_VALIDATION_JSON="${RUN_CHECKS_DIR}/slurm_snapshot_validation.json"
-CI_PROTOCOL_AUDIT_DEFAULT_JSON="${RUN_CHECKS_DIR}/ci_protocol_audit_default.json"
-CI_PROTOCOL_AUDIT_PAPER_JSON="${RUN_CHECKS_DIR}/ci_protocol_audit_paper.json"
+exec > >(tee -a "${REPORT_LOG}") 2>&1
 
 cat > "${RENDER_FIGURES_HELPER}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT_DIR="${ROOT_DIR}"
-INPUT_DIR="\${1:-${ROOT_DIR}/${RUN_RESULTS_SLURM}}"
+INPUT_DIR="\${1:-${ROOT_DIR}/${RUN_RESULTS_LOCAL}}"
 MILESTONES_OUT="\${2:-${ROOT_DIR}/${RUN_FIGURES_MILESTONES}}"
 FINAL_OUT="\${3:-${ROOT_DIR}/${RUN_FIGURES_FINAL}}"
 cd "\${ROOT_DIR}"
@@ -261,12 +176,7 @@ echo "- final: \${FINAL_OUT}"
 EOF
 chmod +x "${RENDER_FIGURES_HELPER}"
 
-rm -f "${LOG_PIPE}"
-mkfifo "${LOG_PIPE}"
-exec 3>&1 4>&2
-tee -a "${REPORT_LOG}" < "${LOG_PIPE}" >&3 &
-TEE_PID="$!"
-exec > "${LOG_PIPE}" 2>&1
+export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${ROOT_DIR}/${RUN_RESULTS_LOCAL}/lancedb/service"
 
 finalize_report() {
   local exit_code="$?"
@@ -289,10 +199,6 @@ finalize_report() {
     args_rendered="(none)"
   fi
 
-  if [[ -f "artifacts/calibration/d3_params.yaml" ]]; then
-    cp -f "artifacts/calibration/d3_params.yaml" "${RUN_RESULTS_LOCAL}/d3_params.yaml"
-  fi
-
   cat > "${REPORT_SUMMARY_TXT}" <<EOF
 run_id=${RUN_ID}
 status=${status}
@@ -302,13 +208,12 @@ end_utc=${end_ts}
 duration_s=${duration_s}
 repo_root=${ROOT_DIR}
 scenario_config_dir=${SCENARIO_CONFIG_DIR}
-slurm_profile=${SLURM_PROFILE:-none}
-cpu_only=${CPU_ONLY}
-launch=${LAUNCH}
-skip_pytest=${SKIP_PYTEST}
-skip_calibration=${SKIP_CALIBRATION}
-prefetch_datasets=${PREFETCH_DATASETS}
+engine_config_dir=${ENGINE_CONFIG_DIR}
+lane=${LANE}
+seed=${SEED}
+scratch_dir=${SCRATCH_DIR}
 skip_s6=${SKIP_S6}
+skip_calibration=${SKIP_CALIBRATION}
 args=${args_rendered}
 bundle_root=${RUN_BUNDLE_ROOT}
 report_log=${REPORT_LOG}
@@ -324,11 +229,12 @@ EOF
 - end_utc: \`${end_ts}\`
 - duration_s: \`${duration_s}\`
 - scenario_config_dir: \`${SCENARIO_CONFIG_DIR}\`
-- slurm_profile: \`${SLURM_PROFILE:-none}\`
-- launch: \`${LAUNCH}\`
-- cpu_only: \`${CPU_ONLY}\`
-- prefetch_datasets: \`${PREFETCH_DATASETS}\`
+- engine_config_dir: \`${ENGINE_CONFIG_DIR}\`
+- lane: \`${LANE}\`
+- seed: \`${SEED}\`
+- scratch_dir: \`${SCRATCH_DIR}\`
 - skip_s6: \`${SKIP_S6}\`
+- skip_calibration: \`${SKIP_CALIBRATION}\`
 - args: \`${args_rendered}\`
 
 ## Bundle Paths
@@ -337,61 +243,101 @@ EOF
 - reports: \`${RUN_REPORT_DIR}\`
 - checks: \`${RUN_CHECKS_DIR}\`
 - results_local: \`${RUN_RESULTS_LOCAL}\`
-- results_slurm: \`${RUN_RESULTS_SLURM}\`
 - figures_milestones: \`${RUN_FIGURES_MILESTONES}\`
 - figures_final: \`${RUN_FIGURES_FINAL}\`
 - render_figures_helper: \`${RENDER_FIGURES_HELPER}\`
-
-## Check Artifacts
-
-- slurm_plan_verify: \`${SLURM_PLAN_VERIFY_JSON}\`
-- slurm_plan_verify_skip_gpu: \`${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}\`
-- slurm_submit_plan_default: \`${SLURM_SUBMIT_DRY_RUN_JSON}\`
-- slurm_submit_plan_skip_gpu: \`${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}\`
-- slurm_submit_plan_paper_skip_gpu: \`${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}\`
-- slurm_snapshot_validation: \`${SLURM_SNAPSHOT_VALIDATION_JSON}\`
-- ci_protocol_audit_default: \`${CI_PROTOCOL_AUDIT_DEFAULT_JSON}\`
-- ci_protocol_audit_paper: \`${CI_PROTOCOL_AUDIT_PAPER_JSON}\`
 EOF
 
   ln -sfn "${RUN_ID}" "artifacts/workstation_runs/latest"
   echo "Run report saved: ${RUN_BUNDLE_ROOT}"
-
-  exec 1>&3 2>&4
-  wait "${TEE_PID}" 2>/dev/null || true
-  rm -f "${LOG_PIPE}"
-  exec 3>&- 4>&-
 }
 
 trap finalize_report EXIT
 
+engine_from_config() {
+  sed -n 's/^engine:[[:space:]]*//p' "$1" | head -n1 | tr -d '"' | xargs
+}
+
+service_engine() {
+  case "$1" in
+    qdrant|milvus|opensearch|pgvector|weaviate)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+should_preflight() {
+  case "$1" in
+    D2|D3)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+docker_benchmark_service() {
+  case "$1" in
+    gpu)
+      printf '%s\n' "benchmark-gpu"
+      ;;
+    *)
+      printf '%s\n' "benchmark"
+      ;;
+  esac
+}
+
+run_generated_config() {
+  local group="$1"
+  local config_path="$2"
+  local engine="$3"
+  local dataset_bundle="$4"
+  local config_stem
+  config_stem="$(basename "${config_path}" .yaml)"
+
+  if should_preflight "${dataset_bundle}"; then
+    python -m maxionbench.orchestration.local_preflight \
+      --config "${config_path}" \
+      --scratch-dir "${SCRATCH_DIR}" \
+      --json | tee "${RUN_PREFLIGHT_DIR}/${config_stem}.json"
+  fi
+
+  if service_engine "${engine}"; then
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "error: docker is required for service engine ${engine}" >&2
+      exit 127
+    fi
+    bash run_docker_scenario.sh \
+      --config "${config_path}" \
+      --benchmark-service "$(docker_benchmark_service "${group}")" \
+      -- --seed "${SEED}"
+    return 0
+  fi
+
+  maxionbench run --config "${config_path}" --seed "${SEED}"
+}
+
 echo "Run bundle root: ${RUN_BUNDLE_ROOT}"
 echo "Run log: ${REPORT_LOG}"
 
-echo "==> Step 1: code and pin sanity"
-if [[ "${SKIP_PYTEST}" -eq 0 ]]; then
-  pytest -q
-else
-  echo "Skipping pytest -q (--skip-pytest)"
-fi
+echo "==> Step 1: workstation sanity"
 maxionbench verify-pins --config-dir configs/scenarios --json
-maxionbench verify-pins --config-dir "${SCENARIO_CONFIG_DIR}" --strict-d3-scenario-scale --json
+if [[ "${SCENARIO_CONFIG_DIR}" != "configs/scenarios" ]]; then
+  VERIFY_ARGS=(--config-dir "${SCENARIO_CONFIG_DIR}" --json)
+  if [[ "${SCENARIO_CONFIG_DIR}" == *"scenarios_paper"* ]]; then
+    VERIFY_ARGS+=(--strict-d3-scenario-scale)
+  fi
+  maxionbench verify-pins "${VERIFY_ARGS[@]}"
+fi
 maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json
 maxionbench verify-conformance-configs --config-dir configs/conformance --json
 
 echo "==> Step 2: D3 calibration gate"
 if [[ "${SKIP_CALIBRATION}" -eq 0 ]]; then
-  if [[ "${PREFETCH_DATASETS}" -eq 1 ]]; then
-    python -m maxionbench.orchestration.slurm.dataset_prefetch \
-      --repo-root "${ROOT_DIR}" \
-      --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
-      --env-sh artifacts/prefetch/dataset_env.sh \
-      --json
-    if [[ -f "${ROOT_DIR}/artifacts/prefetch/dataset_env.sh" ]]; then
-      # shellcheck disable=SC1091
-      source "${ROOT_DIR}/artifacts/prefetch/dataset_env.sh"
-    fi
-  fi
   CALIBRATION_PATH_CHECK="$(python - <<'PY' "${CALIBRATE_CONFIG_PATH}"
 import os
 import pathlib
@@ -424,7 +370,6 @@ PY
   if [[ "${CALIBRATION_PATH_CHECK}" == "missing_real_dataset_path" ]]; then
     echo "error: ${CALIBRATE_CONFIG_PATH} requires real D3 vectors. Set MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy" >&2
     echo "error: optional checksum pin: MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex>" >&2
-    echo "error: alternatively, point --scenario-config-dir at a calibrate_d3.yaml with a concrete dataset_path" >&2
     exit 2
   fi
   maxionbench run \
@@ -438,76 +383,53 @@ else
   echo "Skipping D3 calibration run/check (--skip-calibration)"
 fi
 
-echo "==> Step 3: Slurm plan and protocol audit"
-maxionbench verify-slurm-plan --json | tee "${SLURM_PLAN_VERIFY_JSON}"
-maxionbench verify-slurm-plan --skip-gpu --json | tee "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}"
-run_submit_slurm_plan \
-  --output-root "${RUN_RESULTS_SLURM}" \
-  --dry-run \
-  --json | tee "${SLURM_SUBMIT_DRY_RUN_JSON}"
-run_submit_slurm_plan \
-  --output-root "${RUN_RESULTS_SLURM}" \
-  --skip-gpu \
-  --dry-run \
-  --json | tee "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}"
-run_submit_slurm_plan \
-  --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
-  --output-root "${RUN_RESULTS_SLURM}" \
-  --skip-gpu \
-  --dry-run \
-  --json | tee "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}"
-maxionbench validate-slurm-snapshots \
-  --verify-path "${SLURM_PLAN_VERIFY_JSON}" \
-  --verify-path "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}" \
-  --submit-path "${SLURM_SUBMIT_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}" \
-  --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
-  --json | tee "${SLURM_SNAPSHOT_VALIDATION_JSON}"
-maxionbench ci-protocol-audit \
-  --config-dir configs/scenarios \
-  --slurm-dir maxionbench/orchestration/slurm \
-  --manifest-dir maxionbench/datasets/manifests \
-  --verify-path "${SLURM_PLAN_VERIFY_JSON}" \
-  --verify-path "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}" \
-  --submit-path "${SLURM_SUBMIT_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}" \
-  --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
-  --output "${CI_PROTOCOL_AUDIT_DEFAULT_JSON}" \
-  --strict \
+echo "==> Step 3: build local run matrix"
+MATRIX_ARGS=(
+  --scenario-config-dir "${SCENARIO_CONFIG_DIR}"
+  --engine-config-dir "${ENGINE_CONFIG_DIR}"
+  --out-dir "${RUN_MATRIX_DIR}"
+  --output-root "${RUN_RESULTS_LOCAL}"
+  --lane "${LANE}"
   --json
-maxionbench ci-protocol-audit \
-  --config-dir "${SCENARIO_CONFIG_DIR}" \
-  --slurm-dir maxionbench/orchestration/slurm \
-  --manifest-dir maxionbench/datasets/manifests \
-  --verify-path "${SLURM_PLAN_VERIFY_JSON}" \
-  --verify-path "${SLURM_PLAN_VERIFY_SKIP_GPU_JSON}" \
-  --submit-path "${SLURM_SUBMIT_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_SKIP_GPU_DRY_RUN_JSON}" \
-  --submit-path "${SLURM_SUBMIT_PAPER_SKIP_GPU_DRY_RUN_JSON}" \
-  --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
-  --strict-d3-scenario-scale \
-  --output "${CI_PROTOCOL_AUDIT_PAPER_JSON}" \
-  --strict \
-  --json
-
-echo "==> Step 4: Slurm submit"
-if [[ "${LAUNCH}" -eq 1 ]]; then
-  if [[ "${CPU_ONLY}" -eq 1 ]]; then
-    run_submit_slurm_plan \
-      --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
-      --output-root "${RUN_RESULTS_SLURM}" \
-      --skip-gpu \
-      --seed "${SEED}"
-  else
-    run_submit_slurm_plan \
-      --scenario-config-dir "${SCENARIO_CONFIG_DIR}" \
-      --output-root "${RUN_RESULTS_SLURM}" \
-      --seed "${SEED}"
-  fi
-else
-  echo "Dry-run only. Re-run with --launch to submit jobs."
+)
+if [[ "${SKIP_S6}" -eq 1 ]]; then
+  MATRIX_ARGS+=(--skip-s6)
 fi
+python -m maxionbench.orchestration.run_matrix "${MATRIX_ARGS[@]}" | tee "${RUN_MATRIX_SUMMARY_JSON}"
+
+mapfile -t MATRIX_ROWS < <(python - <<'PY' "${RUN_MATRIX_JSON}" "${LANE}"
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+lane = sys.argv[2].strip().lower()
+payload = json.loads(path.read_text(encoding="utf-8"))
+rows = []
+if lane in {"cpu", "all"}:
+    rows.extend(payload.get("cpu_rows", []))
+if lane in {"gpu", "all"}:
+    rows.extend(payload.get("gpu_rows", []))
+for row in rows:
+    print("\t".join([
+        str(row.get("group", "")),
+        str(row.get("config_path", "")),
+        str(row.get("engine", "")),
+        str(row.get("dataset_bundle", "")),
+    ]))
+PY
+)
+
+if [[ "${#MATRIX_ROWS[@]}" -eq 0 ]]; then
+  echo "error: generated run matrix is empty for lane ${LANE}" >&2
+  exit 2
+fi
+
+echo "==> Step 4: execute generated configs (${#MATRIX_ROWS[@]} runs)"
+for row in "${MATRIX_ROWS[@]}"; do
+  IFS=$'\t' read -r group config_path engine dataset_bundle <<< "${row}"
+  echo "--> ${group}: ${engine} ${config_path}"
+  run_generated_config "${group}" "${config_path}" "${engine}" "${dataset_bundle}"
+done
 
 echo "Figure helper script: ${RENDER_FIGURES_HELPER}"

@@ -137,46 +137,6 @@ def main(argv: list[str] | None = None) -> int:
     verify_d3_calibration_parser.add_argument("--strict", action="store_true")
     verify_d3_calibration_parser.add_argument("--json", action="store_true")
 
-    verify_slurm_plan_parser = subparsers.add_parser(
-        "verify-slurm-plan",
-        help="Verify Slurm submit-plan consistency with array scenario layout",
-    )
-    verify_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
-    verify_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
-    verify_slurm_plan_parser.add_argument("--json", action="store_true")
-
-    validate_slurm_snapshots_parser = subparsers.add_parser(
-        "validate-slurm-snapshots",
-        help="Validate Slurm plan snapshot JSON artifacts",
-    )
-    validate_slurm_snapshots_parser.add_argument("--verify-path", action="append", dest="verify_paths", default=None)
-    validate_slurm_snapshots_parser.add_argument("--submit-path", action="append", dest="submit_paths", default=None)
-    validate_slurm_snapshots_parser.add_argument(
-        "--required-baseline-scenario",
-        default="configs/scenarios/s1_ann_frontier_d3.yaml",
-    )
-    validate_slurm_snapshots_parser.add_argument("--json", action="store_true")
-
-    ci_protocol_audit_parser = subparsers.add_parser(
-        "ci-protocol-audit",
-        help="Run consolidated CI protocol checks",
-    )
-    ci_protocol_audit_parser.add_argument("--config-dir", default="configs/scenarios")
-    ci_protocol_audit_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
-    ci_protocol_audit_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
-    ci_protocol_audit_parser.add_argument("--verify-path", action="append", dest="verify_paths", default=None)
-    ci_protocol_audit_parser.add_argument("--submit-path", action="append", dest="submit_paths", default=None)
-    ci_protocol_audit_parser.add_argument(
-        "--required-baseline-scenario",
-        default="configs/scenarios/s1_ann_frontier_d3.yaml",
-    )
-    ci_protocol_audit_parser.add_argument("--report-input", default=None)
-    ci_protocol_audit_parser.add_argument("--require-report-policy", action="store_true")
-    ci_protocol_audit_parser.add_argument("--strict-d3-scenario-scale", action="store_true")
-    ci_protocol_audit_parser.add_argument("--output", default="artifacts/ci/ci_protocol_audit.json")
-    ci_protocol_audit_parser.add_argument("--strict", action="store_true")
-    ci_protocol_audit_parser.add_argument("--json", action="store_true")
-
     verify_behavior_cards_parser = subparsers.add_parser(
         "verify-behavior-cards",
         help="Verify behavior-card coverage and required sections",
@@ -205,32 +165,6 @@ def main(argv: list[str] | None = None) -> int:
     pre_run_gate_parser.add_argument("--behavior-dir", default="docs/behavior")
     pre_run_gate_parser.add_argument("--allow-gpu-unavailable", action="store_true")
     pre_run_gate_parser.add_argument("--json", action="store_true")
-
-    submit_slurm_plan_parser = subparsers.add_parser(
-        "submit-slurm-plan",
-        help="Submit Slurm jobs with enforced dependency topology",
-    )
-    submit_slurm_plan_parser.add_argument("--slurm-dir", default="maxionbench/orchestration/slurm")
-    submit_slurm_plan_parser.add_argument("--seed", type=int, default=42)
-    submit_slurm_plan_parser.add_argument("--slurm-profile", default=None)
-    submit_slurm_plan_parser.add_argument("--scenario-config-dir", default=None)
-    submit_slurm_plan_parser.add_argument("--engine-config-dir", default="configs/engines")
-    submit_slurm_plan_parser.add_argument("--run-manifest-dir", default="artifacts/slurm_manifests/latest")
-    submit_slurm_plan_parser.add_argument("--output-root", default=None)
-    submit_slurm_plan_parser.add_argument("--container-runtime", default=None, choices=["apptainer"])
-    submit_slurm_plan_parser.add_argument("--container-image", default=None)
-    submit_slurm_plan_parser.add_argument("--container-bind", action="append", dest="container_bind", default=None)
-    submit_slurm_plan_parser.add_argument("--hf-cache-dir", default=None)
-    submit_slurm_plan_parser.add_argument("--skip-gpu", action="store_true")
-    submit_slurm_plan_parser.add_argument("--prepare-containers", action="store_true")
-    submit_slurm_plan_parser.add_argument("--prefetch-datasets", action="store_true")
-    submit_slurm_plan_parser.add_argument("--download-datasets", action="store_true")
-    submit_slurm_plan_parser.add_argument("--preprocess-datasets", action="store_true")
-    submit_slurm_plan_parser.add_argument("--include-postprocess", action="store_true")
-    submit_slurm_plan_parser.add_argument("--full-matrix", action="store_true")
-    submit_slurm_plan_parser.add_argument("--allow-reduced-matrix", action="store_true")
-    submit_slurm_plan_parser.add_argument("--dry-run", action="store_true")
-    submit_slurm_plan_parser.add_argument("--json", action="store_true")
 
     verify_promotion_gate_parser = subparsers.add_parser(
         "verify-promotion-gate",
@@ -499,56 +433,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_d3_calibration_main(verify_argv)
-    if args.command == "verify-slurm-plan":
-        from maxionbench.tools.verify_slurm_plan import main as verify_slurm_plan_main
-
-        verify_argv: list[str] = ["--slurm-dir", args.slurm_dir]
-        if args.skip_gpu:
-            verify_argv.append("--skip-gpu")
-        if args.json:
-            verify_argv.append("--json")
-        return verify_slurm_plan_main(verify_argv)
-    if args.command == "validate-slurm-snapshots":
-        from maxionbench.tools.validate_slurm_snapshots import main as validate_slurm_snapshots_main
-
-        validate_argv: list[str] = ["--required-baseline-scenario", args.required_baseline_scenario]
-        for path in args.verify_paths or []:
-            validate_argv.extend(["--verify-path", path])
-        for path in args.submit_paths or []:
-            validate_argv.extend(["--submit-path", path])
-        if args.json:
-            validate_argv.append("--json")
-        return validate_slurm_snapshots_main(validate_argv)
-    if args.command == "ci-protocol-audit":
-        from maxionbench.tools.ci_protocol_audit import main as ci_protocol_audit_main
-
-        audit_argv: list[str] = [
-            "--config-dir",
-            args.config_dir,
-            "--slurm-dir",
-            args.slurm_dir,
-            "--manifest-dir",
-            args.manifest_dir,
-            "--required-baseline-scenario",
-            args.required_baseline_scenario,
-            "--output",
-            args.output,
-        ]
-        for path in args.verify_paths or []:
-            audit_argv.extend(["--verify-path", path])
-        for path in args.submit_paths or []:
-            audit_argv.extend(["--submit-path", path])
-        if args.report_input:
-            audit_argv.extend(["--report-input", args.report_input])
-        if args.require_report_policy:
-            audit_argv.append("--require-report-policy")
-        if args.strict_d3_scenario_scale:
-            audit_argv.append("--strict-d3-scenario-scale")
-        if args.strict:
-            audit_argv.append("--strict")
-        if args.json:
-            audit_argv.append("--json")
-        return ci_protocol_audit_main(audit_argv)
     if args.command == "verify-behavior-cards":
         from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
 
@@ -592,49 +476,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             gate_argv.append("--json")
         return pre_run_gate_main(gate_argv)
-    if args.command == "submit-slurm-plan":
-        from maxionbench.orchestration.slurm.submit_plan import main as submit_slurm_plan_main
-
-        submit_argv: list[str] = ["--slurm-dir", args.slurm_dir, "--seed", str(args.seed)]
-        if args.slurm_profile:
-            submit_argv.extend(["--slurm-profile", args.slurm_profile])
-        if args.scenario_config_dir:
-            submit_argv.extend(["--scenario-config-dir", args.scenario_config_dir])
-        if args.engine_config_dir:
-            submit_argv.extend(["--engine-config-dir", args.engine_config_dir])
-        if args.run_manifest_dir:
-            submit_argv.extend(["--run-manifest-dir", args.run_manifest_dir])
-        if args.output_root:
-            submit_argv.extend(["--output-root", args.output_root])
-        if args.container_runtime:
-            submit_argv.extend(["--container-runtime", args.container_runtime])
-        if args.container_image:
-            submit_argv.extend(["--container-image", args.container_image])
-        for bind in args.container_bind or []:
-            submit_argv.extend(["--container-bind", bind])
-        if args.hf_cache_dir:
-            submit_argv.extend(["--hf-cache-dir", args.hf_cache_dir])
-        if args.skip_gpu:
-            submit_argv.append("--skip-gpu")
-        if args.prepare_containers:
-            submit_argv.append("--prepare-containers")
-        if args.prefetch_datasets:
-            submit_argv.append("--prefetch-datasets")
-        if args.download_datasets:
-            submit_argv.append("--download-datasets")
-        if args.preprocess_datasets:
-            submit_argv.append("--preprocess-datasets")
-        if args.include_postprocess:
-            submit_argv.append("--include-postprocess")
-        if args.full_matrix:
-            submit_argv.append("--full-matrix")
-        if args.allow_reduced_matrix:
-            submit_argv.append("--allow-reduced-matrix")
-        if args.dry_run:
-            submit_argv.append("--dry-run")
-        if args.json:
-            submit_argv.append("--json")
-        return submit_slurm_plan_main(submit_argv)
     if args.command == "verify-promotion-gate":
         from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
 
@@ -736,18 +577,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "conformance-matrix":
         from maxionbench.conformance.matrix import main as conformance_matrix_main
 
-        return conformance_matrix_main(
-            [
-                "--config-dir",
-                args.config_dir,
-                "--out-dir",
-                args.out_dir,
-                "--timeout-s",
-                str(args.timeout_s),
-                "--adapters",
-                args.adapters,
-            ]
-        )
+        matrix_argv = [
+            "--config-dir",
+            args.config_dir,
+            "--out-dir",
+            args.out_dir,
+            "--timeout-s",
+            str(args.timeout_s),
+        ]
+        if str(args.adapters).strip():
+            matrix_argv.extend(["--adapters", args.adapters])
+        return conformance_matrix_main(matrix_argv)
     raise ValueError(f"Unsupported command {args.command}")
 
 

@@ -11,10 +11,10 @@ def test_gitignore_blocks_python_cache_artifacts() -> None:
     assert ".pytest_cache/" in payload
     assert "artifacts/containers/" in payload
     assert "artifacts/workstation_runs/" in payload
-    assert ".env.slurm.*" in payload
-    assert "!.env.slurm.example" in payload
-    assert "!scripts/build_containers.sh" in payload
-    assert "!maxionbench/orchestration/slurm/prepare_containers.sh" in payload
+    assert "!run_workstation.sh" in payload
+    assert "!run_docker_scenario.sh" in payload
+    assert ".env.slurm.*" not in payload
+    assert "prepare_containers.sh" not in payload
 
 
 def test_repository_has_no_tracked_python_cache_artifacts() -> None:
