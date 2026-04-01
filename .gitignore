@@ -6,15 +6,20 @@ AGENTS.md
 CLAUDE.md
 command-mac.md
 dataset
+containers
+artifacts
+maxionbench.egg-info
 
 # Python bytecode/test caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.cache
 
 *.sh
 !run_workstation.sh
 !run_docker_scenario.sh
+!save_results_bundle.sh
 
 # Local generated benchmark outputs
 artifacts/ci/
@@ -24,6 +29,7 @@ artifacts/conformance_local/
 artifacts/figures/
 artifacts/runs/
 artifacts/workstation_runs/
+results/
 ci_s1_smoke_local.yaml
 .claude/settings.local.json
 logs
