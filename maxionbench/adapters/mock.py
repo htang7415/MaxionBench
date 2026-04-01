@@ -188,6 +188,10 @@ class MockAdapter(BaseAdapter):
     def _score(self, query: np.ndarray, candidate: np.ndarray) -> float:
         if self._metric == "l2":
             return float(-np.linalg.norm(query - candidate))
+        if self._metric in {"cos", "cosine"}:
+            query_norm = float(np.linalg.norm(query)) + 1e-12
+            candidate_norm = float(np.linalg.norm(candidate)) + 1e-12
+            return float(np.dot(query, candidate) / (query_norm * candidate_norm))
         return float(np.dot(query, candidate))
 
     def _to_stored_record(self, vector: Vector, payload: Mapping[str, Any]) -> _StoredRecord:

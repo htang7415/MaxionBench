@@ -28,8 +28,8 @@ def test_opensearch_healthcheck_timeout_is_separate_from_normal_requests(
         timeouts.append(float(timeout))
         return _FakeResponse()
 
-    monkeypatch.setattr("maxionbench.adapters.opensearch.requests.request", _fake_request)
     adapter = OpenSearchAdapter(timeout_s=30.0, healthcheck_timeout_s=5.0)
+    monkeypatch.setattr(adapter._session, "request", _fake_request)
     assert adapter.healthcheck() is True
     adapter.drop("collection")
     assert timeouts == [5.0, 30.0]

@@ -474,6 +474,34 @@ def test_validate_full_matrix_contract_allows_reduced_smoke_matrix() -> None:
     )
 
 
+def test_validate_full_matrix_contract_allows_reduced_cpu_only_smoke_matrix() -> None:
+    manifest = RunManifest(
+        repo_root="/repo",
+        generated_config_dir="/repo/generated",
+        cpu_rows=[
+            RunManifestRow(
+                group="cpu",
+                config_path="/repo/generated/cpu_0.yaml",
+                engine="pgvector",
+                scenario="s1_ann_frontier",
+                dataset_bundle="D3",
+                template_name="s1_ann_frontier_d3.yaml",
+            )
+        ],
+        gpu_rows=[],
+        selected_engines=["pgvector"],
+        selected_templates=["s1_ann_frontier_d3.yaml"],
+    )
+
+    validate_full_matrix_contract(
+        manifest=manifest,
+        skip_gpu=False,
+        prefetch_datasets=True,
+        allow_gpu_unavailable_env="0",
+        allow_reduced_matrix=True,
+    )
+
+
 def test_cli_submit_slurm_plan_forwards_allow_reduced_matrix(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

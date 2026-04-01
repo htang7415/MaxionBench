@@ -38,10 +38,12 @@ class WeaviateAdapter(BaseAdapter):
         scheme: str = "http",
         timeout_s: float = 30.0,
         healthcheck_timeout_s: float | None = None,
+        batch_max_objects: int = 1000,
     ) -> None:
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout_s = float(timeout_s)
         self._healthcheck_timeout_s = float(healthcheck_timeout_s) if healthcheck_timeout_s is not None else self._timeout_s
+        self._batch_max_objects = max(1, int(batch_max_objects))
         self._collection = ""
         self._class_name = ""
         self._dimension = 0
@@ -228,7 +230,7 @@ class WeaviateAdapter(BaseAdapter):
         self._create_remote_class()
         if not self._records:
             return
-        objects = []
+        objects: list[dict[str, Any]] = []
         for doc_id, point in sorted(self._records.items(), key=lambda item: item[0]):
             properties = {
                 "doc_id": doc_id,
@@ -245,7 +247,11 @@ class WeaviateAdapter(BaseAdapter):
                     "properties": properties,
                 }
             )
-        self._request("POST", "/v1/batch/objects", json={"objects": objects})
+            if len(objects) >= self._batch_max_objects:
+                self._request("POST", "/v1/batch/objects", json={"objects": objects})
+                objects = []
+        if objects:
+            self._request("POST", "/v1/batch/objects", json={"objects": objects})
 
     def _request(
         self,

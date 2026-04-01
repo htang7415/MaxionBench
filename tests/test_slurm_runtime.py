@@ -2003,6 +2003,55 @@ def test_slurm_common_finalize_job_captures_runtime_logs_before_cleanup(tmp_path
     assert stdout_lines["RUNTIME_EXISTS"] == "0"
 
 
+def test_slurm_common_finalize_job_captures_pgvector_data_state(tmp_path: Path) -> None:
+    common_path = Path("maxionbench/orchestration/slurm/common.sh").resolve()
+    scratch_dir = tmp_path / "scratch"
+    output_root = tmp_path / "results"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{common_path}"; '
+                'export SLURM_JOB_ID="4242"; '
+                'export SLURM_ARRAY_TASK_ID="7"; '
+                f'export SLURM_TMPDIR="{scratch_dir}"; '
+                f'export MAXIONBENCH_OUTPUT_ROOT="{output_root}"; '
+                'export MAXIONBENCH_CLEANUP_LOCAL_SCRATCH="1"; '
+                'mb_require_tmpdir; '
+                'mb_prepare_output_paths "pgvector_finalize_probe"; '
+                'mkdir -p "$(mb_engine_runtime_root)/pgvector/data/pgdata/base/5" "$(mb_engine_runtime_root)/logs" "${MB_OUTPUT_TMP}"; '
+                'printf "16\\n" > "$(mb_engine_runtime_root)/pgvector/data/pgdata/PG_VERSION"; '
+                'printf "service\\n" > "$(mb_engine_runtime_root)/logs/service.log"; '
+                'printf "result\\n" > "${MB_OUTPUT_TMP}/results.parquet"; '
+                'mb_finalize_job 9 0; '
+                'printf "FINAL=%s\\n" "${MB_OUTPUT_FINAL}"'
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path.cwd(),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    stdout_lines = dict(
+        line.split("=", maxsplit=1)
+        for line in completed.stdout.splitlines()
+        if "=" in line
+    )
+    final_output = Path(stdout_lines["FINAL"])
+    summary_path = final_output / "logs" / "local_runtime" / "engine_runtime" / "pgvector_data_state" / "summary.txt"
+    tree_path = final_output / "logs" / "local_runtime" / "engine_runtime" / "pgvector_data_state" / "pgdata_tree.txt"
+    version_path = final_output / "logs" / "local_runtime" / "engine_runtime" / "pgvector_data_state" / "PG_VERSION"
+    assert summary_path.exists()
+    assert "exists_base_5_dir=1" in summary_path.read_text(encoding="utf-8")
+    assert tree_path.exists()
+    assert "pgdata/base/5" in tree_path.read_text(encoding="utf-8")
+    assert version_path.read_text(encoding="utf-8") == "16\n"
+
+
 def test_slurm_wrapper_scripts_source_common_from_exported_slurm_dir() -> None:
     for rel_path in (
         "maxionbench/orchestration/slurm/download_datasets.sh",

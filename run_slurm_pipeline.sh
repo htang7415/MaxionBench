@@ -78,6 +78,7 @@ load_cluster_env_defaults() {
     MAXIONBENCH_MILVUS_IMAGE
     MAXIONBENCH_SLURM_ACCOUNT
     MAXIONBENCH_SLURM_PARTITION
+    MAXIONBENCH_FAISS_GPU_PIP_SPEC
     MAXIONBENCH_APPTAINER_MODULE
     MAXIONBENCH_MODULE_INIT_SH
     MAXIONBENCH_CLEANUP_LOCAL_SCRATCH
@@ -215,6 +216,7 @@ MAXIONBENCH_WEAVIATE_IMAGE=${MAXIONBENCH_WEAVIATE_IMAGE}
 MAXIONBENCH_MILVUS_ETCD_IMAGE=${MAXIONBENCH_MILVUS_ETCD_IMAGE}
 MAXIONBENCH_MILVUS_MINIO_IMAGE=${MAXIONBENCH_MILVUS_MINIO_IMAGE}
 MAXIONBENCH_MILVUS_IMAGE=${MAXIONBENCH_MILVUS_IMAGE}
+MAXIONBENCH_FAISS_GPU_PIP_SPEC=${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-}
 MAXIONBENCH_CRAG_EXAMPLES=${MAXIONBENCH_CRAG_EXAMPLES:-500}
 EOF
   printf '%s\n' "+ wrote cluster env ${env_file}"
@@ -274,7 +276,7 @@ Options:
   --seed <int>                   Seed forwarded to submit-slurm-plan
   --skip-gpu                     Rejected for the hardened full-matrix rerun; GPU jobs are mandatory
   --skip-s6                      Defer S6 from the plan
-  --allow-reduced-matrix         Allow a reduced smoke/debug matrix while still requiring GPU jobs
+  --allow-reduced-matrix         Allow a reduced smoke/debug matrix; GPU rows are optional when the manifest is CPU-only
   --launch                       Prepare shared dirs locally, then submit a cluster-side container prep job plus the Slurm plan
   --help                         Show this message
 EOF
@@ -460,6 +462,7 @@ report_container_images() {
   printf '%s\n' "+ MAXIONBENCH_MILVUS_ETCD_IMAGE=${MAXIONBENCH_MILVUS_ETCD_IMAGE}"
   printf '%s\n' "+ MAXIONBENCH_MILVUS_MINIO_IMAGE=${MAXIONBENCH_MILVUS_MINIO_IMAGE}"
   printf '%s\n' "+ MAXIONBENCH_MILVUS_IMAGE=${MAXIONBENCH_MILVUS_IMAGE}"
+  printf '%s\n' "+ MAXIONBENCH_FAISS_GPU_PIP_SPEC=${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-}"
 }
 
 MISSING_IMAGE_PATHS=()
@@ -556,6 +559,7 @@ export MAXIONBENCH_FIGURES_ROOT="${FIGURES_ROOT:-${DEFAULT_SHARED_ROOT}/figures}
 export MAXIONBENCH_HF_CACHE_DIR="${HF_CACHE_DIR:-${DEFAULT_SHARED_ROOT}/.cache/huggingface}"
 export MAXIONBENCH_APPTAINER_CACHE_DIR="$(default_apptainer_cache_dir)"
 export MAXIONBENCH_APPTAINER_TMPDIR="$(default_apptainer_tmpdir)"
+export MAXIONBENCH_FAISS_GPU_PIP_SPEC="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-}"
 export MAXIONBENCH_D3_DATASET_PATH="${MAXIONBENCH_DATASET_ROOT}/processed/D3/yfcc-10M/base.npy"
 export MAXIONBENCH_CONTAINER_IMAGE="$(default_container_path "${CONTAINER_IMAGE}" "maxionbench.sif")"
 export MAXIONBENCH_QDRANT_IMAGE="$(default_container_path "${QDRANT_IMAGE}" "qdrant.sif")"

@@ -4,12 +4,16 @@ import json
 from pathlib import Path
 import shutil
 
+import numpy as np
 import pandas as pd
 import pytest
 import yaml
 
+from maxionbench.adapters.mock import MockAdapter
+from maxionbench.orchestration import runner as runner_mod
 from maxionbench.orchestration.runner import _gpu_count_for_cfg, _resolve_d3_params, run_from_config
 from maxionbench.orchestration.config_schema import RunConfig, expand_env_placeholders, load_run_config
+from maxionbench.scenarios.s1_ann_frontier import S1Data
 from maxionbench.schemas.result_schema import read_run_status
 from maxionbench.tools.validate_outputs import validate_run_directory
 
@@ -91,6 +95,210 @@ def test_runner_end_to_end(tmp_path: Path) -> None:
     assert summary["rows"] == 1
 
 
+def test_create_benchmark_adapter_applies_index_params_before_create(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class _FakeAdapter:
+        def set_index_params(self, params):  # type: ignore[no-untyped-def]
+            calls.append(("set_index_params", dict(params)))
+
+        def create(self, collection, dimension, metric="ip"):  # type: ignore[no-untyped-def]
+            calls.append(("create", collection, dimension, metric))
+
+    fake_adapter = _FakeAdapter()
+    monkeypatch.setattr(runner_mod, "create_adapter", lambda engine, **options: fake_adapter)
+
+    cfg = RunConfig(
+        engine="pgvector",
+        adapter_options={"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres"},
+        index_params={"lists": 256},
+        no_retry=True,
+    )
+
+    adapter = runner_mod._create_benchmark_adapter(cfg=cfg)
+
+    assert adapter is fake_adapter
+    assert calls == [
+        ("set_index_params", {"lists": 256}),
+        ("create", "maxionbench", cfg.vector_dim, "ip"),
+    ]
+
+
+def test_create_benchmark_adapter_normalizes_dataset_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class _FakeAdapter:
+        def set_index_params(self, params):  # type: ignore[no-untyped-def]
+            calls.append(("set_index_params", dict(params)))
+
+        def create(self, collection, dimension, metric="ip"):  # type: ignore[no-untyped-def]
+            calls.append(("create", collection, dimension, metric))
+
+    fake_adapter = _FakeAdapter()
+    monkeypatch.setattr(runner_mod, "create_adapter", lambda engine, **options: fake_adapter)
+
+    cfg = RunConfig(engine="mock", no_retry=True)
+
+    adapter = runner_mod._create_benchmark_adapter(cfg=cfg, metric="angular")
+
+    assert adapter is fake_adapter
+    assert calls == [("create", "maxionbench", cfg.vector_dim, "cos")]
+
+
+def test_run_s1_rows_reuses_loaded_data_adapter_across_sweeps_clients_and_repeats(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class _SpyAdapter(MockAdapter):
+        instances: list["_SpyAdapter"] = []
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.flush_calls = 0
+            self.drop_calls = 0
+            _SpyAdapter.instances.append(self)
+
+        def flush_or_commit(self) -> None:
+            self.flush_calls += 1
+            super().flush_or_commit()
+
+        def drop(self, collection: str) -> None:
+            self.drop_calls += 1
+            super().drop(collection)
+
+    s1_data = S1Data(
+        ids=["doc-0", "doc-1", "doc-2", "doc-3"],
+        vectors=np.asarray(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.9, 0.1],
+                [0.1, 0.9],
+            ],
+            dtype="float32",
+        ),
+        queries=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype="float32"),
+        ground_truth_ids=[["doc-0"], ["doc-1"]],
+        metric="ip",
+    )
+    monkeypatch.setattr(runner_mod, "_maybe_load_s1_data", lambda cfg, config_path: s1_data)
+    monkeypatch.setattr(runner_mod, "create_adapter", lambda engine, **options: _SpyAdapter())
+    monkeypatch.setattr(
+        runner_mod,
+        "measure_rpc_baseline",
+        lambda request_fn, request_count: {"rtt_baseline_ms_p50": 1.0, "rtt_baseline_ms_p99": 2.0},
+    )
+
+    cfg = RunConfig(
+        engine="mock",
+        scenario="s1_ann_frontier",
+        dataset_bundle="D3",
+        dataset_hash="processed-d3",
+        repeats=2,
+        no_retry=True,
+        output_dir=str(tmp_path / "run"),
+        quality_targets=[0.0],
+        clients_grid=[1, 2],
+        search_sweep=[{"hnsw_ef": 32}, {"hnsw_ef": 64}],
+        rpc_baseline_requests=1,
+        warmup_s=0.0,
+        steady_state_s=0.01,
+        phase_timing_mode="strict",
+        phase_max_requests_per_phase=2,
+        vector_dim=2,
+        num_vectors=4,
+        num_queries=2,
+        top_k=1,
+        sla_threshold_ms=50.0,
+    )
+
+    rows, _, _ = runner_mod._run_s1_rows(
+        cfg=cfg,
+        config_fingerprint="abc123",
+        config_path=tmp_path / "cfg.yaml",
+    )
+
+    assert len(rows) == 4
+    assert len(_SpyAdapter.instances) == 1
+    assert _SpyAdapter.instances[0].flush_calls == 1
+    assert _SpyAdapter.instances[0].drop_calls == 1
+
+
+def test_load_run_config_normalizes_pgvector_hnsw_ef_to_ivfflat_probes(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "pgvector.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "pgvector",
+                "engine_version": "postgres16-pgvector",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "dataset_hash": "synthetic-d1-v1",
+                "output_dir": str(tmp_path / "run"),
+                "no_retry": True,
+                "search_sweep": [{"hnsw_ef": 64}, {"hnsw_ef": 128}],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_run_config(cfg_path)
+
+    assert cfg.search_sweep == [{"ivfflat_probes": 64}, {"ivfflat_probes": 128}]
+
+
+def test_load_run_config_preserves_pgvector_index_params(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "pgvector-index.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "pgvector",
+                "engine_version": "postgres16-pgvector",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D2",
+                "dataset_hash": "ann-benchmarks-deep-image-96-angular",
+                "output_dir": str(tmp_path / "run"),
+                "no_retry": True,
+                "index_params": {"lists": 4096},
+                "search_sweep": [{"hnsw_ef": 64}],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_run_config(cfg_path)
+
+    assert cfg.index_params == {"lists": 4096}
+    assert cfg.search_sweep == [{"ivfflat_probes": 64}]
+
+
+def test_load_run_config_normalizes_pgvector_hnsw_method_to_hnsw_ef_search(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "pgvector-hnsw.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "pgvector",
+                "engine_version": "postgres16-pgvector",
+                "scenario": "s1_ann_frontier",
+                "dataset_bundle": "D1",
+                "dataset_hash": "synthetic-d1-v1",
+                "output_dir": str(tmp_path / "run"),
+                "no_retry": True,
+                "adapter_options": {"index_method": "hnsw"},
+                "search_sweep": [{"hnsw_ef": 64}, {"hnsw_ef": 128}],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_run_config(cfg_path)
+
+    assert cfg.search_sweep == [{"hnsw_ef_search": 64}, {"hnsw_ef_search": 128}]
+
+
 def test_runner_matched_quality_grid_outputs_one_row_per_target_and_client(tmp_path: Path) -> None:
     config = {
         "engine": "mock",
@@ -168,6 +376,63 @@ def test_runner_phase_fields_and_strict_mode_cap(tmp_path: Path) -> None:
     assert int(row["measure_requests"]) <= 12
     assert float(row["measure_elapsed_s"]) >= 0.0
     assert float(row["export_elapsed_s"]) >= 0.0
+
+
+def test_runner_writes_s1_diagnostics_when_no_matched_quality_row_exists(tmp_path: Path) -> None:
+    config = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "synthetic-d1-v1",
+        "seed": 17,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-no-rows"),
+        "quality_target": 1.1,
+        "quality_targets": [1.1],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}, {"hnsw_ef": 64}],
+        "rpc_baseline_requests": 10,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 16,
+        "num_vectors": 150,
+        "num_queries": 10,
+        "top_k": 10,
+    }
+    cfg_path = tmp_path / "config-no-rows.yaml"
+    with cfg_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(config, handle, sort_keys=True)
+
+    with pytest.raises(RuntimeError, match="No feasible matched-quality candidates for s1_ann_frontier"):
+        run_from_config(cfg_path, cli_overrides=None)
+
+    out_dir = tmp_path / "run-no-rows"
+    diagnostics_path = out_dir / "logs" / "s1_sweep_diagnostics.jsonl"
+    summary_path = out_dir / "logs" / "s1_selection_summary.json"
+    status_path = out_dir / "run_status.json"
+
+    assert diagnostics_path.exists()
+    assert summary_path.exists()
+    assert status_path.exists()
+
+    diagnostics_lines = [line for line in diagnostics_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(diagnostics_lines) == 2
+    first_diagnostic = json.loads(diagnostics_lines[0])
+    assert first_diagnostic["client_count"] == 1
+    assert "quality_targets_met" in first_diagnostic
+    assert "error_examples" in first_diagnostic
+
+    selection_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert len(selection_summary) == 1
+    assert selection_summary[0]["selected"] is False
+    assert selection_summary[0]["best_available_recall_at_10"] >= 0.0
+
+    run_status = read_run_status(status_path)
+    assert run_status["status"] == "failed"
+    assert "No feasible matched-quality candidates" in str(run_status["detail"])
 
 
 def test_validate_outputs_rejects_missing_or_negative_stage_timing(tmp_path: Path) -> None:

@@ -40,7 +40,12 @@ from maxionbench.runtime.rpc_baseline import measure_rpc_baseline, minimal_rpc_r
 from maxionbench.runtime.system_info import collect_system_info
 from maxionbench.scenarios.calibrate_d3 import CalibrateD3Config, run as run_calibrate_d3
 from maxionbench.scenarios.matched_quality import MatchedQualityCandidate, select_candidate
-from maxionbench.scenarios.s1_ann_frontier import S1Config, S1Data, run_with_data as run_s1_with_data
+from maxionbench.scenarios.s1_ann_frontier import (
+    S1Config,
+    S1Data,
+    prepare_with_data as prepare_s1_with_data,
+    run_prepared as run_s1_prepared,
+)
 from maxionbench.scenarios.s2_filtered_ann import S2Config, run as run_s2
 from maxionbench.scenarios.s3_churn_smooth import S3Config, run as run_s3
 from maxionbench.scenarios.s3b_churn_bursty import S3bConfig, run as run_s3b
@@ -84,11 +89,21 @@ class _SweepRun:
     measure_target_s: float
     measure_elapsed_s: float
     measure_requests: int
+    error_examples: tuple[str, ...]
     resource_cpu_vcpu: float
     resource_gpu_count: float
     resource_ram_gib: float
     resource_disk_tb: float
     rhu_rate: float
+
+
+@dataclass
+class _PreparedS1Context:
+    adapter: Any
+    baseline: dict[str, float]
+    prepared: Any
+    stats: Any
+    setup_elapsed_s: float
 
 
 @dataclass(frozen=True)
@@ -187,6 +202,10 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
             "allow_gpu_unavailable": allow_gpu_unavailable,
         }
         config_fingerprint = stable_config_fingerprint(config_payload)
+        s1_sweep_diagnostics: list[dict[str, Any]] | None = None
+        s1_selection_summary: list[dict[str, Any]] | None = None
+        s1_diagnostics_path = output_dir / "logs" / "s1_sweep_diagnostics.jsonl"
+        s1_selection_summary_path = output_dir / "logs" / "s1_selection_summary.json"
 
         if cfg.scenario == "calibrate_d3":
             rows = _run_calibrate_rows(
@@ -196,7 +215,11 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
                 config_path=resolved_config_path,
             )
         elif cfg.scenario == "s1_ann_frontier":
-            rows = _run_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+            rows, s1_sweep_diagnostics, s1_selection_summary = _run_s1_rows(
+                cfg=cfg,
+                config_fingerprint=config_fingerprint,
+                config_path=resolved_config_path,
+            )
         elif cfg.scenario == "s2_filtered_ann":
             rows = _run_s2_rows(
                 cfg=cfg,
@@ -227,7 +250,20 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         else:
             raise ValueError(f"Unsupported scenario: {cfg.scenario}")
 
+        if s1_sweep_diagnostics is not None:
+            _write_jsonl(path=s1_diagnostics_path, payloads=s1_sweep_diagnostics)
+        if s1_selection_summary is not None:
+            _write_json(path=s1_selection_summary_path, payload=s1_selection_summary)
         if not rows:
+            if cfg.scenario == "s1_ann_frontier":
+                raise RuntimeError(
+                    _format_s1_no_rows_detail(
+                        cfg=cfg,
+                        selection_summary=s1_selection_summary or [],
+                        sweep_diagnostics=s1_sweep_diagnostics or [],
+                        diagnostics_path=s1_diagnostics_path,
+                    )
+                )
             raise RuntimeError("No rows were produced.")
         output_path = output_dir / "results.parquet"
         log_path = output_dir / "logs" / "runner.log"
@@ -376,27 +412,111 @@ def _run_calibrate_rows(
     return [row]
 
 
-def _run_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+def _create_benchmark_adapter(*, cfg: RunConfig, metric: str = "ip") -> Any:
+    adapter = create_adapter(cfg.engine, **cfg.adapter_options)
+    if cfg.index_params:
+        adapter.set_index_params(cfg.index_params)
+    adapter.create(
+        collection="maxionbench",
+        dimension=cfg.vector_dim,
+        metric=_normalize_benchmark_metric(metric),
+    )
+    return adapter
+
+
+def _run_s1_rows(
+    *,
+    cfg: RunConfig,
+    config_fingerprint: str,
+    config_path: Path,
+) -> tuple[list[ResultRow], list[dict[str, Any]], list[dict[str, Any]]]:
     s1_data = _maybe_load_s1_data(cfg, config_path=config_path)
     rows: list[ResultRow] = []
-    for repeat_idx in range(cfg.repeats):
-        for client_count in cfg.clients_grid:
-            sweep_runs = _run_s1_sweep_for_client(
+    sweep_diagnostics: list[dict[str, Any]] = []
+    selection_summary: list[dict[str, Any]] = []
+    prepared_contexts: dict[int, _PreparedS1Context] = {}
+    try:
+        for repeat_idx in range(cfg.repeats):
+            prepared_context = _prepare_s1_context(
                 cfg=cfg,
                 repeat_idx=repeat_idx,
-                client_count=client_count,
                 s1_data=s1_data,
+                prepared_contexts=prepared_contexts,
             )
-            rows.extend(
-                _select_matched_quality_rows(
+            for client_count in cfg.clients_grid:
+                sweep_runs = _run_s1_sweep_for_client(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    prepared_context=prepared_context,
+                )
+                sweep_diagnostics.extend(
+                    _s1_sweep_diagnostics_payload(
+                        cfg=cfg,
+                        repeat_idx=repeat_idx,
+                        client_count=client_count,
+                        sweep_runs=sweep_runs,
+                    )
+                )
+                selected_rows, client_selection_summary = _select_matched_quality_rows(
                     cfg=cfg,
                     repeat_idx=repeat_idx,
                     client_count=client_count,
                     sweep_runs=sweep_runs,
                     config_fingerprint=config_fingerprint,
                 )
-            )
-    return rows
+                rows.extend(selected_rows)
+                selection_summary.extend(client_selection_summary)
+    finally:
+        for prepared_context in prepared_contexts.values():
+            try:
+                prepared_context.adapter.drop(collection="maxionbench")
+            except Exception:
+                pass
+    return rows, sweep_diagnostics, selection_summary
+
+
+def _prepare_s1_context(
+    *,
+    cfg: RunConfig,
+    repeat_idx: int,
+    s1_data: S1Data | None,
+    prepared_contexts: dict[int, _PreparedS1Context],
+) -> _PreparedS1Context:
+    cache_key = 0 if s1_data is not None else int(repeat_idx)
+    cached = prepared_contexts.get(cache_key)
+    if cached is not None:
+        return cached
+
+    candidate_rng = np.random.default_rng(cfg.seed + repeat_idx)
+    setup_start = time.perf_counter()
+    adapter = _create_benchmark_adapter(cfg=cfg, metric=s1_data.metric if s1_data is not None else "ip")
+    baseline = measure_rpc_baseline(
+        request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+        request_count=cfg.rpc_baseline_requests,
+    )
+    prepared = prepare_s1_with_data(
+        adapter=adapter,
+        cfg=S1Config(
+            vector_dim=cfg.vector_dim,
+            num_vectors=cfg.num_vectors,
+            num_queries=cfg.num_queries,
+            top_k=cfg.top_k,
+            clients_read=1,
+            sla_threshold_ms=cfg.sla_threshold_ms,
+        ),
+        rng=candidate_rng,
+        data=s1_data,
+    )
+    prepared_context = _PreparedS1Context(
+        adapter=adapter,
+        baseline=baseline,
+        prepared=prepared,
+        stats=adapter.stats(),
+        setup_elapsed_s=time.perf_counter() - setup_start,
+    )
+    prepared_contexts[cache_key] = prepared_context
+    return prepared_context
 
 
 def _run_s2_rows(
@@ -411,8 +531,7 @@ def _run_s2_rows(
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
+        adapter = _create_benchmark_adapter(cfg=cfg)
         baseline = measure_rpc_baseline(
             request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
             request_count=cfg.rpc_baseline_requests,
@@ -540,8 +659,7 @@ def _run_s4_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) 
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
+        adapter = _create_benchmark_adapter(cfg=cfg)
         baseline = measure_rpc_baseline(
             request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
             request_count=cfg.rpc_baseline_requests,
@@ -623,8 +741,7 @@ def _run_s5_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) 
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
+        adapter = _create_benchmark_adapter(cfg=cfg)
         baseline = measure_rpc_baseline(
             request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
             request_count=cfg.rpc_baseline_requests,
@@ -713,8 +830,7 @@ def _run_s6_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) 
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
+        adapter = _create_benchmark_adapter(cfg=cfg)
         baseline = measure_rpc_baseline(
             request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
             request_count=cfg.rpc_baseline_requests,
@@ -896,8 +1012,7 @@ def _run_s3_like_rows(
     rows: list[ResultRow] = []
     for repeat_idx in range(cfg.repeats):
         setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
+        adapter = _create_benchmark_adapter(cfg=cfg)
         baseline = measure_rpc_baseline(
             request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
             request_count=cfg.rpc_baseline_requests,
@@ -1080,20 +1195,10 @@ def _run_s1_sweep_for_client(
     cfg: RunConfig,
     repeat_idx: int,
     client_count: int,
-    s1_data: S1Data | None,
+    prepared_context: _PreparedS1Context,
 ) -> list[_SweepRun]:
     runs: list[_SweepRun] = []
     for search_params in cfg.search_sweep:
-        candidate_rng = np.random.default_rng(cfg.seed + repeat_idx)
-        setup_start = time.perf_counter()
-        adapter = create_adapter(cfg.engine, **cfg.adapter_options)
-        adapter.create(collection="maxionbench", dimension=cfg.vector_dim, metric="ip")
-
-        baseline = measure_rpc_baseline(
-            request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
-            request_count=cfg.rpc_baseline_requests,
-        )
-        setup_elapsed_s = time.perf_counter() - setup_start
         scenario_cfg = S1Config(
             vector_dim=cfg.vector_dim,
             num_vectors=cfg.num_vectors,
@@ -1107,13 +1212,15 @@ def _run_s1_sweep_for_client(
             phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
             search_params=search_params,
         )
-        result = run_s1_with_data(adapter=adapter, cfg=scenario_cfg, rng=candidate_rng, data=s1_data)
-        stats = adapter.stats()
-        adapter.drop(collection="maxionbench")
+        result = run_s1_prepared(
+            adapter=prepared_context.adapter,
+            cfg=scenario_cfg,
+            prepared=prepared_context.prepared,
+        )
 
         profile, rate = _resource_profile_and_rate_for_cfg(
             cfg=cfg,
-            stats=stats,
+            stats=prepared_context.stats,
             client_count=client_count + cfg.clients_write,
         )
         resource_payload = _resource_payload(profile=profile, rate=rate)
@@ -1132,15 +1239,16 @@ def _run_s1_sweep_for_client(
                 sla_violation_rate=result.sla_violation_rate,
                 errors=result.errors,
                 rhu_h=rhu_hours(duration_s=duration, rate=rate),
-                rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
-                rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
-                setup_elapsed_s=setup_elapsed_s,
+                rtt_baseline_ms_p50=prepared_context.baseline["rtt_baseline_ms_p50"],
+                rtt_baseline_ms_p99=prepared_context.baseline["rtt_baseline_ms_p99"],
+                setup_elapsed_s=prepared_context.setup_elapsed_s,
                 warmup_target_s=cfg.warmup_s,
                 warmup_elapsed_s=result.warmup_elapsed_s,
                 warmup_requests=result.warmup_requests,
                 measure_target_s=cfg.steady_state_s,
                 measure_elapsed_s=result.measured_elapsed_s,
                 measure_requests=result.measured_requests,
+                error_examples=result.error_examples,
                 resource_cpu_vcpu=resource_payload["cpu_vcpu"],
                 resource_gpu_count=resource_payload["gpu_count"],
                 resource_ram_gib=resource_payload["ram_gib"],
@@ -1158,17 +1266,42 @@ def _select_matched_quality_rows(
     client_count: int,
     sweep_runs: list[_SweepRun],
     config_fingerprint: str,
-) -> list[ResultRow]:
+) -> tuple[list[ResultRow], list[dict[str, Any]]]:
     rows: list[ResultRow] = []
+    selection_summary: list[dict[str, Any]] = []
     candidates = [
         MatchedQualityCandidate(quality=r.recall_at_10, p99_ms=r.p99_ms, qps=r.qps, rhu_h=r.rhu_h, payload=r)
         for r in sweep_runs
     ]
+    best_run = max(
+        sweep_runs,
+        key=lambda run: (run.recall_at_10, -run.errors, run.qps, -run.p99_ms),
+    )
+    first_error_examples = next((list(run.error_examples) for run in sweep_runs if run.error_examples), [])
     for target in cfg.quality_targets:
         selected = select_candidate(candidates, target_quality=target)
+        summary = {
+            "repeat_idx": repeat_idx,
+            "client_count": client_count,
+            "target_quality": target,
+            "selected": selected is not None,
+            "best_available_recall_at_10": best_run.recall_at_10,
+            "best_available_search_params": dict(best_run.search_params),
+            "best_available_errors": best_run.errors,
+            "best_available_error_examples": first_error_examples,
+        }
         if selected is None:
+            selection_summary.append(summary)
             continue
         run = selected.payload
+        summary.update(
+            {
+                "selected_search_params": dict(run.search_params),
+                "selected_recall_at_10": run.recall_at_10,
+                "selected_errors": run.errors,
+            }
+        )
+        selection_summary.append(summary)
         rows.append(
             ResultRow(
                 run_id=_run_id(config_fingerprint, repeat_idx, client_count, target),
@@ -1211,7 +1344,73 @@ def _select_matched_quality_rows(
                 measure_requests=run.measure_requests,
             )
         )
-    return rows
+    return rows, selection_summary
+
+
+def _s1_sweep_diagnostics_payload(
+    *,
+    cfg: RunConfig,
+    repeat_idx: int,
+    client_count: int,
+    sweep_runs: list[_SweepRun],
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for run in sweep_runs:
+        met_targets = [target for target in cfg.quality_targets if run.recall_at_10 >= target]
+        payloads.append(
+            {
+                "repeat_idx": repeat_idx,
+                "client_count": client_count,
+                "search_params": dict(run.search_params),
+                "recall_at_10": run.recall_at_10,
+                "p99_ms": run.p99_ms,
+                "qps": run.qps,
+                "errors": run.errors,
+                "error_examples": list(run.error_examples),
+                "measure_requests": run.measure_requests,
+                "measure_elapsed_s": run.measure_elapsed_s,
+                "quality_targets_met": met_targets,
+            }
+        )
+    return payloads
+
+
+def _format_s1_no_rows_detail(
+    *,
+    cfg: RunConfig,
+    selection_summary: list[dict[str, Any]],
+    sweep_diagnostics: list[dict[str, Any]],
+    diagnostics_path: Path,
+) -> str:
+    best_by_client: dict[int, float] = {}
+    for item in selection_summary:
+        client_count = int(item["client_count"])
+        best_recall = float(item["best_available_recall_at_10"])
+        current = best_by_client.get(client_count)
+        if current is None or best_recall > current:
+            best_by_client[client_count] = best_recall
+    best_summary = ", ".join(
+        f"c{client}={best_by_client[client]:.4f}"
+        for client in sorted(best_by_client)
+    )
+    error_examples: list[str] = []
+    for item in sweep_diagnostics:
+        for example in item.get("error_examples", []):
+            if example not in error_examples:
+                error_examples.append(str(example))
+            if len(error_examples) >= 2:
+                break
+        if len(error_examples) >= 2:
+            break
+    detail = (
+        "No feasible matched-quality candidates for s1_ann_frontier. "
+        f"Engine={cfg.engine}, dataset={cfg.dataset_bundle}, targets={list(cfg.quality_targets)}. "
+        f"Best recall_at_10 by client: {best_summary or 'none'}. "
+        f"Diagnostics: {diagnostics_path}."
+    )
+    if error_examples:
+        detail += " Observed query errors: " + "; ".join(error_examples) + "."
+    return detail
 
 
 def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
@@ -1546,6 +1745,7 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 vectors=np.asarray(processed.vectors, dtype=np.float32),
                 queries=np.asarray(processed.queries, dtype=np.float32),
                 ground_truth_ids=processed.ground_truth_ids,
+                metric=_normalize_benchmark_metric(processed.metric),
             )
         if bundle == "D3":
             processed = load_processed_filtered_ann_dataset(
@@ -1558,7 +1758,8 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 ids=processed.ids,
                 vectors=np.asarray(processed.vectors, dtype=np.float32),
                 queries=np.asarray(processed.queries, dtype=np.float32),
-                ground_truth_ids=processed.ground_truth_ids,
+                ground_truth_ids=None,
+                metric=_normalize_benchmark_metric(processed.metric),
             )
     if bundle != "D1":
         if bundle == "D2":
@@ -1596,6 +1797,7 @@ def _maybe_load_s1_data(cfg: RunConfig, *, config_path: Path) -> S1Data | None:
                 vectors=np.asarray(vectors, dtype=np.float32),
                 queries=queries,
                 ground_truth_ids=None,
+                metric="ip",
             )
         return None
     if not cfg.dataset_path:
@@ -1698,6 +1900,7 @@ def _to_s1_data(dataset: D1AnnDataset) -> S1Data:
         vectors=np.asarray(dataset.vectors, dtype=np.float32),
         queries=np.asarray(dataset.queries, dtype=np.float32),
         ground_truth_ids=dataset.ground_truth_ids,
+        metric=_normalize_benchmark_metric(dataset.metric),
     )
 
 
@@ -1707,11 +1910,34 @@ def _to_s1_data_d2(dataset: D2BigAnnDataset) -> S1Data:
         vectors=np.asarray(dataset.vectors, dtype=np.float32),
         queries=np.asarray(dataset.queries, dtype=np.float32),
         ground_truth_ids=dataset.ground_truth_ids,
+        metric=_normalize_benchmark_metric(dataset.metric),
     )
 
 
 def _slug(value: float) -> str:
     return str(value).replace(".", "p")
+
+
+def _normalize_benchmark_metric(metric: str | None) -> str:
+    normalized = str(metric or "ip").strip().lower()
+    if normalized in {"ip", "inner_product", "dot"}:
+        return "ip"
+    if normalized in {"l2", "euclid", "euclidean"}:
+        return "l2"
+    if normalized in {"cos", "cosine", "angular"}:
+        return "cos"
+    raise ValueError(f"Unsupported benchmark metric: {metric}")
+
+
+def _write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for payload in payloads:
+            handle.write(json.dumps(payload, sort_keys=True))
+            handle.write("\n")
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _write_runner_log(path: Path, rows: list[ResultRow], *, config_fingerprint: str) -> None:

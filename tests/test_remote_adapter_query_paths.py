@@ -92,6 +92,37 @@ def test_weaviate_query_surfaces_remote_errors(monkeypatch: pytest.MonkeyPatch) 
         adapter.query(QueryRequest(vector=[1.0, 0.0], top_k=3))
 
 
+def test_weaviate_flush_or_commit_chunks_large_remote_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WeaviateAdapter(batch_max_objects=2)
+    adapter._collection = "bench"
+    adapter._class_name = "Bench"
+    adapter._dimension = 2
+    adapter._metric = "ip"
+    adapter._pending_upserts = {
+        f"doc-{idx}": StoredPoint(
+            vector=np.asarray([1.0, 0.0], dtype=np.float32),
+            payload={"tenant_id": f"tenant-{idx:03d}", "acl_bucket": idx, "time_bucket": idx},
+        )
+        for idx in range(3)
+    }
+
+    payloads: list[dict[str, object]] = []
+
+    def _fake_request(method: str, path: str, *, json=None, allow_404: bool = False, timeout_s=None):  # type: ignore[no-untyped-def]
+        del allow_404, timeout_s
+        if method == "POST" and path == "/v1/batch/objects":
+            payloads.append(dict(json or {}))
+        return {}
+
+    monkeypatch.setattr(adapter, "_request", _fake_request)
+
+    adapter.flush_or_commit()
+
+    assert [len(payload["objects"]) for payload in payloads] == [2, 1]
+    assert not adapter._pending_upserts
+    assert set(adapter._records.keys()) == {"doc-0", "doc-1", "doc-2"}
+
+
 class _FakeMilvusHit:
     def __init__(self, doc_id: str, score: float, payload: dict[str, object]) -> None:
         self.id = doc_id
@@ -171,6 +202,19 @@ def test_milvus_query_uses_remote_expr_search() -> None:
     assert collection.search_kwargs["expr"] == 'acl_bucket == 2 and tenant_id == "tenant-001"'
     assert rows[0].id == "doc-1"
     assert rows[0].payload["tenant_id"] == "tenant-001"
+
+
+def test_milvus_query_clamps_hnsw_ef_to_top_k() -> None:
+    adapter = _make_milvus_adapter()
+    collection = _FakeMilvusCollection()
+    adapter._obj = collection
+    adapter._search_params = {"hnsw_ef": 32}
+
+    adapter.query(QueryRequest(vector=[1.0, 0.0], top_k=200))
+
+    assert collection.search_kwargs is not None
+    payload = collection.search_kwargs["param"]
+    assert payload["params"]["ef"] == 200
 
 
 def test_milvus_query_rejects_unsupported_filter_key() -> None:

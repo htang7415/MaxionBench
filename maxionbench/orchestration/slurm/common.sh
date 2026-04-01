@@ -1700,12 +1700,56 @@ mb_capture_local_diagnostics() {
   if [[ -e "${runtime_root}" ]]; then
     cp -R "${runtime_root}" "${capture_root}/engine_runtime"
     mb_log "captured engine runtime diagnostics to ${capture_root}/engine_runtime"
+    mb_capture_pgvector_runtime_state "${capture_root}/engine_runtime"
   fi
 
   if [[ -n "${MB_STAGE_ROOT:-}" && -e "${MB_STAGE_ROOT}" ]]; then
     cp -R "${MB_STAGE_ROOT}" "${capture_root}/stage_root"
     mb_log "captured staged config diagnostics to ${capture_root}/stage_root"
   fi
+}
+
+mb_capture_pgvector_runtime_state() {
+  local capture_root="$1"
+  local runtime_root
+  runtime_root="$(mb_engine_runtime_root)"
+  local pgvector_root="${runtime_root}/pgvector"
+  local data_dir="${pgvector_root}/data"
+  local pgdata_dir="${data_dir}/pgdata"
+  if [[ ! -e "${pgvector_root}" ]]; then
+    return 0
+  fi
+
+  local diag_root="${capture_root}/pgvector_data_state"
+  mkdir -p "${diag_root}"
+
+  {
+    printf 'timestamp_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'runtime_root=%s\n' "${runtime_root}"
+    printf 'pgvector_root=%s\n' "${pgvector_root}"
+    printf 'data_dir=%s\n' "${data_dir}"
+    printf 'pgdata_dir=%s\n' "${pgdata_dir}"
+    printf 'exists_data_dir=%s\n' "$(test -e "${data_dir}" && echo 1 || echo 0)"
+    printf 'exists_pgdata_dir=%s\n' "$(test -e "${pgdata_dir}" && echo 1 || echo 0)"
+    printf 'exists_base_dir=%s\n' "$(test -e "${pgdata_dir}/base" && echo 1 || echo 0)"
+    printf 'exists_base_5_dir=%s\n' "$(test -e "${pgdata_dir}/base/5" && echo 1 || echo 0)"
+  } > "${diag_root}/summary.txt"
+
+  ls -la "${data_dir}" > "${diag_root}/data_dir.ls.txt" 2>&1 || true
+  ls -la "${pgdata_dir}" > "${diag_root}/pgdata_dir.ls.txt" 2>&1 || true
+  ls -la "${pgdata_dir}/base" > "${diag_root}/base_dir.ls.txt" 2>&1 || true
+  find "${pgdata_dir}" -maxdepth 2 \( -type d -o -type f \) | LC_ALL=C sort > "${diag_root}/pgdata_tree.txt" 2>&1 || true
+  du -sk "${pgdata_dir}" > "${diag_root}/pgdata_du_kib.txt" 2>&1 || true
+
+  local rel_path=""
+  local rel_name=""
+  for rel_path in PG_VERSION postgresql.conf postgresql.auto.conf pg_hba.conf global/pg_control; do
+    if [[ ! -e "${pgdata_dir}/${rel_path}" ]]; then
+      continue
+    fi
+    rel_name="${rel_path//\//__}"
+    cp "${pgdata_dir}/${rel_path}" "${diag_root}/${rel_name}" 2>/dev/null || true
+  done
 }
 
 mb_cleanup_local_path() {

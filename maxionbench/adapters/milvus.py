@@ -121,7 +121,7 @@ class MilvusAdapter(BaseAdapter):
         query_vec = self._to_vector(request.vector)
         if self._obj is None:
             return []
-        params = self._milvus_search_params()
+        params = self._milvus_search_params(top_k=int(request.top_k))
         search_kwargs: dict[str, Any] = {
             "data": [query_vec.tolist()],
             "anns_field": "vector",
@@ -248,31 +248,34 @@ class MilvusAdapter(BaseAdapter):
         except Exception:
             pass
 
-    def _milvus_search_params(self) -> dict[str, Any]:
+    def _milvus_search_params(self, *, top_k: int) -> dict[str, Any]:
         metric_type = {"ip": "IP", "l2": "L2", "cos": "COSINE"}[self._metric]
         params: dict[str, Any] = {}
+        ef_value: int | None = None
         if "hnsw_ef" in self._search_params:
-            params["ef"] = int(self._search_params["hnsw_ef"])
+            ef_value = int(self._search_params["hnsw_ef"])
         if "hnsw_ef_search" in self._search_params:
-            params["ef"] = int(self._search_params["hnsw_ef_search"])
+            ef_value = int(self._search_params["hnsw_ef_search"])
+        if ef_value is not None:
+            params["ef"] = max(max(1, int(top_k)), ef_value)
         if "nprobe" in self._search_params:
-            params["nprobe"] = int(self._search_params["nprobe"])
+            params["nprobe"] = max(1, int(self._search_params["nprobe"]))
         return {"metric_type": metric_type, "params": params}
 
     def _sync_remote(self) -> None:
-        snapshot = {
-            doc_id: StoredPoint(vector=point.vector.copy(), payload=dict(point.payload))
-            for doc_id, point in self._records.items()
-        }
         self._create_remote_collection(drop_existing=True)
-        if not snapshot:
+        if not self._records:
             return
         if self._obj is None:
             return
-        rows = [self._build_remote_row(doc_id=doc_id, point=snapshot[doc_id]) for doc_id in sorted(snapshot.keys())]
-        for start in range(0, len(rows), self._remote_insert_batch_size):
-            stop = min(len(rows), start + self._remote_insert_batch_size)
-            self._obj.insert(rows[start:stop])
+        rows: list[dict[str, Any]] = []
+        for doc_id in sorted(self._records.keys()):
+            rows.append(self._build_remote_row(doc_id=doc_id, point=self._records[doc_id]))
+            if len(rows) >= self._remote_insert_batch_size:
+                self._obj.insert(rows)
+                rows = []
+        if rows:
+            self._obj.insert(rows)
         self._obj.flush()
         self._obj.load()
 

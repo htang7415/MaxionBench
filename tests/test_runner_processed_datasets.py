@@ -255,6 +255,138 @@ def test_runner_s1_uses_processed_d2_dataset(tmp_path: Path) -> None:
     assert float(frame.iloc[0]["qps"]) >= 0.0
 
 
+def test_runner_s1_honors_processed_l2_metric(tmp_path: Path) -> None:
+    root = tmp_path / "processed" / "D1" / "gist-960-euclidean"
+    root.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "ann",
+            "metric": "euclidean",
+        },
+    )
+    np.save(
+        root / "base.npy",
+        np.asarray(
+            [
+                [2.0, 0.0],
+                [100.0, 0.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+    np.save(root / "queries.npy", np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(root / "gt_ids.npy", np.asarray([[0]], dtype=np.int32))
+
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D1",
+        "dataset_hash": "processed-d1-l2",
+        "processed_dataset_path": str(root),
+        "seed": 9,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d1-l2"),
+        "quality_target": 1.0,
+        "quality_targets": [1.0],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 2,
+        "num_vectors": 2,
+        "num_queries": 1,
+        "top_k": 1,
+        "warmup_s": 0,
+        "steady_state_s": 0.01,
+        "phase_timing_mode": "strict",
+        "phase_max_requests_per_phase": 1,
+    }
+    cfg_path = tmp_path / "cfg_d1_l2.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1
+    assert float(frame.iloc[0]["recall_at_10"]) == pytest.approx(1.0)
+
+
+def test_runner_s1_processed_d3_ignores_filtered_ground_truth_for_baseline(tmp_path: Path) -> None:
+    root = tmp_path / "processed" / "D3" / "yfcc-10M"
+    root.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "filtered_ann",
+            "metric": "angular",
+        },
+    )
+    np.save(
+        root / "base.npy",
+        np.asarray(
+            [
+                [1.0, 0.0],
+                [0.8, 0.2],
+                [0.0, 1.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+    np.save(root / "queries.npy", np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(root / "gt_ids.npy", np.asarray([[2]], dtype=np.int32))
+    _write_jsonl(root / "filters.jsonl", [{"must_have_tags": ["tag-b"]}])
+    _write_jsonl(
+        root / "payloads.jsonl",
+        [
+            {"tags": ["tag-a"]},
+            {"tags": ["tag-a"]},
+            {"tags": ["tag-b"]},
+        ],
+    )
+
+    cfg = {
+        "engine": "mock",
+        "engine_version": "0.1.0",
+        "scenario": "s1_ann_frontier",
+        "dataset_bundle": "D3",
+        "dataset_hash": "processed-d3",
+        "processed_dataset_path": str(root),
+        "seed": 9,
+        "repeats": 1,
+        "no_retry": True,
+        "output_dir": str(tmp_path / "run-d3-s1"),
+        "quality_target": 1.0,
+        "quality_targets": [1.0],
+        "clients_read": 1,
+        "clients_write": 0,
+        "clients_grid": [1],
+        "search_sweep": [{"hnsw_ef": 32}],
+        "rpc_baseline_requests": 5,
+        "sla_threshold_ms": 50.0,
+        "vector_dim": 2,
+        "num_vectors": 3,
+        "num_queries": 1,
+        "top_k": 1,
+        "warmup_s": 0,
+        "steady_state_s": 0.01,
+        "phase_timing_mode": "strict",
+        "phase_max_requests_per_phase": 1,
+    }
+    cfg_path = tmp_path / "cfg_d3_s1.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=True), encoding="utf-8")
+
+    out_dir = run_from_config(cfg_path, cli_overrides=None)
+    frame = pd.read_parquet(out_dir / "results.parquet")
+    assert len(frame) == 1
+    assert float(frame.iloc[0]["recall_at_10"]) == pytest.approx(1.0)
+
+
 def test_load_processed_filtered_ann_dataset_recomputes_ground_truth_when_truncated(tmp_path: Path) -> None:
     processed = _make_processed_filtered_ann_dataset_with_explicit_filters(tmp_path / "processed" / "D3" / "yfcc-10M")
     dataset = load_processed_filtered_ann_dataset(processed, max_vectors=2, max_queries=2, top_k=2)
