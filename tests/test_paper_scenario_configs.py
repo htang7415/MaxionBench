@@ -66,7 +66,11 @@ def test_paper_scenario_configs_match_dataset_contracts() -> None:
             assert int(payload.get("num_queries", 0)) == 10_000
             continue
         if bundle == "D3":
-            assert payload.get("dataset_path") == "${MAXIONBENCH_D3_DATASET_PATH}"
+            if name == "calibrate_d3.yaml":
+                assert payload.get("processed_dataset_path") == "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D3/yfcc-10M"
+                assert payload.get("dataset_path") is None
+            else:
+                assert payload.get("dataset_path") == "${MAXIONBENCH_D3_DATASET_PATH}"
             assert int(payload.get("vector_dim", 0)) == 192
             assert int(payload.get("num_vectors", 0)) >= 10_000_000
             continue

@@ -350,26 +350,54 @@ payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 if not isinstance(payload, dict):
     raise SystemExit("invalid calibrate_d3 config")
 
-required = bool(payload.get("calibration_require_real_data", False))
-raw = payload.get("dataset_path")
-resolved = ""
-if isinstance(raw, str):
-    token = raw.strip()
-    match = re.fullmatch(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))", token)
-    if match is not None:
-        env_name = match.group(1) or match.group(2) or ""
-        resolved = str(os.environ.get(env_name, "")).strip()
-    else:
-        resolved = os.path.expandvars(raw).strip()
-elif raw is not None:
-    resolved = str(raw).strip()
+def resolve_value(raw):
+    if isinstance(raw, str):
+        token = raw.strip()
+        match = re.fullmatch(
+            r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?\}|([A-Za-z_][A-Za-z0-9_]*))",
+            token,
+        )
+        if match is not None:
+            env_name = match.group(1) or match.group(3) or ""
+            default_value = match.group(2) if match.group(1) else None
+            env_value = str(os.environ.get(env_name, "")).strip()
+            if env_value:
+                return env_value
+            return str(default_value or "").strip()
+        return os.path.expandvars(token).strip()
+    if raw is None:
+        return ""
+    return str(raw).strip()
 
-print("missing_real_dataset_path" if required and not resolved else "ok")
+required = bool(payload.get("calibration_require_real_data", False))
+processed_root = resolve_value(payload.get("processed_dataset_path"))
+dataset_path = resolve_value(payload.get("dataset_path"))
+
+resolved = ""
+if processed_root:
+    candidate = pathlib.Path(processed_root).expanduser()
+    if candidate.suffix.lower() not in {".npy", ".npz"}:
+        candidate = candidate / "base.npy"
+    resolved = str(candidate)
+elif dataset_path:
+    resolved = str(pathlib.Path(dataset_path).expanduser())
+
+if required and not resolved:
+    print("missing_real_dataset_path")
+elif required and not pathlib.Path(resolved).exists():
+    print(f"missing_real_dataset_file:{resolved}")
+else:
+    print("ok")
 PY
 )"
   if [[ "${CALIBRATION_PATH_CHECK}" == "missing_real_dataset_path" ]]; then
-    echo "error: ${CALIBRATE_CONFIG_PATH} requires real D3 vectors. Set MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/laion_d3_vectors.npy" >&2
-    echo "error: optional checksum pin: MAXIONBENCH_D3_DATASET_SHA256=<64-char-lowercase-hex>" >&2
+    echo "error: ${CALIBRATE_CONFIG_PATH} requires real D3 vectors." >&2
+    echo "error: run bash preprocess_all_datasets.sh first or set MAXIONBENCH_D3_DATASET_PATH=/abs/path/to/d3_vectors.npy" >&2
+    exit 2
+  fi
+  if [[ "${CALIBRATION_PATH_CHECK}" == missing_real_dataset_file:* ]]; then
+    echo "error: real D3 vectors not found: ${CALIBRATION_PATH_CHECK#missing_real_dataset_file:}" >&2
+    echo "error: run bash preprocess_all_datasets.sh first or point MAXIONBENCH_D3_DATASET_PATH at an existing .npy/.npz file" >&2
     exit 2
   fi
   maxionbench run \

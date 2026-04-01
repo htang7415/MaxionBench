@@ -11,8 +11,10 @@ def test_gitignore_blocks_python_cache_artifacts() -> None:
     assert ".pytest_cache/" in payload
     assert "artifacts/containers/" in payload
     assert "artifacts/workstation_runs/" in payload
+    assert "results/" in payload
     assert "!run_workstation.sh" in payload
     assert "!run_docker_scenario.sh" in payload
+    assert "!save_results_bundle.sh" in payload
     assert ".env.slurm.*" not in payload
     assert "prepare_containers.sh" not in payload
 
