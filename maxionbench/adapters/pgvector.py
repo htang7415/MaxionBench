@@ -83,11 +83,12 @@ class PgVectorAdapter(BaseAdapter):
             if method not in {"ivfflat", "hnsw", "none", "flat"}:
                 method = "ivfflat"
             if method not in {"none", "flat"}:
+                with_clause = self._index_with_clause(method)
                 cur.execute(
                     self._sql(
                         (
                             "CREATE INDEX {index_name} ON {schema}.{table} "
-                            f"USING {method} (embedding {metric_ops})"
+                            f"USING {method} (embedding {metric_ops}){with_clause}"
                         ),
                         index_name=index_ident,
                         schema=self._cfg.schema,
@@ -298,10 +299,10 @@ class PgVectorAdapter(BaseAdapter):
     def _apply_search_params(self, cur: Any) -> None:
         probes = self._search_params.get("ivfflat_probes")
         if probes is not None:
-            cur.execute("SET ivfflat.probes = %s", (int(probes),))
+            cur.execute("SELECT set_config('ivfflat.probes', %s, false)", (str(max(1, int(probes))),))
         ef_search = self._search_params.get("hnsw_ef_search")
         if ef_search is not None:
-            cur.execute("SET hnsw.ef_search = %s", (int(ef_search),))
+            cur.execute("SELECT set_config('hnsw.ef_search', %s, false)", (str(max(1, int(ef_search))),))
 
     def _score_expression(self) -> str:
         metric = self._metric.strip().lower()
@@ -323,6 +324,26 @@ class PgVectorAdapter(BaseAdapter):
         if normalized in {"cos", "cosine"}:
             return "vector_cosine_ops"
         raise ValueError(f"Unsupported metric for pgvector: {metric}")
+
+    def _index_with_clause(self, method: str) -> str:
+        options: list[str] = []
+        if method == "ivfflat":
+            lists = self._index_params.get("lists", self._index_params.get("nlist"))
+            if lists is not None:
+                options.append(f"lists = {max(1, int(lists))}")
+        elif method == "hnsw":
+            m = self._index_params.get("m", self._index_params.get("M"))
+            ef_construction = self._index_params.get(
+                "ef_construction",
+                self._index_params.get("efConstruction"),
+            )
+            if m is not None:
+                options.append(f"m = {max(1, int(m))}")
+            if ef_construction is not None:
+                options.append(f"ef_construction = {max(1, int(ef_construction))}")
+        if not options:
+            return ""
+        return " WITH (" + ", ".join(options) + ")"
 
     def _sql(self, query: str, **identifiers: str) -> Any:
         sql = self._psycopg.sql

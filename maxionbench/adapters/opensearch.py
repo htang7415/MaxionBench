@@ -188,9 +188,8 @@ class OpenSearchAdapter(BaseAdapter):
         return len(ids)
 
     def flush_or_commit(self) -> None:
-        entries = self._build_pending_bulk_entries()
-        if entries:
-            self._post_bulk_entries(entries, refresh_wait_for=True)
+        if self._pending_deletes or self._pending_upserts:
+            self._post_bulk_entries(self._iter_pending_bulk_entries(), refresh_wait_for=True)
         for doc_id in sorted(self._pending_deletes):
             if doc_id in self._records:
                 self._deleted_total += 1
@@ -259,15 +258,13 @@ class OpenSearchAdapter(BaseAdapter):
         }
         self._request("PUT", f"/{self._index}", json=body)
 
-    def _build_pending_bulk_entries(self) -> list[tuple[str, ...]]:
-        entries: list[tuple[str, ...]] = []
+    def _iter_pending_bulk_entries(self):
         for doc_id in sorted(self._pending_deletes):
-            entries.append((json.dumps({"delete": {"_index": self._index, "_id": doc_id}}, sort_keys=True),))
+            yield (json.dumps({"delete": {"_index": self._index, "_id": doc_id}}, sort_keys=True),)
         for doc_id, point in sorted(self._pending_upserts.items(), key=lambda item: item[0]):
             meta_line = json.dumps({"index": {"_index": self._index, "_id": doc_id}}, sort_keys=True)
             doc_line = json.dumps({"vector": point.vector.tolist(), "payload": point.payload}, sort_keys=True)
-            entries.append((meta_line, doc_line))
-        return entries
+            yield (meta_line, doc_line)
 
     def _post_bulk_entries(self, entries: Sequence[Sequence[str]], *, refresh_wait_for: bool) -> None:
         chunk: list[str] = []

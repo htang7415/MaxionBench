@@ -79,6 +79,12 @@ configure_apptainer_storage() {
   printf '%s\n' "+ APPTAINER_TMPDIR=${APPTAINER_TMPDIR}"
 }
 
+shell_single_quote() {
+  local value="$1"
+  value="${value//\'/\'\"\'\"\'}"
+  printf "'%s'" "${value}"
+}
+
 source_module_init() {
   if command -v module >/dev/null 2>&1; then
     return 0
@@ -329,6 +335,16 @@ build_main_image() {
     rm -f "${target}"
   fi
 
+  local faiss_gpu_spec="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-faiss-gpu-cu12>=1.8.0.2}"
+  local quoted_faiss_gpu_spec=""
+  quoted_faiss_gpu_spec="$(shell_single_quote "${faiss_gpu_spec}")"
+  local rendered_definition_file=""
+  rendered_definition_file="$(mktemp "${TMPDIR:-/tmp}/maxionbench_def.XXXXXX")"
+  sed \
+    "s|^    export MAXIONBENCH_FAISS_GPU_PIP_SPEC=.*$|    export MAXIONBENCH_FAISS_GPU_PIP_SPEC=${quoted_faiss_gpu_spec}|" \
+    "${definition_file}" > "${rendered_definition_file}"
+  printf '%s\n' "+ MAXIONBENCH_FAISS_GPU_PIP_SPEC=${faiss_gpu_spec}"
+
   local -a cmd=(apptainer build)
   if [[ -n "${MAXIONBENCH_APPTAINER_BUILD_FLAGS:-}" ]]; then
     local -a extra_flags=()
@@ -338,9 +354,10 @@ build_main_image() {
   elif apptainer_build_supports_fakeroot; then
     cmd+=(--fakeroot)
   fi
-  cmd+=("${target}" "${definition_file}")
+  cmd+=("${target}" "${rendered_definition_file}")
   printf '%s\n' "+ ${cmd[*]}"
   "${cmd[@]}"
+  rm -f "${rendered_definition_file}"
   if ! main_image_is_valid "${target}"; then
     echo "error: built ${target} is missing required runtime imports for MaxionBench and D3 dataset preparation" >&2
     exit 2

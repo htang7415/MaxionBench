@@ -596,8 +596,6 @@ def validate_full_matrix_contract(
     if not prefetch_datasets:
         raise ValueError("--full-matrix reruns require --prefetch-datasets")
     if allow_reduced_matrix:
-        if not manifest.gpu_rows:
-            raise ValueError("reduced full-matrix smoke runs must still include at least one GPU row")
         return
     if len(manifest.gpu_rows) != _EXPECTED_FULL_MATRIX_GPU_ROWS:
         raise ValueError(

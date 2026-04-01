@@ -29,6 +29,7 @@ class RunConfig:
     engine: str = "mock"
     engine_version: str = "0.1.0"
     adapter_options: dict[str, Any] = field(default_factory=dict)
+    index_params: dict[str, Any] = field(default_factory=dict)
     scenario: str = "s1_ann_frontier"
     dataset_bundle: str = "D1"
     dataset_hash: str = "synthetic-d1-v1"
@@ -151,9 +152,54 @@ def load_run_config(path: Path, overrides: Mapping[str, Any] | None = None) -> R
     merged = expand_env_placeholders(payload)
     if overrides:
         merged.update({k: v for k, v in overrides.items() if v is not None})
+    merged = _normalize_engine_specific_payload(merged)
     cfg = RunConfig(**merged)
     _validate(cfg)
     return cfg
+
+
+def _normalize_engine_specific_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    index_params = normalized.get("index_params")
+    if isinstance(index_params, Mapping):
+        normalized["index_params"] = dict(index_params)
+    engine = str(normalized.get("engine", "")).strip().lower()
+    if engine != "pgvector":
+        return normalized
+
+    search_sweep = normalized.get("search_sweep")
+    if not isinstance(search_sweep, list):
+        return normalized
+
+    adapter_options = normalized.get("adapter_options")
+    index_method = "ivfflat"
+    if isinstance(adapter_options, Mapping):
+        raw_method = adapter_options.get("index_method")
+        if raw_method is not None and str(raw_method).strip():
+            index_method = str(raw_method).strip().lower()
+
+    target_key = "hnsw_ef_search" if index_method == "hnsw" else "ivfflat_probes"
+    normalized_sweep: list[dict[str, Any]] = []
+    changed = False
+    for item in search_sweep:
+        if not isinstance(item, dict):
+            normalized_sweep.append(item)
+            continue
+        if (
+            "hnsw_ef" in item
+            and "ivfflat_probes" not in item
+            and "hnsw_ef_search" not in item
+        ):
+            converted = dict(item)
+            converted[target_key] = converted.pop("hnsw_ef")
+            normalized_sweep.append(converted)
+            changed = True
+            continue
+        normalized_sweep.append(item)
+
+    if changed:
+        normalized["search_sweep"] = normalized_sweep
+    return normalized
 
 
 def _validate(cfg: RunConfig) -> None:
@@ -195,6 +241,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("clients_grid must not be empty")
     if not cfg.search_sweep:
         raise ValueError("search_sweep must not be empty")
+    if not isinstance(cfg.index_params, dict):
+        raise ValueError("index_params must be a mapping")
     if any(client < 1 for client in cfg.clients_grid):
         raise ValueError("clients_grid values must be >= 1")
     if cfg.lambda_req_s <= 0:

@@ -49,9 +49,11 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "validate_container_build_prerequisites()" in text
     assert "scripts/build_containers.sh" in text
     assert "prepare_containers.sh" in text
+    assert "MAXIONBENCH_FAISS_GPU_PIP_SPEC" in text
     assert "--prepare-containers" in text
     assert "full-matrix reruns require all GPU jobs" in text
     assert "--allow-reduced-matrix" in text
+    assert "GPU rows are optional when the manifest is CPU-only" in text
 
     smoke_text = smoke_script.read_text(encoding="utf-8")
     assert "run_slurm_pipeline.sh" in smoke_text
@@ -146,6 +148,7 @@ def test_slurm_pipeline_files_exist_and_reference_full_matrix_flow() -> None:
     assert "MAXIONBENCH_MILVUS_ETCD_IMAGE=" in env_text
     assert "MAXIONBENCH_MILVUS_MINIO_IMAGE=" in env_text
     assert "MAXIONBENCH_MILVUS_IMAGE=" in env_text
+    assert "MAXIONBENCH_FAISS_GPU_PIP_SPEC=" in env_text
     assert "MAXIONBENCH_DATASET_ROOT=" in env_text
     assert "MAXIONBENCH_OUTPUT_ROOT=" in env_text
 
@@ -262,11 +265,102 @@ def test_build_containers_prefetches_pinned_reranker_into_shared_hf_cache() -> N
     text = Path("scripts/build_containers.sh").read_text(encoding="utf-8")
 
     assert "MAXIONBENCH_HF_CACHE_DIR" in text
+    assert "shell_single_quote()" in text
+    assert "MAXIONBENCH_FAISS_GPU_PIP_SPEC" in text
+    assert 'mktemp "${TMPDIR:-/tmp}/maxionbench_def.XXXXXX"' in text
     assert 'model_id="BAAI/bge-reranker-base"' in text
     assert "AutoTokenizer.from_pretrained" in text
     assert "prefetch_s5_reranker_cache" in text
     assert 'hasattr(faiss, "StandardGpuResources")' in text
     assert "maxionbench_mirrors" in text
+
+
+def test_build_containers_renders_faiss_gpu_spec_into_temp_definition(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    scripts_dir = repo_dir / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    service_contracts_dir = repo_dir / "maxionbench" / "orchestration" / "slurm"
+    service_contracts_dir.mkdir(parents=True, exist_ok=True)
+    build_script = scripts_dir / "build_containers.sh"
+    build_script.write_text(Path("scripts/build_containers.sh").read_text(encoding="utf-8"), encoding="utf-8")
+    build_script.chmod(0o755)
+    (service_contracts_dir / "service_contracts.sh").write_text(
+        Path("maxionbench/orchestration/slurm/service_contracts.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (repo_dir / "maxionbench.def").write_text(
+        Path("maxionbench.def").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    output_dir = repo_dir / "containers"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    apptainer_log = tmp_path / "apptainer_build.log"
+    rendered_definition = tmp_path / "rendered.def"
+    apptainer_stub = bin_dir / "apptainer"
+    apptainer_stub.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${MAXIONBENCH_TEST_APPTAINER_LOG}"
+if [[ "${1:-}" == "build" && "${2:-}" == "--help" ]]; then
+  printf '%s\\n' "--fakeroot"
+  exit 0
+fi
+if [[ "${1:-}" == "build" ]]; then
+  target_index=$(($# - 1))
+  def_index=$#
+  eval "target=\\${${target_index}}"
+  eval "definition=\\${${def_index}}"
+  cp "${definition}" "${MAXIONBENCH_TEST_RENDERED_DEFINITION}"
+  printf 'main-image\\n' > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "pull" ]]; then
+  target="${2:-}"
+  printf '%s\\n' "${target##*/}" > "${target}"
+  exit 0
+fi
+if [[ "${1:-}" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "${2:-}" == "--cleanenv" ]]; then
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    apptainer_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
+    env["MAXIONBENCH_TEST_APPTAINER_LOG"] = str(apptainer_log)
+    env["MAXIONBENCH_TEST_RENDERED_DEFINITION"] = str(rendered_definition)
+    env["MAXIONBENCH_FAISS_GPU_PIP_SPEC"] = "file:///shared/wheels/faiss_gpu_custom.whl"
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(build_script),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=repo_dir,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "+ MAXIONBENCH_FAISS_GPU_PIP_SPEC=file:///shared/wheels/faiss_gpu_custom.whl" in completed.stdout
+    rendered_text = rendered_definition.read_text(encoding="utf-8")
+    assert "export MAXIONBENCH_FAISS_GPU_PIP_SPEC='file:///shared/wheels/faiss_gpu_custom.whl'" in rendered_text
+    assert 'export MAXIONBENCH_FAISS_GPU_PIP_SPEC="${MAXIONBENCH_FAISS_GPU_PIP_SPEC:-faiss-gpu-cu12>=1.8.0.2}"' not in rendered_text
 
 
 def test_build_containers_only_missing_accepts_opensearch_layout_and_shellless_milvus_images(tmp_path: Path) -> None:
