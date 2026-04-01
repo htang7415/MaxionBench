@@ -15,6 +15,24 @@ services:
       MAXIONBENCH_WEAVIATE_HOST: weaviate
       MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI: /workspace/artifacts/lancedb/service
 
+  benchmark-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      PYTHONPATH: /workspace
+      MAXIONBENCH_QDRANT_HOST: qdrant
+      MAXIONBENCH_MILVUS_HOST: milvus
+      MAXIONBENCH_OPENSEARCH_HOST: opensearch
+      MAXIONBENCH_PGVECTOR_DSN: postgresql://postgres:postgres@pgvector:5432/postgres
+      MAXIONBENCH_WEAVIATE_HOST: weaviate
+      MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI: /workspace/artifacts/lancedb/service
+      NVIDIA_VISIBLE_DEVICES: all
+    gpus: all
+
   qdrant:
     image: ${MAXIONBENCH_QDRANT_IMAGE:-qdrant/qdrant:latest}
     ports:

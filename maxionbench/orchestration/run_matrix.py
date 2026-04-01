@@ -1,4 +1,4 @@
-"""Build and resolve manifest-driven Slurm run matrices."""
+"""Build manifest-driven local run matrices."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ from argparse import ArgumentParser
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import yaml
 
 
 _DATASET_ROOT_TOKEN = "${MAXIONBENCH_DATASET_ROOT:-dataset}"
-_OUTPUT_ROOT_TOKEN = "${MAXIONBENCH_OUTPUT_ROOT:-artifacts/runs/paper_matrix}"
+_DEFAULT_OUTPUT_ROOT = "artifacts/runs/workstation_matrix"
 _SCENARIO_ORDER = {
     "s1_ann_frontier": 0,
     "s1_ann_frontier_d3": 1,
@@ -34,7 +34,7 @@ _S1_TEMPLATE_ORDER = {
 
 
 @dataclass(frozen=True)
-class RunManifestRow:
+class RunMatrixRow:
     group: str
     config_path: str
     engine: str
@@ -44,24 +44,36 @@ class RunManifestRow:
 
 
 @dataclass(frozen=True)
-class RunManifest:
+class RunMatrix:
     repo_root: str
     generated_config_dir: str
-    cpu_rows: list[RunManifestRow]
-    gpu_rows: list[RunManifestRow]
+    output_root: str
+    cpu_rows: list[RunMatrixRow]
+    gpu_rows: list[RunMatrixRow]
     selected_engines: list[str]
     selected_templates: list[str]
+    lane: str
+
+    def iter_rows(self, *, lane: str | None = None) -> Iterable[RunMatrixRow]:
+        selected_lane = (lane or self.lane).strip().lower()
+        if selected_lane == "cpu":
+            return tuple(self.cpu_rows)
+        if selected_lane == "gpu":
+            return tuple(self.gpu_rows)
+        return tuple(self.cpu_rows) + tuple(self.gpu_rows)
 
 
-def build_run_manifest(
+def build_run_matrix(
     *,
     repo_root: Path,
     scenario_config_dir: Path,
     engine_config_dir: Path,
     out_dir: Path,
-    include_gpu: bool = True,
+    output_root: str = _DEFAULT_OUTPUT_ROOT,
+    lane: str = "all",
     skip_s6: bool = False,
-) -> RunManifest:
+) -> RunMatrix:
+    normalized_lane = _normalize_lane(lane)
     resolved_repo_root = repo_root.expanduser().resolve()
     resolved_scenarios = _resolve_dir(path=scenario_config_dir, repo_root=resolved_repo_root)
     resolved_engines = _resolve_dir(path=engine_config_dir, repo_root=resolved_repo_root)
@@ -72,8 +84,8 @@ def build_run_manifest(
     templates = _load_templates(resolved_scenarios, skip_s6=skip_s6)
     engines = _load_engine_payloads(resolved_engines)
 
-    cpu_rows: list[RunManifestRow] = []
-    gpu_rows: list[RunManifestRow] = []
+    cpu_rows: list[RunMatrixRow] = []
+    gpu_rows: list[RunMatrixRow] = []
     selected_templates: list[str] = []
     selected_engines: list[str] = []
 
@@ -84,16 +96,19 @@ def build_run_manifest(
                 scenario_payload=scenario_payload,
                 engine_payload=engine_payload,
                 template_name=template_name,
+                output_root=output_root,
             )
-            group = _task_group_for_payload(merged)
-            if group == "gpu" and not include_gpu:
+            group = _task_group_for_payload(merged=merged, template_name=template_name)
+            if normalized_lane == "cpu" and group == "gpu":
+                continue
+            if normalized_lane == "gpu" and group != "gpu":
                 continue
             if engine_name not in selected_engines:
                 selected_engines.append(engine_name)
             target_path = generated_config_dir / group / f"{Path(template_name).stem}__{_slug(engine_name)}.yaml"
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(yaml.safe_dump(merged, sort_keys=True), encoding="utf-8")
-            row = RunManifestRow(
+            row = RunMatrixRow(
                 group=group,
                 config_path=str(target_path.resolve()),
                 engine=str(merged.get("engine", engine_name)),
@@ -108,25 +123,29 @@ def build_run_manifest(
 
     cpu_rows.sort(key=_row_sort_key)
     gpu_rows.sort(key=_row_sort_key)
-    manifest = RunManifest(
+    matrix = RunMatrix(
         repo_root=str(resolved_repo_root),
         generated_config_dir=str(generated_config_dir.resolve()),
+        output_root=str(output_root),
         cpu_rows=cpu_rows,
         gpu_rows=gpu_rows,
         selected_engines=selected_engines,
         selected_templates=selected_templates,
+        lane=normalized_lane,
     )
-    manifest_path = resolved_out_dir / "run_manifest.json"
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
+    matrix_path = resolved_out_dir / "run_matrix.json"
+    matrix_path.parent.mkdir(parents=True, exist_ok=True)
+    matrix_path.write_text(
         json.dumps(
             {
-                "repo_root": manifest.repo_root,
-                "generated_config_dir": manifest.generated_config_dir,
-                "cpu_rows": [asdict(row) for row in manifest.cpu_rows],
-                "gpu_rows": [asdict(row) for row in manifest.gpu_rows],
-                "selected_engines": list(manifest.selected_engines),
-                "selected_templates": list(manifest.selected_templates),
+                "repo_root": matrix.repo_root,
+                "generated_config_dir": matrix.generated_config_dir,
+                "output_root": matrix.output_root,
+                "cpu_rows": [asdict(row) for row in matrix.cpu_rows],
+                "gpu_rows": [asdict(row) for row in matrix.gpu_rows],
+                "selected_engines": list(matrix.selected_engines),
+                "selected_templates": list(matrix.selected_templates),
+                "lane": matrix.lane,
             },
             indent=2,
             sort_keys=True,
@@ -134,27 +153,28 @@ def build_run_manifest(
         + "\n",
         encoding="utf-8",
     )
-    return manifest
+    return matrix
 
 
-def load_run_manifest(path: Path) -> RunManifest:
+def load_run_matrix(path: Path) -> RunMatrix:
     payload = json.loads(path.expanduser().resolve().read_text(encoding="utf-8"))
-    return RunManifest(
+    return RunMatrix(
         repo_root=str(payload["repo_root"]),
         generated_config_dir=str(payload["generated_config_dir"]),
-        cpu_rows=[RunManifestRow(**row) for row in payload.get("cpu_rows", [])],
-        gpu_rows=[RunManifestRow(**row) for row in payload.get("gpu_rows", [])],
+        output_root=str(payload.get("output_root", _DEFAULT_OUTPUT_ROOT)),
+        cpu_rows=[RunMatrixRow(**row) for row in payload.get("cpu_rows", [])],
+        gpu_rows=[RunMatrixRow(**row) for row in payload.get("gpu_rows", [])],
         selected_engines=[str(item) for item in payload.get("selected_engines", [])],
         selected_templates=[str(item) for item in payload.get("selected_templates", [])],
+        lane=_normalize_lane(str(payload.get("lane", "all"))),
     )
 
 
-def resolve_manifest_row(*, manifest_path: Path, group: str, task_id: int) -> RunManifestRow:
-    manifest = load_run_manifest(manifest_path)
-    rows = manifest.cpu_rows if str(group).strip().lower() == "cpu" else manifest.gpu_rows
-    if task_id < 0 or task_id >= len(rows):
-        raise IndexError(f"task id {task_id} is out of range for {group} rows ({len(rows)})")
-    return rows[task_id]
+def _normalize_lane(lane: str) -> str:
+    normalized = str(lane).strip().lower()
+    if normalized not in {"cpu", "gpu", "all"}:
+        raise ValueError(f"lane must be one of cpu/gpu/all, got {lane!r}")
+    return normalized
 
 
 def _resolve_dir(*, path: Path, repo_root: Path) -> Path:
@@ -200,6 +220,7 @@ def _compose_config(
     scenario_payload: dict[str, Any],
     engine_payload: dict[str, Any],
     template_name: str,
+    output_root: str,
 ) -> dict[str, Any]:
     merged = dict(scenario_payload)
     merged["engine"] = str(engine_payload.get("engine", merged.get("engine", "mock")))
@@ -207,7 +228,7 @@ def _compose_config(
     adapter_options = dict(merged.get("adapter_options") or {})
     adapter_options.update(dict(engine_payload.get("adapter_options") or {}))
     merged["adapter_options"] = adapter_options
-    merged["output_dir"] = f"{_OUTPUT_ROOT_TOKEN}/{Path(template_name).stem}/{_slug(str(merged['engine']))}"
+    merged["output_dir"] = f"{str(output_root).rstrip('/')}/{Path(template_name).stem}/{_slug(str(merged['engine']))}"
     _normalize_pipeline_dataset_refs(payload=merged, template_name=template_name)
     return merged
 
@@ -241,17 +262,20 @@ def _normalize_pipeline_dataset_refs(*, payload: dict[str, Any], template_name: 
     payload.pop("dataset_path_sha256", None)
 
 
-def _task_group_for_payload(payload: dict[str, Any]) -> str:
-    scenario = str(payload.get("scenario", "")).strip().lower()
-    engine = _slug(str(payload.get("engine", "")))
+def _task_group_for_payload(*, merged: dict[str, Any], template_name: str) -> str:
+    scenario = str(merged.get("scenario", "")).strip().lower()
+    engine = _slug(str(merged.get("engine", "")))
+    template = Path(template_name).stem.lower()
     if scenario == "s5_rerank":
         return "gpu"
     if engine == "faiss_gpu":
         return "gpu"
+    if "track_b" in template or "track_c" in template:
+        return "gpu"
     return "cpu"
 
 
-def _row_sort_key(row: RunManifestRow) -> tuple[int, str, str]:
+def _row_sort_key(row: RunMatrixRow) -> tuple[int, str, str]:
     template_key = _template_sort_key(
         template_name=row.template_name,
         scenario=row.scenario,
@@ -266,101 +290,57 @@ def _template_sort_key(
     payload: dict[str, Any] | None = None,
     scenario: str | None = None,
     dataset_bundle: str | None = None,
-) -> tuple[int, int, int, str]:
-    resolved_scenario = str(
-        scenario if scenario is not None else (payload or {}).get("scenario", "")
-    ).strip().lower()
-    resolved_bundle = str(
-        dataset_bundle if dataset_bundle is not None else (payload or {}).get("dataset_bundle", "")
-    ).strip().upper()
+) -> tuple[int, int, str]:
     stem = Path(template_name).stem
-
-    scenario_rank = _SCENARIO_ORDER.get(resolved_scenario, 999)
-    dataset_rank = 0
-    variant_rank = 0
-    if resolved_scenario == "s1_ann_frontier":
-        if resolved_bundle == "D1":
-            dataset_rank = 0
-            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
-        elif resolved_bundle == "D2":
-            dataset_rank = 1
-            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
-        elif resolved_bundle == "D3":
-            dataset_rank = 2
-            variant_rank = _S1_TEMPLATE_ORDER.get(stem, 999)
-        else:
-            dataset_rank = 9
-            variant_rank = 999
-    return (scenario_rank, dataset_rank, variant_rank, template_name)
+    resolved_scenario = str((payload or {}).get("scenario", scenario or "")).strip().lower()
+    resolved_bundle = str((payload or {}).get("dataset_bundle", dataset_bundle or "")).strip().upper()
+    scenario_order = _SCENARIO_ORDER.get(stem, _SCENARIO_ORDER.get(resolved_scenario, 999))
+    s1_order = _S1_TEMPLATE_ORDER.get(stem, _S1_TEMPLATE_ORDER.get(resolved_bundle.lower(), 999))
+    return (scenario_order, s1_order, stem)
 
 
 def _slug(value: str) -> str:
-    return value.strip().lower().replace("-", "_")
-
-
-def _parse_args(argv: list[str] | None = None):
-    parser = ArgumentParser(description="Build or resolve MaxionBench Slurm run manifests")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    build = sub.add_parser("build", help="Build a run manifest from engine configs and scenario templates")
-    build.add_argument("--repo-root", default=".")
-    build.add_argument("--scenario-config-dir", required=True)
-    build.add_argument("--engine-config-dir", default="configs/engines")
-    build.add_argument("--out-dir", required=True)
-    build.add_argument("--skip-gpu", action="store_true")
-    build.add_argument("--skip-s6", action="store_true")
-    build.add_argument("--json", action="store_true")
-
-    resolve = sub.add_parser("resolve", help="Resolve one manifest row for a Slurm array task")
-    resolve.add_argument("--manifest", required=True)
-    resolve.add_argument("--group", required=True, choices=["cpu", "gpu"])
-    resolve.add_argument("--task-id", type=int, required=True)
-    resolve.add_argument("--field", default="config_path")
-    resolve.add_argument("--json", action="store_true")
-    return parser.parse_args(argv)
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
-    if args.command == "build":
-        manifest = build_run_manifest(
-            repo_root=Path(args.repo_root),
-            scenario_config_dir=Path(args.scenario_config_dir),
-            engine_config_dir=Path(args.engine_config_dir),
-            out_dir=Path(args.out_dir),
-            include_gpu=not bool(args.skip_gpu),
-            skip_s6=bool(args.skip_s6),
-        )
-        payload = {
-            "repo_root": manifest.repo_root,
-            "generated_config_dir": manifest.generated_config_dir,
-            "cpu_count": len(manifest.cpu_rows),
-            "gpu_count": len(manifest.gpu_rows),
-            "selected_engines": manifest.selected_engines,
-            "selected_templates": manifest.selected_templates,
-            "manifest_path": str((Path(args.out_dir).expanduser().resolve() / "run_manifest.json").resolve()),
-        }
-        if args.json:
-            print(json.dumps(payload, indent=2, sort_keys=True))
-        else:
-            print(payload["manifest_path"])
-        return 0
+    parser = ArgumentParser(description="Build a local workstation run matrix from scenario and engine configs")
+    parser.add_argument("--scenario-config-dir", default="configs/scenarios_paper")
+    parser.add_argument("--engine-config-dir", default="configs/engines")
+    parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--output-root", default=_DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
+    parser.add_argument("--skip-s6", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
 
-    row = resolve_manifest_row(
-        manifest_path=Path(args.manifest),
-        group=str(args.group),
-        task_id=int(args.task_id),
+    repo_root = Path(__file__).resolve().parents[2]
+    matrix = build_run_matrix(
+        repo_root=repo_root,
+        scenario_config_dir=Path(args.scenario_config_dir),
+        engine_config_dir=Path(args.engine_config_dir),
+        out_dir=Path(args.out_dir),
+        output_root=str(args.output_root),
+        lane=str(args.lane),
+        skip_s6=bool(args.skip_s6),
     )
-    payload = asdict(row)
+    summary = {
+        "repo_root": matrix.repo_root,
+        "generated_config_dir": matrix.generated_config_dir,
+        "output_root": matrix.output_root,
+        "lane": matrix.lane,
+        "cpu_rows": len(matrix.cpu_rows),
+        "gpu_rows": len(matrix.gpu_rows),
+        "selected_engines": list(matrix.selected_engines),
+        "selected_templates": list(matrix.selected_templates),
+        "matrix_path": str((Path(args.out_dir).expanduser().resolve() / "run_matrix.json").resolve()),
+    }
     if args.json:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    value = payload.get(str(args.field))
-    if value is None:
-        raise ValueError(f"unknown manifest row field: {args.field}")
-    print(value)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(json.dumps(summary, sort_keys=True))
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())

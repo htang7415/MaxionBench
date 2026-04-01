@@ -1,4 +1,4 @@
-"""Scratch-space preflight for Slurm benchmark jobs."""
+"""Local scratch-space preflight for workstation runs."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ SAFETY_FACTOR_DEFAULT = 1.8
 KNOWN_DATASET_BUNDLES = {"D1", "D2", "D3", "D4"}
 
 
-def evaluate_preflight(
+def evaluate_local_preflight(
     *,
     config_path: Path,
-    tmpdir: Path,
+    scratch_dir: Path,
     safety_factor: float = SAFETY_FACTOR_DEFAULT,
 ) -> dict[str, Any]:
     payload = _read_yaml_mapping(config_path)
@@ -35,13 +35,13 @@ def evaluate_preflight(
 
     estimates = _estimate_bytes(payload, manifest)
     required = int(safety_factor * (estimates["dataset_bytes"] + estimates["engine_bytes"] + estimates["temp_bytes"]))
-    free = _free_bytes(tmpdir)
+    free = _free_bytes(scratch_dir)
     ok = free >= required and bool(integrity_summary["integrity_ok"]) and bool(manifest_summary["manifest_ok"])
 
     return {
         "ok": ok,
         "config_path": str(config_path),
-        "tmpdir": str(tmpdir),
+        "scratch_dir": str(scratch_dir),
         "dataset_bundle": dataset_bundle,
         "free_bytes": int(free),
         "required_bytes": int(required),
@@ -71,7 +71,6 @@ def _estimate_bytes(config: Mapping[str, Any], manifest: Mapping[str, Any] | Non
     num_vectors = int(config.get("num_vectors", 1))
     vector_dim = int(config.get("vector_dim", 1))
     base_vectors = max(1, num_vectors) * max(1, vector_dim) * 4
-    # Conservative defaults when manifests are absent.
     dataset_bytes = int(base_vectors * 1.5)
     engine_bytes = int(config.get("estimated_engine_bytes", dataset_bytes * 1.2))
     temp_bytes = int(config.get("estimated_temp_bytes", dataset_bytes * 0.6))
@@ -92,7 +91,7 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
 
 
 def _load_manifest(dataset_bundle: str) -> dict[str, Any] | None:
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[1]
     candidate = root / "datasets" / "manifests" / f"{dataset_bundle.lower()}.yaml"
     if not candidate.exists():
         return None
@@ -189,27 +188,27 @@ def _resolve_path(*, value: str, config_path: Path) -> Path:
     config_relative = (config_path.parent / path).resolve()
     if config_relative.exists():
         return config_relative
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[2]
     return (repo_root / path).resolve()
 
 
-def parse_args(argv: list[str] | None = None) -> ArgumentParser:
-    parser = ArgumentParser(description="MaxionBench Slurm scratch preflight")
-    parser.add_argument("--config", required=True, help="Scenario config path")
-    parser.add_argument("--tmpdir", required=True, help="Scratch directory (typically $SLURM_TMPDIR)")
-    parser.add_argument("--safety-factor", type=float, default=SAFETY_FACTOR_DEFAULT)
-    return parser
-
-
 def main(argv: list[str] | None = None) -> int:
-    parser = parse_args(argv)
+    parser = ArgumentParser(description="MaxionBench local storage preflight")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--scratch-dir", required=True)
+    parser.add_argument("--safety-factor", type=float, default=SAFETY_FACTOR_DEFAULT)
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    summary = evaluate_preflight(
+
+    summary = evaluate_local_preflight(
         config_path=Path(args.config).resolve(),
-        tmpdir=Path(args.tmpdir).resolve(),
+        scratch_dir=Path(args.scratch_dir).resolve(),
         safety_factor=float(args.safety_factor),
     )
-    print(json.dumps(summary, sort_keys=True))
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(json.dumps(summary, sort_keys=True))
     return 0 if bool(summary["ok"]) else 2
 
 

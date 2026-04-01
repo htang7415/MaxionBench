@@ -50,6 +50,13 @@ Each run writes:
 - `config_resolved.yaml`
 - logs
 
+## Workstation targets
+
+- Linux x86_64 workstation is the primary full-run host.
+- Mac is the reduced local/dev host.
+- Default full-run lane is CPU-only; GPU scenarios are explicit opt-in because the A100 may be shared.
+- The Mac lane does not claim support for full D2/D3 paper-scale runs or the CUDA-enforced S5 / GPU tracks.
+
 Figures are written to:
 
 - `artifacts/figures/milestones/Mx/`
@@ -57,7 +64,7 @@ Figures are written to:
 
 ## How to run this benchmark study
 
-### Local terminal workflow
+### Linux workstation workflow
 
 Install, download, and preprocess:
 
@@ -67,26 +74,18 @@ python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --
 bash preprocess_all_datasets.sh
 ```
 
-### Slurm cluster workflow
-
-Keep cluster-local defaults in gitignored local files such as `.env.slurm.nrel`, `.env.slurm.euler`, and `maxionbench/orchestration/slurm/profiles_local.yaml`. The wrapper auto-loads and refreshes `.env.slurm.<cluster>` for the current run, then run:
+Run the canonical workstation wrapper:
 
 ```bash
-bash run_slurm_pipeline.sh --cluster nrel
-bash run_slurm_pipeline.sh --cluster nrel --launch
+bash run_workstation.sh --lane cpu
+bash run_workstation.sh --lane gpu
 ```
 
-Dry-run prints the submit plan only. `--launch` prepares the shared directory tree and builds any missing `.sif` images under `${MAXIONBENCH_SHARED_ROOT}/containers/` before submitting jobs.
+Use `--lane all` only when both lanes are available. Service engines are launched locally through Docker Compose; local engines run directly on the host.
 
-Copied example values such as `your-account`, `YOUR_PRIVATE_PARTITION`, or `/shared/containers/...` are rejected before submission.
+### Mac reduced workflow
 
-Large Apptainer build cache/tmp data defaults to `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer` and `${MAXIONBENCH_SHARED_ROOT}/.cache/apptainer/tmp`, so image builds stay on shared scratch instead of `$HOME`.
-
-By default, dataset, cache, result, figure, and Hugging Face cache paths are derived from the repository root that contains `run_slurm_pipeline.sh`. To use a different shared base path, add:
-
-```bash
---shared-root /shared/path/maxionbench
-```
+For the reduced Mac lane, use the commands in `command-mac.md` or run individual configs from `configs/scenarios/`.
 
 ## Validate and generate figures
 

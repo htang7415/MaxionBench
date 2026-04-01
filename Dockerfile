@@ -21,7 +21,6 @@ COPY AGENTS.md CLAUDE.md document.md project.md prompt.md ./
 COPY maxionbench ./maxionbench
 COPY configs ./configs
 COPY docs ./docs
-COPY run_workstation.sh ./run_workstation.sh
 
 RUN python -m pip install --upgrade pip setuptools wheel \
  && python -m pip install ".[${MAXIONBENCH_PIP_EXTRAS}]"

@@ -106,6 +106,10 @@ jobs:
         run: |
           pytest -q tests/test_command_docs.py
 
+      - name: Verify workstation assets
+        run: |
+          pytest -q tests/test_workstation_script.py tests/test_docker_workflow_files.py
+
       - name: Verify report figure policy sync
         run: |
           pytest -q tests/test_report_figure_policy_sync.py
@@ -118,45 +122,27 @@ jobs:
         run: |
           pytest -q tests/test_branch_protection_policy_sync.py
 
-      - name: Verify Slurm plan consistency
+      - name: Build workstation CPU matrix
         run: |
-          mkdir -p artifacts/ci
-          maxionbench verify-slurm-plan --json | tee artifacts/ci/slurm_plan_verify.json
-
-      - name: Verify Slurm plan consistency (GPU omitted mode)
-        run: |
-          mkdir -p artifacts/ci
-          maxionbench verify-slurm-plan --skip-gpu --json | tee artifacts/ci/slurm_plan_verify_skip_gpu.json
-
-      - name: Verify Slurm submit plan dependency topology (dry-run)
-        run: |
-          mkdir -p artifacts/ci
-          maxionbench submit-slurm-plan --dry-run --json | tee artifacts/ci/slurm_submit_plan_dry_run.json
-
-      - name: Verify Slurm submit plan dependency topology (dry-run, GPU omitted)
-        run: |
-          mkdir -p artifacts/ci
-          maxionbench submit-slurm-plan --skip-gpu --dry-run --json | tee artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
-
-      - name: Verify Slurm submit plan dependency topology (dry-run, paper override, GPU omitted)
-        run: |
-          mkdir -p artifacts/ci
-          maxionbench submit-slurm-plan \
+          mkdir -p artifacts/ci/workstation_cpu_matrix
+          python -m maxionbench.orchestration.run_matrix \
             --scenario-config-dir configs/scenarios_paper \
-            --skip-gpu \
-            --dry-run \
-            --json | tee artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json
+            --engine-config-dir configs/engines \
+            --out-dir artifacts/ci/workstation_cpu_matrix \
+            --output-root artifacts/runs/paper_cpu_matrix \
+            --lane cpu \
+            --json | tee artifacts/ci/workstation_cpu_matrix/summary.json
 
-      - name: Validate Slurm plan snapshot payloads
+      - name: Build workstation GPU matrix
         run: |
-          maxionbench validate-slurm-snapshots \
-            --verify-path artifacts/ci/slurm_plan_verify.json \
-            --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
-            --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
-            --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
-            --submit-path artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json \
-            --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
-            --json | tee artifacts/ci/slurm_snapshot_validation.json
+          mkdir -p artifacts/ci/workstation_gpu_matrix
+          python -m maxionbench.orchestration.run_matrix \
+            --scenario-config-dir configs/scenarios_paper \
+            --engine-config-dir configs/engines \
+            --out-dir artifacts/ci/workstation_gpu_matrix \
+            --output-root artifacts/runs/paper_gpu_matrix \
+            --lane gpu \
+            --json | tee artifacts/ci/workstation_gpu_matrix/summary.json
 
       - name: Write required checks snapshot
         run: |
@@ -228,24 +214,6 @@ jobs:
             --strict \
             --json
 
-      - name: Run consolidated CI protocol audit
-        run: |
-          maxionbench ci-protocol-audit \
-            --config-dir configs/scenarios \
-            --slurm-dir maxionbench/orchestration/slurm \
-            --manifest-dir maxionbench/datasets/manifests \
-            --verify-path artifacts/ci/slurm_plan_verify.json \
-            --verify-path artifacts/ci/slurm_plan_verify_skip_gpu.json \
-            --submit-path artifacts/ci/slurm_submit_plan_dry_run.json \
-            --submit-path artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json \
-            --submit-path artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json \
-            --required-baseline-scenario configs/scenarios/s1_ann_frontier_d3.yaml \
-            --report-input artifacts/figures/ci_preflight \
-            --require-report-policy \
-            --output artifacts/ci/ci_protocol_audit.json \
-            --strict \
-            --json
-
       - name: Assert report outputs
         run: |
           test -f artifacts/figures/ci_preflight/m2_runner_stage_timing.png
@@ -262,13 +230,8 @@ jobs:
             ci_s1_smoke.yaml
             artifacts/ci/required_checks_snapshot.json
             artifacts/ci/report_output_policy_summary.json
-            artifacts/ci/slurm_plan_verify.json
-            artifacts/ci/slurm_plan_verify_skip_gpu.json
-            artifacts/ci/slurm_submit_plan_dry_run.json
-            artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json
-            artifacts/ci/slurm_submit_plan_paper_skip_gpu_dry_run.json
-            artifacts/ci/slurm_snapshot_validation.json
-            artifacts/ci/ci_protocol_audit.json
+            artifacts/ci/workstation_cpu_matrix/**
+            artifacts/ci/workstation_gpu_matrix/**
             artifacts/runs/ci_preflight/**
             artifacts/figures/ci_preflight/**
 

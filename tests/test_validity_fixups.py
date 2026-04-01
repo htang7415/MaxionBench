@@ -151,8 +151,3 @@ def test_paper_scenario_configs_require_strict_timing_mode() -> None:
         payload = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert isinstance(payload, dict)
         assert payload.get("phase_timing_mode") == "strict"
-
-
-def test_remote_gpu_profile_uses_placeholder_account() -> None:
-    payload = yaml.safe_load(Path("maxionbench/orchestration/slurm/profiles_local.yaml").read_text(encoding="utf-8"))
-    assert payload["remote_gpu"]["base"][-1] == ["--account", "<cluster-account>"]

@@ -4,17 +4,22 @@ from pathlib import Path
 import subprocess
 
 
-def test_docker_workflow_files_exist_and_reference_engine_mapping() -> None:
+def test_docker_workflow_files_exist_and_reference_cpu_and_gpu_benchmarks() -> None:
     compose_path = Path("docker-compose.yml")
     run_script = Path("run_docker_scenario.sh")
     env_example = Path(".env.docker.example")
+    gpu_dockerfile = Path("Dockerfile.gpu")
 
     assert compose_path.exists()
     assert run_script.exists()
     assert env_example.exists()
+    assert gpu_dockerfile.exists()
 
     compose_text = compose_path.read_text(encoding="utf-8")
     assert "benchmark:" in compose_text
+    assert "benchmark-gpu:" in compose_text
+    assert "dockerfile: Dockerfile.gpu" in compose_text
+    assert "gpus: all" in compose_text
     assert "qdrant:" in compose_text
     assert "pgvector:" in compose_text
     assert "opensearch:" in compose_text
@@ -25,9 +30,12 @@ def test_docker_workflow_files_exist_and_reference_engine_mapping() -> None:
     assert "MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI" in compose_text
 
     script_text = run_script.read_text(encoding="utf-8")
-    assert "docker compose build benchmark" in script_text
-    assert "wait-adapter --config" in script_text
-    assert "docker compose run --rm benchmark run --config" in script_text
+    assert "--benchmark-service" in script_text
+    assert 'BENCHMARK_SERVICE="benchmark-gpu"' in script_text
+    assert 'docker compose build "${BENCHMARK_SERVICE}"' in script_text
+    assert 'docker compose run --rm "${BENCHMARK_SERVICE}" wait-adapter --config "${CONFIG_PATH_CONTAINER}"' in script_text
+    assert 'docker compose run --rm "${BENCHMARK_SERVICE}" run --config "${CONFIG_PATH_CONTAINER}"' in script_text
+    assert 'CONFIG_PATH_CONTAINER="/workspace/' in script_text
     assert "SERVICES=(qdrant)" in script_text
     assert "SERVICES=(milvus)" in script_text
     assert "SERVICES=(opensearch)" in script_text

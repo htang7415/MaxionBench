@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from maxionbench.cli import main as cli_main
 from maxionbench.conformance import matrix as conformance_matrix_mod
-from maxionbench.orchestration.slurm import submit_plan as submit_plan_mod
 from maxionbench.orchestration import runner as runner_mod
-from maxionbench.tools import ci_protocol_audit as ci_protocol_audit_mod
-from maxionbench.tools import download_datasets as download_datasets_mod
 from maxionbench.tools import download_d1 as download_d1_mod
+from maxionbench.tools import download_datasets as download_datasets_mod
 from maxionbench.tools import preprocess_datasets as preprocess_datasets_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
 from maxionbench.tools import verify_conformance_configs as verify_conformance_configs_mod
@@ -17,9 +17,8 @@ from maxionbench.tools import verify_dataset_manifests as verify_dataset_manifes
 from maxionbench.tools import verify_engine_readiness as verify_engine_readiness_mod
 from maxionbench.tools import verify_pins as verify_pins_mod
 from maxionbench.tools import verify_promotion_gate as verify_promotion_gate_mod
-from maxionbench.tools import verify_slurm_plan as verify_slurm_plan_mod
-from maxionbench.tools import validate_slurm_snapshots as validate_slurm_snapshots_mod
 from maxionbench.tools import wait_adapter as wait_adapter_mod
+from maxionbench.tools import pre_run_gate as pre_run_gate_mod
 
 
 def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -116,7 +115,7 @@ def test_cli_verify_branch_protection_dispatches_optional_flags(monkeypatch) -> 
     ]
 
 
-def test_cli_conformance_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_cli_conformance_matrix_omits_empty_adapters_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
     def _fake_main(argv: list[str] | None = None) -> int:
@@ -143,6 +142,40 @@ def test_cli_conformance_matrix_dispatches_flags(monkeypatch) -> None:  # type: 
         "artifacts/conformance",
         "--timeout-s",
         "45.5",
+    ]
+
+
+def test_cli_conformance_matrix_passes_nonempty_adapters_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 40
+
+    monkeypatch.setattr(conformance_matrix_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "conformance-matrix",
+            "--config-dir",
+            "configs/conformance",
+            "--out-dir",
+            "artifacts/conformance",
+            "--timeout-s",
+            "45.5",
+            "--adapters",
+            "mock,qdrant",
+        ]
+    )
+    assert code == 40
+    assert captured["argv"] == [
+        "--config-dir",
+        "configs/conformance",
+        "--out-dir",
+        "artifacts/conformance",
+        "--timeout-s",
+        "45.5",
+        "--adapters",
+        "mock,qdrant",
     ]
 
 
@@ -178,411 +211,35 @@ def test_cli_wait_adapter_dispatches_config_flags(monkeypatch) -> None:  # type:
     ]
 
 
-def test_cli_submit_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 41
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "123",
-            "--skip-gpu",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 41
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "123",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--skip-gpu",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_scenario_config_dir(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 141
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--scenario-config-dir",
-            "configs/scenarios_paper",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 141
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--scenario-config-dir",
-        "configs/scenarios_paper",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_slurm_profile(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 241
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--slurm-profile",
-            "your_cluster",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 241
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--slurm-profile",
-        "your_cluster",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_output_root(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 242
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--output-root",
-            "artifacts/workstation_runs/example/results/slurm",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 242
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--output-root",
-        "artifacts/workstation_runs/example/results/slurm",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_container_runtime_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 243
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--container-runtime",
-            "apptainer",
-            "--container-image",
-            "/shared/containers/maxionbench.sif",
-            "--container-bind",
-            "/shared/datasets",
-            "--container-bind",
-            "/shared/models/hf:/shared/models/hf",
-            "--hf-cache-dir",
-            "/shared/models/hf",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 243
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--container-runtime",
-        "apptainer",
-        "--container-image",
-        "/shared/containers/maxionbench.sif",
-        "--container-bind",
-        "/shared/datasets",
-        "--container-bind",
-        "/shared/models/hf:/shared/models/hf",
-        "--hf-cache-dir",
-        "/shared/models/hf",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_prefetch_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 244
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--prefetch-datasets",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 244
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--prefetch-datasets",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_prepare_containers_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 344
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--prepare-containers",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 344
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--prepare-containers",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_submit_slurm_plan_dispatches_full_matrix_pipeline_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 245
-
-    monkeypatch.setattr(submit_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "submit-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--seed",
-            "42",
-            "--scenario-config-dir",
-            "configs/scenarios_paper",
-            "--engine-config-dir",
-            "configs/engines",
-            "--run-manifest-dir",
-            "artifacts/slurm_manifests/latest",
-            "--download-datasets",
-            "--preprocess-datasets",
-            "--include-postprocess",
-            "--full-matrix",
-            "--dry-run",
-            "--json",
-        ]
-    )
-    assert code == 245
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--seed",
-        "42",
-        "--scenario-config-dir",
-        "configs/scenarios_paper",
-        "--engine-config-dir",
-        "configs/engines",
-        "--run-manifest-dir",
-        "artifacts/slurm_manifests/latest",
-        "--download-datasets",
-        "--preprocess-datasets",
-        "--include-postprocess",
-        "--full-matrix",
-        "--dry-run",
-        "--json",
-    ]
-
-
-def test_cli_verify_slurm_plan_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 43
-
-    monkeypatch.setattr(verify_slurm_plan_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-slurm-plan",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--skip-gpu",
-            "--json",
-        ]
-    )
-    assert code == 43
-    assert captured["argv"] == [
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--skip-gpu",
-        "--json",
-    ]
-
-
-def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 45
-
-    monkeypatch.setattr(verify_dataset_manifests_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-dataset-manifests",
-            "--manifest-dir",
-            "maxionbench/datasets/manifests",
-            "--json",
-        ]
-    )
-    assert code == 45
-    assert captured["argv"] == [
-        "--manifest-dir",
-        "maxionbench/datasets/manifests",
-        "--json",
-    ]
-
-
 def test_cli_download_d1_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
     def _fake_main(argv: list[str] | None = None) -> int:
         captured["argv"] = list(argv or [])
-        return 46
+        return 51
 
     monkeypatch.setattr(download_d1_mod, "main", _fake_main)
     code = cli_main(
         [
             "download-d1",
             "--dataset-name",
-            "deep-image-96-angular",
+            "gist-960-euclidean",
             "--output",
-            "data/d1/deep-image-96-angular.hdf5",
+            "dataset/raw/gist.hdf5",
             "--force",
             "--timeout-s",
-            "12.5",
+            "99",
             "--json",
         ]
     )
-    assert code == 46
+    assert code == 51
     assert captured["argv"] == [
         "--dataset-name",
-        "deep-image-96-angular",
+        "gist-960-euclidean",
         "--timeout-s",
-        "12.5",
+        "99.0",
         "--output",
-        "data/d1/deep-image-96-angular.hdf5",
+        "dataset/raw/gist.hdf5",
         "--force",
         "--json",
     ]
@@ -593,7 +250,7 @@ def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: i
 
     def _fake_main(argv: list[str] | None = None) -> int:
         captured["argv"] = list(argv or [])
-        return 47
+        return 53
 
     monkeypatch.setattr(download_datasets_mod, "main", _fake_main)
     code = cli_main(
@@ -604,28 +261,75 @@ def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: i
             "--cache-dir",
             ".cache",
             "--crag-examples",
-            "500",
+            "123",
             "--skip-d3",
             "--force",
             "--timeout-s",
-            "42.0",
+            "77",
             "--json",
         ]
     )
-    assert code == 47
+    assert code == 53
     assert captured["argv"] == [
         "--root",
         "dataset",
         "--cache-dir",
         ".cache",
         "--crag-examples",
-        "500",
+        "123",
         "--timeout-s",
-        "42.0",
+        "77.0",
         "--skip-d3",
         "--force",
         "--json",
     ]
+
+
+def test_cli_preprocess_datasets_dispatches_ann_hdf5(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 55
+
+    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "preprocess-datasets",
+            "ann-hdf5",
+            "--input",
+            "dataset/raw/d1.hdf5",
+            "--out",
+            "dataset/processed/D1/gist-960-euclidean",
+            "--family",
+            "ann-benchmarks",
+            "--name",
+            "gist-960-euclidean",
+            "--metric",
+            "euclidean",
+            "--json",
+        ]
+    )
+    assert code == 55
+    assert captured["argv"] == [
+        "ann-hdf5",
+        "--out",
+        "dataset/processed/D1/gist-960-euclidean",
+        "--input",
+        "dataset/raw/d1.hdf5",
+        "--family",
+        "ann-benchmarks",
+        "--name",
+        "gist-960-euclidean",
+        "--metric",
+        "euclidean",
+        "--json",
+    ]
+
+
+def test_cli_preprocess_datasets_rejects_missing_required_flags() -> None:
+    with pytest.raises(SystemExit):
+        cli_main(["preprocess-datasets", "ann-hdf5", "--out", "dataset/processed/D1/gist-960-euclidean"])
 
 
 def test_cli_verify_conformance_configs_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -633,114 +337,28 @@ def test_cli_verify_conformance_configs_dispatches_flags(monkeypatch) -> None:  
 
     def _fake_main(argv: list[str] | None = None) -> int:
         captured["argv"] = list(argv or [])
-        return 52
+        return 57
 
     monkeypatch.setattr(verify_conformance_configs_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-conformance-configs",
-            "--config-dir",
-            "configs/conformance",
-            "--allow-gpu-unavailable",
-            "--json",
-        ]
-    )
-    assert code == 52
-    assert captured["argv"] == [
-        "--config-dir",
-        "configs/conformance",
-        "--allow-gpu-unavailable",
-        "--json",
-    ]
+    code = cli_main(["verify-conformance-configs", "--config-dir", "configs/conformance", "--allow-gpu-unavailable", "--json"])
+    assert code == 57
+    assert captured["argv"] == ["--config-dir", "configs/conformance", "--allow-gpu-unavailable", "--json"]
 
 
-def test_cli_verify_pins_dispatches_dev_scale_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_cli_verify_d3_calibration_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
     def _fake_main(argv: list[str] | None = None) -> int:
         captured["argv"] = list(argv or [])
-        return 48
+        return 59
 
-    monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-pins",
-            "--config-dir",
-            "configs/scenarios",
-            "--allow-dev-calibrate-d3-scale",
-            "--json",
-        ]
-    )
-    assert code == 48
-    assert captured["argv"] == [
-        "--config-dir",
-        "configs/scenarios",
-        "--allow-dev-calibrate-d3-scale",
-        "--json",
-    ]
+    monkeypatch.setattr(verify_d3_calibration_mod, "main", _fake_main)
+    code = cli_main(["verify-d3-calibration", "--d3-params", "artifacts/calibration/d3_params.yaml", "--strict", "--json"])
+    assert code == 59
+    assert captured["argv"] == ["--d3-params", "artifacts/calibration/d3_params.yaml", "--min-vectors", "10000000", "--strict", "--json"]
 
 
-def test_cli_verify_pins_dispatches_strict_d3_scale_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 148
-
-    monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-pins",
-            "--config-dir",
-            "configs/scenarios",
-            "--strict-d3-scenario-scale",
-            "--json",
-        ]
-    )
-    assert code == 148
-    assert captured["argv"] == [
-        "--config-dir",
-        "configs/scenarios",
-        "--strict-d3-scenario-scale",
-        "--json",
-    ]
-
-
-def test_cli_verify_engine_readiness_dispatches_require_mock_pass(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 49
-
-    monkeypatch.setattr(verify_engine_readiness_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-engine-readiness",
-            "--conformance-matrix",
-            "artifacts/conformance/conformance_matrix.csv",
-            "--behavior-dir",
-            "docs/behavior",
-            "--allow-gpu-unavailable",
-            "--allow-nonpass-status",
-            "--require-mock-pass",
-            "--json",
-        ]
-    )
-    assert code == 49
-    assert captured["argv"] == [
-        "--conformance-matrix",
-        "artifacts/conformance/conformance_matrix.csv",
-        "--behavior-dir",
-        "docs/behavior",
-        "--allow-gpu-unavailable",
-        "--allow-nonpass-status",
-        "--require-mock-pass",
-        "--json",
-    ]
-
-
-def test_cli_verify_engine_readiness_dispatches_target_adapter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_cli_verify_engine_readiness_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
     def _fake_main(argv: list[str] | None = None) -> int:
@@ -755,6 +373,9 @@ def test_cli_verify_engine_readiness_dispatches_target_adapter(monkeypatch) -> N
             "artifacts/conformance/conformance_matrix.csv",
             "--behavior-dir",
             "docs/behavior",
+            "--allow-gpu-unavailable",
+            "--allow-nonpass-status",
+            "--require-mock-pass",
             "--target-adapter",
             "qdrant",
             "--json",
@@ -766,354 +387,98 @@ def test_cli_verify_engine_readiness_dispatches_target_adapter(monkeypatch) -> N
         "artifacts/conformance/conformance_matrix.csv",
         "--behavior-dir",
         "docs/behavior",
+        "--allow-gpu-unavailable",
+        "--allow-nonpass-status",
+        "--require-mock-pass",
         "--target-adapter",
         "qdrant",
         "--json",
     ]
 
 
-def test_cli_verify_promotion_gate_dispatches_conformance_matrix(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_cli_pre_run_gate_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, list[str]] = {}
 
     def _fake_main(argv: list[str] | None = None) -> int:
         captured["argv"] = list(argv or [])
-        return 59
+        return 63
+
+    monkeypatch.setattr(pre_run_gate_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "pre-run-gate",
+            "--config",
+            "configs/scenarios/s1_ann_frontier.yaml",
+            "--conformance-matrix",
+            "artifacts/conformance/conformance_matrix.csv",
+            "--behavior-dir",
+            "docs/behavior",
+            "--allow-gpu-unavailable",
+            "--json",
+        ]
+    )
+    assert code == 63
+    assert captured["argv"] == [
+        "--config",
+        "configs/scenarios/s1_ann_frontier.yaml",
+        "--conformance-matrix",
+        "artifacts/conformance/conformance_matrix.csv",
+        "--behavior-dir",
+        "docs/behavior",
+        "--allow-gpu-unavailable",
+        "--json",
+    ]
+
+
+def test_cli_verify_pins_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 65
+
+    monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
+    code = cli_main(["verify-pins", "--config-dir", "configs/scenarios_paper", "--strict-d3-scenario-scale", "--json"])
+    assert code == 65
+    assert captured["argv"] == ["--config-dir", "configs/scenarios_paper", "--strict-d3-scenario-scale", "--json"]
+
+
+def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 67
+
+    monkeypatch.setattr(verify_dataset_manifests_mod, "main", _fake_main)
+    code = cli_main(["verify-dataset-manifests", "--manifest-dir", "maxionbench/datasets/manifests", "--json"])
+    assert code == 67
+    assert captured["argv"] == ["--manifest-dir", "maxionbench/datasets/manifests", "--json"]
+
+
+def test_cli_verify_promotion_gate_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 69
 
     monkeypatch.setattr(verify_promotion_gate_mod, "main", _fake_main)
     code = cli_main(
         [
             "verify-promotion-gate",
             "--strict-readiness-summary",
-            "artifacts/promotion/engine_readiness_summary.json",
+            "artifacts/conformance_strict/engine_readiness_summary.json",
             "--conformance-matrix",
-            "artifacts/promotion/conformance_matrix.csv",
+            "artifacts/conformance_strict/conformance_matrix.csv",
             "--json",
         ]
     )
-    assert code == 59
+    assert code == 69
     assert captured["argv"] == [
         "--strict-readiness-summary",
-        "artifacts/promotion/engine_readiness_summary.json",
+        "artifacts/conformance_strict/engine_readiness_summary.json",
         "--conformance-matrix",
-        "artifacts/promotion/conformance_matrix.csv",
+        "artifacts/conformance_strict/conformance_matrix.csv",
         "--json",
     ]
-
-
-def test_cli_verify_d3_calibration_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 46
-
-    monkeypatch.setattr(verify_d3_calibration_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "verify-d3-calibration",
-            "--d3-params",
-            "artifacts/calibration/d3_params.yaml",
-            "--min-vectors",
-            "10000000",
-            "--strict",
-            "--json",
-        ]
-    )
-    assert code == 46
-    assert captured["argv"] == [
-        "--d3-params",
-        "artifacts/calibration/d3_params.yaml",
-        "--min-vectors",
-        "10000000",
-        "--strict",
-        "--json",
-    ]
-
-
-def test_cli_validate_slurm_snapshots_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 47
-
-    monkeypatch.setattr(validate_slurm_snapshots_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "validate-slurm-snapshots",
-            "--verify-path",
-            "artifacts/ci/slurm_plan_verify.json",
-            "--verify-path",
-            "artifacts/ci/slurm_plan_verify_skip_gpu.json",
-            "--submit-path",
-            "artifacts/ci/slurm_submit_plan_dry_run.json",
-            "--submit-path",
-            "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json",
-            "--required-baseline-scenario",
-            "configs/scenarios/s1_ann_frontier_d3.yaml",
-            "--json",
-        ]
-    )
-    assert code == 47
-    assert captured["argv"] == [
-        "--required-baseline-scenario",
-        "configs/scenarios/s1_ann_frontier_d3.yaml",
-        "--verify-path",
-        "artifacts/ci/slurm_plan_verify.json",
-        "--verify-path",
-        "artifacts/ci/slurm_plan_verify_skip_gpu.json",
-        "--submit-path",
-        "artifacts/ci/slurm_submit_plan_dry_run.json",
-        "--submit-path",
-        "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json",
-        "--json",
-    ]
-
-
-def test_cli_ci_protocol_audit_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 53
-
-    monkeypatch.setattr(ci_protocol_audit_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "ci-protocol-audit",
-            "--config-dir",
-            "configs/scenarios",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--manifest-dir",
-            "maxionbench/datasets/manifests",
-            "--verify-path",
-            "artifacts/ci/slurm_plan_verify.json",
-            "--verify-path",
-            "artifacts/ci/slurm_plan_verify_skip_gpu.json",
-            "--submit-path",
-            "artifacts/ci/slurm_submit_plan_dry_run.json",
-            "--submit-path",
-            "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json",
-            "--required-baseline-scenario",
-            "configs/scenarios/s1_ann_frontier_d3.yaml",
-            "--report-input",
-            "artifacts/figures/ci_preflight",
-            "--require-report-policy",
-            "--output",
-            "artifacts/ci/ci_protocol_audit.json",
-            "--strict",
-            "--json",
-        ]
-    )
-    assert code == 53
-    assert captured["argv"] == [
-        "--config-dir",
-        "configs/scenarios",
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--manifest-dir",
-        "maxionbench/datasets/manifests",
-        "--required-baseline-scenario",
-        "configs/scenarios/s1_ann_frontier_d3.yaml",
-        "--output",
-        "artifacts/ci/ci_protocol_audit.json",
-        "--verify-path",
-        "artifacts/ci/slurm_plan_verify.json",
-        "--verify-path",
-        "artifacts/ci/slurm_plan_verify_skip_gpu.json",
-        "--submit-path",
-        "artifacts/ci/slurm_submit_plan_dry_run.json",
-        "--submit-path",
-        "artifacts/ci/slurm_submit_plan_skip_gpu_dry_run.json",
-        "--report-input",
-        "artifacts/figures/ci_preflight",
-        "--require-report-policy",
-        "--strict",
-        "--json",
-    ]
-
-
-def test_cli_ci_protocol_audit_dispatches_strict_d3_scenario_scale(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 153
-
-    monkeypatch.setattr(ci_protocol_audit_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "ci-protocol-audit",
-            "--config-dir",
-            "configs/scenarios",
-            "--slurm-dir",
-            "maxionbench/orchestration/slurm",
-            "--manifest-dir",
-            "maxionbench/datasets/manifests",
-            "--strict-d3-scenario-scale",
-            "--json",
-        ]
-    )
-    assert code == 153
-    assert captured["argv"] == [
-        "--config-dir",
-        "configs/scenarios",
-        "--slurm-dir",
-        "maxionbench/orchestration/slurm",
-        "--manifest-dir",
-        "maxionbench/datasets/manifests",
-        "--required-baseline-scenario",
-        "configs/scenarios/s1_ann_frontier_d3.yaml",
-        "--output",
-        "artifacts/ci/ci_protocol_audit.json",
-        "--strict-d3-scenario-scale",
-        "--json",
-    ]
-
-
-def test_cli_preprocess_datasets_dispatches_ann_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 271
-
-    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "preprocess-datasets",
-            "ann-hdf5",
-            "--input",
-            "dataset/raw/D1/glove-100-angular.hdf5",
-            "--out",
-            "dataset/processed/D1/glove-100-angular",
-            "--family",
-            "D1",
-            "--name",
-            "glove-100-angular",
-            "--metric",
-            "angular",
-            "--json",
-        ]
-    )
-    assert code == 271
-    assert captured["argv"] == [
-        "ann-hdf5",
-        "--out",
-        "dataset/processed/D1/glove-100-angular",
-        "--input",
-        "dataset/raw/D1/glove-100-angular.hdf5",
-        "--family",
-        "D1",
-        "--name",
-        "glove-100-angular",
-        "--metric",
-        "angular",
-        "--json",
-    ]
-
-
-def test_cli_preprocess_datasets_dispatches_d3_yfcc_raw_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 314
-
-    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "preprocess-datasets",
-            "d3-yfcc-raw",
-            "--input",
-            "dataset/D3/yfcc-10M",
-            "--out",
-            "dataset/explicit/D3/yfcc-10M",
-            "--query-split",
-            "public",
-            "--skip-payloads",
-            "--json",
-        ]
-    )
-    assert code == 314
-    assert captured["argv"] == [
-        "d3-yfcc-raw",
-        "--out",
-        "dataset/explicit/D3/yfcc-10M",
-        "--input",
-        "dataset/D3/yfcc-10M",
-        "--query-split",
-        "public",
-        "--skip-payloads",
-        "--json",
-    ]
-
-
-def test_cli_preprocess_datasets_dispatches_d3_yfcc_mode(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    captured: dict[str, list[str]] = {}
-
-    def _fake_main(argv: list[str] | None = None) -> int:
-        captured["argv"] = list(argv or [])
-        return 315
-
-    monkeypatch.setattr(preprocess_datasets_mod, "main", _fake_main)
-    code = cli_main(
-        [
-            "preprocess-datasets",
-            "d3-yfcc",
-            "--input",
-            "dataset/D3/yfcc-10M",
-            "--out",
-            "dataset/processed/D3/yfcc-10M",
-            "--query-split",
-            "public",
-            "--json",
-        ]
-    )
-    assert code == 315
-    assert captured["argv"] == [
-        "d3-yfcc",
-        "--out",
-        "dataset/processed/D3/yfcc-10M",
-        "--input",
-        "dataset/D3/yfcc-10M",
-        "--query-split",
-        "public",
-        "--json",
-    ]
-
-
-def test_cli_preprocess_datasets_validates_mode_specific_args() -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        cli_main(
-            [
-                "preprocess-datasets",
-                "ann-hdf5",
-                "--out",
-                "dataset/processed/D1/glove-100-angular",
-            ]
-        )
-    assert excinfo.value.code == 2
-
-    with pytest.raises(SystemExit) as excinfo:
-        cli_main(
-            [
-                "preprocess-datasets",
-                "d3-yfcc-raw",
-                "--out",
-                "dataset/explicit/D3/yfcc-10M",
-            ]
-        )
-    assert excinfo.value.code == 2
-
-    with pytest.raises(SystemExit) as excinfo:
-        cli_main(
-            [
-                "preprocess-datasets",
-                "d3-yfcc",
-                "--out",
-                "dataset/processed/D3/yfcc-10M",
-            ]
-        )
-    assert excinfo.value.code == 2

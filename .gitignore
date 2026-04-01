@@ -6,8 +6,6 @@ AGENTS.md
 CLAUDE.md
 command-mac.md
 dataset
-.env.slurm.*
-!.env.slurm.example
 
 # Python bytecode/test caches
 __pycache__/
@@ -15,14 +13,8 @@ __pycache__/
 .pytest_cache/
 
 *.sh
-run_workstation.sh
-!run_slurm_pipeline.sh
-!scripts/build_containers.sh
-!maxionbench/orchestration/slurm/prepare_containers.sh
-!maxionbench/orchestration/slurm/download_datasets.sh
-!maxionbench/orchestration/slurm/preprocess_datasets.sh
-!maxionbench/orchestration/slurm/postprocess.sh
-!maxionbench/orchestration/slurm/service_contracts.sh
+!run_workstation.sh
+!run_docker_scenario.sh
 
 # Local generated benchmark outputs
 artifacts/ci/
@@ -33,6 +25,5 @@ artifacts/figures/
 artifacts/runs/
 artifacts/workstation_runs/
 ci_s1_smoke_local.yaml
-maxionbench/orchestration/slurm/profiles_local.yaml
 .claude/settings.local.json
 logs
