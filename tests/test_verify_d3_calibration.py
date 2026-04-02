@@ -14,8 +14,8 @@ def test_verify_d3_calibration_file_flags_non_paper_ready_payload(tmp_path: Path
         "calibration_eval": {
             "test_a_median_concentration": 0.54,
             "test_b_cluster_spread": 42.7,
-            "p99_ratio_1pct_to_50pct": 1.19,
-            "recall_gap_50_minus_1": -0.79,
+            "p99_ratio_50pct_to_1pct": 1.19,
+            "recall_gap_1_minus_50": 0.02,
             "trivial": True,
         },
         "calibration_vector_count": 10000,
@@ -35,8 +35,8 @@ def test_verify_d3_calibration_file_passes_for_paper_ready_payload(tmp_path: Pat
         "calibration_eval": {
             "test_a_median_concentration": 0.61,
             "test_b_cluster_spread": 24.0,
-            "p99_ratio_1pct_to_50pct": 2.3,
-            "recall_gap_50_minus_1": 0.08,
+            "p99_ratio_50pct_to_1pct": 2.3,
+            "recall_gap_1_minus_50": 0.08,
             "trivial": False,
         },
         "calibration_vector_count": 10000000,

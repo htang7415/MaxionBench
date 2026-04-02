@@ -19,6 +19,7 @@ def test_workstation_script_exists_and_references_local_matrix_workflow() -> Non
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI' in text
     assert 'artifacts/workstation_runs' in text
     assert 'processed_dataset_path' in text
+    assert 'expand_env_placeholders' in text
     assert 'missing_real_dataset_file' in text
     assert 'RUN_MATRIX_DIR' in text
     assert 'RUN_PREFLIGHT_DIR' in text
