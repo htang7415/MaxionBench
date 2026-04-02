@@ -23,8 +23,8 @@ from maxionbench.metrics.quality import recall_at_k
 
 MIN_TEST_A_MEDIAN_CONCENTRATION = 0.60
 MAX_TEST_B_CLUSTER_SPREAD = 25.0
-MIN_P99_RATIO_1PCT_TO_50PCT = 2.0
-MIN_RECALL_GAP_50_MINUS_1 = 0.05
+MIN_P99_RATIO_50PCT_TO_1PCT = 2.0
+MIN_RECALL_GAP_1_MINUS_50 = 0.05
 PAPER_MIN_CALIBRATION_VECTORS = 10_000_000
 
 
@@ -35,9 +35,11 @@ class CalibrationEval:
     p99_1pct_ms: float
     p99_50pct_ms: float
     p99_ratio_1pct_to_50pct: float
+    p99_ratio_50pct_to_1pct: float
     recall_1pct: float
     recall_50pct: float
     recall_gap_50_minus_1: float
+    recall_gap_1_minus_50: float
     trivial: bool
 
 
@@ -49,18 +51,33 @@ class CalibrationResult:
     adjusted: bool
 
 
-def is_trivial_curve(*, p99_ratio_1pct_to_50pct: float, recall_gap_50_minus_1: float) -> bool:
+def is_trivial_curve(
+    *,
+    p99_ratio_50pct_to_1pct: float | None = None,
+    recall_gap_1_minus_50: float | None = None,
+    p99_ratio_1pct_to_50pct: float | None = None,
+    recall_gap_50_minus_1: float | None = None,
+) -> bool:
     """Documented trivial-curve criterion for D3 calibration.
 
     Trivial when either latency separation is too small OR recall separation is too small:
-    p99_1% / p99_50% < 2.0 OR E_q[Recall@10_50% - Recall@10_1%] < 0.05
+    p99_50% / p99_1% < 2.0 OR E_q[Recall@10_1% - Recall@10_50%] < 0.05
     """
 
-    # Negative signed gap (recall@10_50% < recall@10_1%) still counts as trivial
-    # under the pinned document criterion because it is strictly < 0.05.
+    if p99_ratio_50pct_to_1pct is None:
+        legacy_ratio = _as_float(p99_ratio_1pct_to_50pct)
+        if legacy_ratio is None or legacy_ratio <= 0.0:
+            raise ValueError("p99 selectivity ratio must be positive")
+        p99_ratio_50pct_to_1pct = 1.0 / legacy_ratio
+    if recall_gap_1_minus_50 is None:
+        legacy_gap = _as_float(recall_gap_50_minus_1)
+        if legacy_gap is None:
+            raise ValueError("recall selectivity gap must be numeric")
+        recall_gap_1_minus_50 = -legacy_gap
+
     return (
-        p99_ratio_1pct_to_50pct < MIN_P99_RATIO_1PCT_TO_50PCT
-        or recall_gap_50_minus_1 < MIN_RECALL_GAP_50_MINUS_1
+        p99_ratio_50pct_to_1pct < MIN_P99_RATIO_50PCT_TO_1PCT
+        or recall_gap_1_minus_50 < MIN_RECALL_GAP_1_MINUS_50
     )
 
 
@@ -101,29 +118,23 @@ def paper_calibration_issues(
             f"{MAX_TEST_B_CLUSTER_SPREAD:.1f} (got {test_b:.6f})"
         )
 
-    p99_ratio = _as_float(eval_payload.get("p99_ratio_1pct_to_50pct"))
+    p99_ratio = _resolve_p99_ratio_50pct_to_1pct(eval_payload)
     if p99_ratio is None:
-        issues.append("calibration_eval.p99_ratio_1pct_to_50pct must be numeric")
-    elif p99_ratio < MIN_P99_RATIO_1PCT_TO_50PCT:
+        issues.append("calibration_eval.p99_ratio_50pct_to_1pct must be numeric")
+    elif p99_ratio < MIN_P99_RATIO_50PCT_TO_1PCT:
         issues.append(
-            "calibration_eval.p99_ratio_1pct_to_50pct must be >= "
-            f"{MIN_P99_RATIO_1PCT_TO_50PCT:.1f} (got {p99_ratio:.6f})"
+            "calibration_eval.p99_ratio_50pct_to_1pct must be >= "
+            f"{MIN_P99_RATIO_50PCT_TO_1PCT:.1f} (got {p99_ratio:.6f})"
         )
 
-    recall_gap = _as_float(eval_payload.get("recall_gap_50_minus_1"))
+    recall_gap = _resolve_recall_gap_1_minus_50(eval_payload)
     if recall_gap is None:
-        issues.append("calibration_eval.recall_gap_50_minus_1 must be numeric")
-    else:
-        if recall_gap < 0.0:
-            issues.append(
-                "calibration_eval.recall_gap_50_minus_1 is negative; "
-                "this inverts Recall@10_50% vs Recall@10_1% ordering and is not paper-ready"
-            )
-        if recall_gap < MIN_RECALL_GAP_50_MINUS_1:
-            issues.append(
-                "calibration_eval.recall_gap_50_minus_1 must be >= "
-                f"{MIN_RECALL_GAP_50_MINUS_1:.2f} (got {recall_gap:.6f})"
-            )
+        issues.append("calibration_eval.recall_gap_1_minus_50 must be numeric")
+    elif recall_gap < MIN_RECALL_GAP_1_MINUS_50:
+        issues.append(
+            "calibration_eval.recall_gap_1_minus_50 must be >= "
+            f"{MIN_RECALL_GAP_1_MINUS_50:.2f} (got {recall_gap:.6f})"
+        )
 
     trivial = eval_payload.get("trivial")
     if not isinstance(trivial, bool):
@@ -156,16 +167,19 @@ def calibrate_d3_params(
     initial_params: D3Params,
     *,
     seed: int = 42,
-    max_iters: int = 5,
+    max_iters: int = 6,
     beta_step: float = 0.05,
     top_k: int = 10,
+    max_beta: float = 1.0,
 ) -> CalibrationResult:
     params = initial_params
     adjusted = False
     last_eval: CalibrationEval | None = None
+    last_params: D3Params | None = None
     for iteration in range(1, max_iters + 1):
         dataset = generate_d3_dataset(vectors, params)
         current_eval = evaluate_calibration(dataset, seed=seed, top_k=top_k)
+        last_params = params
         last_eval = current_eval
         passes_tests = calibration_eval_passes_thresholds(current_eval)
         if passes_tests:
@@ -176,21 +190,25 @@ def calibrate_d3_params(
                 adjusted=adjusted,
             )
         adjusted = True
-        params = D3Params(
+        next_params = D3Params(
             k_clusters=params.k_clusters,
             num_tenants=params.num_tenants,
             num_acl_buckets=params.num_acl_buckets,
             num_time_buckets=params.num_time_buckets,
-            beta_tenant=min(0.95, params.beta_tenant + beta_step),
-            beta_acl=min(0.95, params.beta_acl + beta_step),
-            beta_time=min(0.95, params.beta_time + beta_step),
+            beta_tenant=min(max_beta, params.beta_tenant + beta_step),
+            beta_acl=min(max_beta, params.beta_acl + beta_step),
+            beta_time=min(max_beta, params.beta_time + beta_step),
             seed=params.seed,
         )
+        if next_params == params:
+            break
+        params = next_params
     assert last_eval is not None
+    assert last_params is not None
     return CalibrationResult(
-        selected_params=params,
+        selected_params=last_params,
         eval=last_eval,
-        iterations=max_iters,
+        iterations=iteration,
         adjusted=adjusted,
     )
 
@@ -242,12 +260,14 @@ def evaluate_calibration(
     p99_1 = percentile_ms(lat_1pct, 99)
     p99_50 = percentile_ms(lat_50pct, 99)
     p99_ratio = 0.0 if p99_50 <= 0.0 else p99_1 / p99_50
+    p99_ratio_inverse = 0.0 if p99_1 <= 0.0 else p99_50 / p99_1
     recall_1 = float(np.mean(np.asarray(rec_1pct, dtype=np.float64))) if rec_1pct else 0.0
     recall_50 = float(np.mean(np.asarray(rec_50pct, dtype=np.float64))) if rec_50pct else 0.0
     recall_gap = recall_50 - recall_1
+    recall_gap_inverse = recall_1 - recall_50
     trivial = is_trivial_curve(
-        p99_ratio_1pct_to_50pct=p99_ratio,
-        recall_gap_50_minus_1=recall_gap,
+        p99_ratio_50pct_to_1pct=p99_ratio_inverse,
+        recall_gap_1_minus_50=recall_gap_inverse,
     )
     return CalibrationEval(
         test_a_median_concentration=test_a,
@@ -255,9 +275,11 @@ def evaluate_calibration(
         p99_1pct_ms=p99_1,
         p99_50pct_ms=p99_50,
         p99_ratio_1pct_to_50pct=p99_ratio,
+        p99_ratio_50pct_to_1pct=p99_ratio_inverse,
         recall_1pct=recall_1,
         recall_50pct=recall_50,
         recall_gap_50_minus_1=recall_gap,
+        recall_gap_1_minus_50=recall_gap_inverse,
         trivial=trivial,
     )
 
@@ -275,7 +297,11 @@ def write_d3_params_yaml(
             "test_a_median_concentration": eval_data.test_a_median_concentration,
             "test_b_cluster_spread": eval_data.test_b_cluster_spread,
             "p99_ratio_1pct_to_50pct": eval_data.p99_ratio_1pct_to_50pct,
+            "p99_ratio_50pct_to_1pct": eval_data.p99_ratio_50pct_to_1pct,
             "recall_gap_50_minus_1": eval_data.recall_gap_50_minus_1,
+            "recall_gap_1_minus_50": eval_data.recall_gap_1_minus_50,
+            "recall_gap_1_minus_50_abs": abs(eval_data.recall_gap_1_minus_50),
+            "recall_gap_1_minus_50_negative": bool(eval_data.recall_gap_1_minus_50 < 0.0),
             "recall_gap_50_minus_1_abs": abs(eval_data.recall_gap_50_minus_1),
             "recall_gap_50_minus_1_negative": bool(eval_data.recall_gap_50_minus_1 < 0.0),
             "trivial": eval_data.trivial,
@@ -301,6 +327,26 @@ def _as_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _resolve_p99_ratio_50pct_to_1pct(eval_payload: Mapping[str, Any]) -> float | None:
+    direct = _as_float(eval_payload.get("p99_ratio_50pct_to_1pct"))
+    if direct is not None:
+        return direct
+    legacy = _as_float(eval_payload.get("p99_ratio_1pct_to_50pct"))
+    if legacy is None or legacy <= 0.0:
+        return None
+    return 1.0 / legacy
+
+
+def _resolve_recall_gap_1_minus_50(eval_payload: Mapping[str, Any]) -> float | None:
+    direct = _as_float(eval_payload.get("recall_gap_1_minus_50"))
+    if direct is not None:
+        return direct
+    legacy = _as_float(eval_payload.get("recall_gap_50_minus_1"))
+    if legacy is None:
+        return None
+    return -legacy
 
 
 def _exact_topk_ids(dataset: D3Dataset, query_vec: np.ndarray, mask: np.ndarray, *, top_k: int) -> list[int]:

@@ -339,39 +339,20 @@ maxionbench verify-conformance-configs --config-dir configs/conformance --json
 echo "==> Step 2: D3 calibration gate"
 if [[ "${SKIP_CALIBRATION}" -eq 0 ]]; then
   CALIBRATION_PATH_CHECK="$(python - <<'PY' "${CALIBRATE_CONFIG_PATH}"
-import os
 import pathlib
-import re
 import sys
 import yaml
 
+from maxionbench.orchestration.config_schema import expand_env_placeholders
+
 path = pathlib.Path(sys.argv[1])
-payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+payload = expand_env_placeholders(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
 if not isinstance(payload, dict):
     raise SystemExit("invalid calibrate_d3 config")
 
-def resolve_value(raw):
-    if isinstance(raw, str):
-        token = raw.strip()
-        match = re.fullmatch(
-            r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?\}|([A-Za-z_][A-Za-z0-9_]*))",
-            token,
-        )
-        if match is not None:
-            env_name = match.group(1) or match.group(3) or ""
-            default_value = match.group(2) if match.group(1) else None
-            env_value = str(os.environ.get(env_name, "")).strip()
-            if env_value:
-                return env_value
-            return str(default_value or "").strip()
-        return os.path.expandvars(token).strip()
-    if raw is None:
-        return ""
-    return str(raw).strip()
-
 required = bool(payload.get("calibration_require_real_data", False))
-processed_root = resolve_value(payload.get("processed_dataset_path"))
-dataset_path = resolve_value(payload.get("dataset_path"))
+processed_root = str(payload.get("processed_dataset_path") or "").strip()
+dataset_path = str(payload.get("dataset_path") or "").strip()
 
 resolved = ""
 if processed_root:

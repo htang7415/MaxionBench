@@ -606,8 +606,8 @@ def test_resolve_d3_params_reuses_calibrated_affinities_but_preserves_50m_k_pin(
         "calibration_eval": {
             "test_a_median_concentration": 0.61,
             "test_b_cluster_spread": 20.0,
-            "p99_ratio_1pct_to_50pct": 2.3,
-            "recall_gap_50_minus_1": 0.08,
+            "p99_ratio_50pct_to_1pct": 2.3,
+            "recall_gap_1_minus_50": 0.08,
             "trivial": False,
         },
         "calibration_vector_count": 10_000_000,
