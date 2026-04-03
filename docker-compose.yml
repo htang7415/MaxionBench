@@ -53,11 +53,10 @@ services:
       - pgvector_data:/var/lib/postgresql/data
 
   opensearch:
-    image: ${MAXIONBENCH_OPENSEARCH_IMAGE:-opensearchproject/opensearch:latest}
+    image: ${MAXIONBENCH_OPENSEARCH_IMAGE:-opensearchproject/opensearch:2.11.1}
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
-      plugins.security.disabled: "true"
       OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
     ulimits:
       memlock:

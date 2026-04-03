@@ -25,9 +25,13 @@ def test_docker_workflow_files_exist_and_reference_cpu_and_gpu_benchmarks() -> N
     assert "opensearch:" in compose_text
     assert "weaviate:" in compose_text
     assert "milvus:" in compose_text
+    assert "opensearchproject/opensearch:2.11.1" in compose_text
     assert "MAXIONBENCH_QDRANT_HOST: qdrant" in compose_text
     assert "MAXIONBENCH_PGVECTOR_DSN: postgresql://postgres:postgres@pgvector:5432/postgres" in compose_text
     assert "MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI" in compose_text
+
+    env_text = env_example.read_text(encoding="utf-8")
+    assert "MAXIONBENCH_OPENSEARCH_IMAGE=opensearchproject/opensearch:2.11.1" in env_text
 
     script_text = run_script.read_text(encoding="utf-8")
     assert "--benchmark-service" in script_text
