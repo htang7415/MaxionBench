@@ -163,6 +163,12 @@ if [[ "${BUILD_IMAGE}" -eq 1 ]]; then
 fi
 
 if [[ "${#SERVICES[@]}" -gt 0 ]]; then
+  if printf '%s\n' "${SERVICES[@]}" | grep -qx 'opensearch'; then
+    OPENSEARCH_DATA_DIR="${MAXIONBENCH_OPENSEARCH_DATA_DIR:-${ROOT_DIR}/artifacts/containers/opensearch_data}"
+    mkdir -p "${OPENSEARCH_DATA_DIR}"
+    # OpenSearch runs as uid 1000 in the container; make the host bind mount writable.
+    chmod 0777 "${OPENSEARCH_DATA_DIR}"
+  fi
   docker compose up -d "${SERVICES[@]}"
 fi
 
