@@ -1,0 +1,15 @@
+{
+  "adapter": "qdrant",
+  "adapter_options": {
+    "host": "qdrant",
+    "port": "6333",
+    "timeout_s": 30.0
+  },
+  "poll_interval_s": 1.0,
+  "ready": true,
+  "tcp_probe": {
+    "host": "qdrant",
+    "port": 6333
+  },
+  "timeout_s": 120.0
+}

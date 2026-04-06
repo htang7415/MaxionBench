@@ -1,0 +1,14 @@
+{
+  "adapter": "milvus",
+  "adapter_options": {
+    "host": "milvus",
+    "port": "19530"
+  },
+  "poll_interval_s": 1.0,
+  "ready": true,
+  "tcp_probe": {
+    "host": "milvus",
+    "port": 19530
+  },
+  "timeout_s": 120.0
+}
