@@ -1,0 +1,796 @@
+{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_healthcheck"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_filter_correctness"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_update_payload_semantics"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_delete_semantics"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_insert_and_batch_query"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_stats_minimum_fields"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E{"event": "conformance_test_start", "nodeid": "maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path"}
+{"adapter": "pgvector", "adapter_options": {"dsn": "postgresql://postgres:postgres@127.0.0.1:5432/postgres", "index_method": "none", "schema": "public"}, "collection": "conformance", "dimension": 4, "event": "conformance_adapter_context", "metric": "ip"}
+E
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_healthcheck ______________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+_______________ ERROR at setup of test_flush_controls_visibility _______________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+__________________ ERROR at setup of test_filter_correctness ___________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+_______________ ERROR at setup of test_update_vectors_semantics ________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+_______________ ERROR at setup of test_update_payload_semantics ________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+___________________ ERROR at setup of test_delete_semantics ____________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+________________ ERROR at setup of test_insert_and_batch_query _________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+_________________ ERROR at setup of test_stats_minimum_fields __________________
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+_____ ERROR at setup of test_optimize_or_compact_does_not_break_read_path ______
+
+    @pytest.fixture()
+    def adapter() -> Iterable[object]:
+        adapter_name = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER", "mock")
+        options_json = os.environ.get("MAXIONBENCH_CONFORMANCE_ADAPTER_OPTIONS_JSON", "{}")
+        options = json.loads(options_json)
+        collection = os.environ.get("MAXIONBENCH_CONFORMANCE_COLLECTION", "conformance")
+        dimension = int(os.environ.get("MAXIONBENCH_CONFORMANCE_DIMENSION", "4"))
+        metric = os.environ.get("MAXIONBENCH_CONFORMANCE_METRIC", "ip")
+    
+        emit_adapter_context(
+            adapter_name=adapter_name,
+            adapter_options=options,
+            collection=collection,
+            dimension=dimension,
+            metric=metric,
+        )
+        emit_pre_create_diagnostics(adapter_name=adapter_name, adapter_options=options)
+        create_started = time.perf_counter()
+>       inst = create_adapter(adapter_name, **options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+maxionbench/conformance/fixtures.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+maxionbench/adapters/__init__.py:43: in create_adapter
+    return _ADAPTERS[key](**kwargs)  # type: ignore[call-arg]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+maxionbench/adapters/pgvector.py:46: in __init__
+    self._writer = psycopg.connect(dsn, autocommit=False, connect_timeout=int(connect_timeout_s))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'psycopg.Connection'>
+conninfo = 'user=postgres password=postgres dbname=postgres host=127.0.0.1 port=5432 connect_timeout=10 hostaddr=127.0.0.1'
+autocommit = False, prepare_threshold = 5, context = None, row_factory = None
+cursor_factory = None, kwargs = {'connect_timeout': 10}
+params = {'connect_timeout': 10, 'dbname': 'postgres', 'host': '127.0.0.1', 'password': 'postgres', ...}
+timeout = 10
+
+    @classmethod
+    def connect(
+        cls,
+        conninfo: str = "",
+        *,
+        autocommit: bool = False,
+        prepare_threshold: int | None = 5,
+        context: AdaptContext | None = None,
+        row_factory: RowFactory[Row] | None = None,
+        cursor_factory: type[Cursor[Row]] | None = None,
+        **kwargs: ConnParam,
+    ) -> Self:
+        """
+        Connect to a database server and return a new `Connection` instance.
+        """
+    
+        params = cls._get_connection_params(conninfo, **kwargs)
+        timeout = timeout_from_conninfo(params)
+        rv = None
+        attempts = conninfo_attempts(params)
+        conn_errors: list[tuple[e.Error, str]] = []
+        for attempt in attempts:
+            tdescr = (attempt.get("host"), attempt.get("port"), attempt.get("hostaddr"))
+            descr = "host: %r, port: %r, hostaddr: %r" % tdescr
+            logger.debug("connection attempt: %s", descr)
+            try:
+                conninfo = make_conninfo("", **attempt)
+                gen = cls._connect_gen(conninfo, timeout=timeout)
+                rv = waiting.wait_conn(gen, interval=_WAIT_INTERVAL)
+            except e.Error as ex:
+                logger.debug("connection failed: %s: %s", descr, str(ex))
+                conn_errors.append((ex, descr))
+            except e._NO_TRACEBACK as ex:
+                raise ex.with_traceback(None)
+            else:
+                logger.debug("connection succeeded: %s", descr)
+                break
+    
+        if not rv:
+            last_ex = conn_errors[-1][0]
+            if len(conn_errors) == 1:
+>               raise last_ex.with_traceback(None)
+E               psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "postgres"
+
+/home/htang228/anaconda3/envs/maxion/lib/python3.11/site-packages/psycopg/connection.py:122: OperationalError
+=========================== short test summary info ============================
+ERROR maxionbench/conformance/test_conformance.py::test_healthcheck - psycopg...
+ERROR maxionbench/conformance/test_conformance.py::test_flush_controls_visibility
+ERROR maxionbench/conformance/test_conformance.py::test_filter_correctness - ...
+ERROR maxionbench/conformance/test_conformance.py::test_update_vectors_semantics
+ERROR maxionbench/conformance/test_conformance.py::test_update_payload_semantics
+ERROR maxionbench/conformance/test_conformance.py::test_delete_semantics - ps...
+ERROR maxionbench/conformance/test_conformance.py::test_insert_and_batch_query
+ERROR maxionbench/conformance/test_conformance.py::test_stats_minimum_fields
+ERROR maxionbench/conformance/test_conformance.py::test_optimize_or_compact_does_not_break_read_path
+9 errors in 0.44s
