@@ -12,12 +12,19 @@ def test_workstation_script_exists_and_references_local_matrix_workflow() -> Non
     assert 'ENGINE_CONFIG_DIR="configs/engines"' in text
     assert 'LANE="cpu"' in text
     assert "--lane <cpu|gpu|all>" in text
+    assert "--skip-completed" in text
+    assert "--continue-on-failure" in text
+    assert "--resume-bundle <path|id>" in text
+    assert "--engine-filter <csv>" in text
+    assert "--template-filter <csv>" in text
+    assert "--no-prebuild" in text
     assert 'python -m maxionbench.orchestration.run_matrix' in text
     assert 'python -m maxionbench.orchestration.local_preflight' in text
     assert 'bash run_docker_scenario.sh' in text
     assert 'benchmark-gpu' in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI' in text
     assert 'artifacts/workstation_runs' in text
+    assert 'run_status_is_success' in text
     assert 'processed_dataset_path' in text
     assert 'expand_env_placeholders' in text
     assert 'missing_real_dataset_file' in text
