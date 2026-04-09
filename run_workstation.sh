@@ -10,8 +10,21 @@ LANE="cpu"
 SEED="42"
 SKIP_S6=0
 SKIP_CALIBRATION=0
+SKIP_COMPLETED=0
+CONTINUE_ON_FAILURE=0
+PREBUILD_IMAGES=1
+RESUME_BUNDLE=""
+ENGINE_FILTER=""
+SCENARIO_FILTER=""
+TEMPLATE_FILTER=""
+MAX_RUNS=""
 SCRATCH_DIR="${MAXIONBENCH_WORKSTATION_SCRATCH:-${ROOT_DIR}}"
 ORIGINAL_ARGS=("$@")
+COMPLETED_RUNS=0
+SKIPPED_RUNS=0
+FAILED_RUNS=0
+CALIBRATION_STATUS="ran"
+FAILED_ROW_LABELS=()
 
 usage() {
   cat <<'EOF'
@@ -37,6 +50,14 @@ Options:
   --scratch-dir <path>         Filesystem root used for local preflight (default: repo root or MAXIONBENCH_WORKSTATION_SCRATCH)
   --skip-s6                    Exclude S6 from generated run matrix
   --skip-calibration           Skip calibrate_d3 + verify-d3-calibration
+  --skip-completed             Skip rows whose output_dir already has run_status=success
+  --continue-on-failure        Continue executing later rows after an individual row fails
+  --resume-bundle <path|id>    Reuse an existing bundle root under artifacts/workstation_runs
+  --engine-filter <csv>        Run only matching engine names from the generated matrix
+  --scenario-filter <csv>      Run only matching scenario names from the generated matrix
+  --template-filter <csv>      Run only matching template file names from the generated matrix
+  --max-runs <int>             Execute at most N selected matrix rows after filtering
+  --no-prebuild                Skip one-time docker compose build; service rows build on demand
   -h, --help                   Show this help
 
 Notes:
@@ -74,6 +95,38 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-calibration)
       SKIP_CALIBRATION=1
+      shift
+      ;;
+    --skip-completed)
+      SKIP_COMPLETED=1
+      shift
+      ;;
+    --continue-on-failure)
+      CONTINUE_ON_FAILURE=1
+      shift
+      ;;
+    --resume-bundle)
+      RESUME_BUNDLE="${2:-}"
+      shift 2
+      ;;
+    --engine-filter)
+      ENGINE_FILTER="${2:-}"
+      shift 2
+      ;;
+    --scenario-filter)
+      SCENARIO_FILTER="${2:-}"
+      shift 2
+      ;;
+    --template-filter)
+      TEMPLATE_FILTER="${2:-}"
+      shift 2
+      ;;
+    --max-runs)
+      MAX_RUNS="${2:-}"
+      shift 2
+      ;;
+    --no-prebuild)
+      PREBUILD_IMAGES=0
       shift
       ;;
     -h|--help)
@@ -117,6 +170,12 @@ if [[ ! -d "${SCRATCH_DIR}" ]]; then
   echo "error: scratch dir does not exist: ${SCRATCH_DIR}" >&2
   exit 2
 fi
+if [[ -n "${MAX_RUNS}" ]]; then
+  if ! [[ "${MAX_RUNS}" =~ ^[0-9]+$ ]] || [[ "${MAX_RUNS}" -eq 0 ]]; then
+    echo "error: --max-runs must be a positive integer" >&2
+    exit 2
+  fi
+fi
 
 CALIBRATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
 if [[ "${SKIP_CALIBRATION}" -eq 0 && ! -f "${CALIBRATE_CONFIG_PATH}" ]]; then
@@ -124,9 +183,21 @@ if [[ "${SKIP_CALIBRATION}" -eq 0 && ! -f "${CALIBRATE_CONFIG_PATH}" ]]; then
   exit 2
 fi
 
-RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
-RUN_ID="workstation_${RUN_TS}"
-RUN_BUNDLE_ROOT="artifacts/workstation_runs/${RUN_ID}"
+if [[ -n "${RESUME_BUNDLE}" ]]; then
+  if [[ -d "${RESUME_BUNDLE}" ]]; then
+    RUN_BUNDLE_ROOT="$(cd "$(dirname "${RESUME_BUNDLE}")" && pwd)/$(basename "${RESUME_BUNDLE}")"
+  elif [[ -d "${ROOT_DIR}/artifacts/workstation_runs/${RESUME_BUNDLE}" ]]; then
+    RUN_BUNDLE_ROOT="${ROOT_DIR}/artifacts/workstation_runs/${RESUME_BUNDLE}"
+  else
+    echo "error: resume bundle not found: ${RESUME_BUNDLE}" >&2
+    exit 2
+  fi
+  RUN_ID="$(basename "${RUN_BUNDLE_ROOT}")"
+else
+  RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_ID="workstation_${RUN_TS}"
+  RUN_BUNDLE_ROOT="${ROOT_DIR}/artifacts/workstation_runs/${RUN_ID}"
+fi
 RUN_REPORT_DIR="${RUN_BUNDLE_ROOT}/reports"
 RUN_CHECKS_DIR="${RUN_BUNDLE_ROOT}/checks"
 RUN_PREFLIGHT_DIR="${RUN_CHECKS_DIR}/preflight"
@@ -214,6 +285,18 @@ seed=${SEED}
 scratch_dir=${SCRATCH_DIR}
 skip_s6=${SKIP_S6}
 skip_calibration=${SKIP_CALIBRATION}
+skip_completed=${SKIP_COMPLETED}
+continue_on_failure=${CONTINUE_ON_FAILURE}
+prebuild_images=${PREBUILD_IMAGES}
+resume_bundle=${RESUME_BUNDLE:-}
+engine_filter=${ENGINE_FILTER:-}
+scenario_filter=${SCENARIO_FILTER:-}
+template_filter=${TEMPLATE_FILTER:-}
+max_runs=${MAX_RUNS:-}
+calibration_status=${CALIBRATION_STATUS}
+completed_runs=${COMPLETED_RUNS}
+skipped_runs=${SKIPPED_RUNS}
+failed_runs=${FAILED_RUNS}
 args=${args_rendered}
 bundle_root=${RUN_BUNDLE_ROOT}
 report_log=${REPORT_LOG}
@@ -235,6 +318,18 @@ EOF
 - scratch_dir: \`${SCRATCH_DIR}\`
 - skip_s6: \`${SKIP_S6}\`
 - skip_calibration: \`${SKIP_CALIBRATION}\`
+- skip_completed: \`${SKIP_COMPLETED}\`
+- continue_on_failure: \`${CONTINUE_ON_FAILURE}\`
+- prebuild_images: \`${PREBUILD_IMAGES}\`
+- resume_bundle: \`${RESUME_BUNDLE:-}\`
+- engine_filter: \`${ENGINE_FILTER:-}\`
+- scenario_filter: \`${SCENARIO_FILTER:-}\`
+- template_filter: \`${TEMPLATE_FILTER:-}\`
+- max_runs: \`${MAX_RUNS:-}\`
+- calibration_status: \`${CALIBRATION_STATUS}\`
+- completed_runs: \`${COMPLETED_RUNS}\`
+- skipped_runs: \`${SKIPPED_RUNS}\`
+- failed_runs: \`${FAILED_RUNS}\`
 - args: \`${args_rendered}\`
 
 ## Bundle Paths
@@ -256,6 +351,34 @@ trap finalize_report EXIT
 
 engine_from_config() {
   sed -n 's/^engine:[[:space:]]*//p' "$1" | head -n1 | tr -d '"' | xargs
+}
+
+output_dir_from_config() {
+  sed -n 's/^output_dir:[[:space:]]*//p' "$1" | head -n1 | tr -d '"' | xargs
+}
+
+matches_csv_filter() {
+  local filter_csv="$1"
+  local value="$2"
+  local item
+  local normalized
+  if [[ -z "${filter_csv}" ]]; then
+    return 0
+  fi
+  IFS=',' read -ra items <<< "${filter_csv}"
+  for item in "${items[@]}"; do
+    normalized="$(printf '%s' "${item}" | xargs)"
+    if [[ -n "${normalized}" && "${value}" == "${normalized}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+run_status_is_success() {
+  local run_dir="$1"
+  local status_path="${run_dir}/run_status.json"
+  [[ -f "${status_path}" ]] && grep -q '"status":[[:space:]]*"success"' "${status_path}"
 }
 
 service_engine() {
@@ -311,8 +434,13 @@ run_generated_config() {
       echo "error: docker is required for service engine ${engine}" >&2
       exit 127
     fi
+    local docker_build_args=()
+    if [[ "${PREBUILD_IMAGES}" -eq 1 ]]; then
+      docker_build_args+=(--no-build)
+    fi
     bash run_docker_scenario.sh \
       --config "${config_path}" \
+      "${docker_build_args[@]}" \
       --benchmark-service "$(docker_benchmark_service "${group}")" \
       -- --seed "${SEED}"
     return 0
@@ -381,15 +509,22 @@ PY
     echo "error: run bash preprocess_all_datasets.sh first or point MAXIONBENCH_D3_DATASET_PATH at an existing .npy/.npz file" >&2
     exit 2
   fi
-  maxionbench run \
-    --config "${CALIBRATE_CONFIG_PATH}" \
-    --seed "${SEED}" \
-    --repeats 1 \
-    --no-retry \
-    --output-dir "${RUN_RESULTS_LOCAL}/calibrate_d3"
+  if [[ "${SKIP_COMPLETED}" -eq 1 ]] && run_status_is_success "${RUN_RESULTS_LOCAL}/calibrate_d3"; then
+    echo "Skipping completed calibration output: ${RUN_RESULTS_LOCAL}/calibrate_d3"
+    CALIBRATION_STATUS="skipped_completed"
+  else
+    maxionbench run \
+      --config "${CALIBRATE_CONFIG_PATH}" \
+      --seed "${SEED}" \
+      --repeats 1 \
+      --no-retry \
+      --output-dir "${RUN_RESULTS_LOCAL}/calibrate_d3"
+    CALIBRATION_STATUS="ran"
+  fi
   maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json
 else
   echo "Skipping D3 calibration run/check (--skip-calibration)"
+  CALIBRATION_STATUS="skipped_flag"
 fi
 
 echo "==> Step 3: build local run matrix"
@@ -425,6 +560,8 @@ for row in rows:
         str(row.get("config_path", "")),
         str(row.get("engine", "")),
         str(row.get("dataset_bundle", "")),
+        str(row.get("scenario", "")),
+        str(row.get("template_name", "")),
     ]))
 PY
 )
@@ -434,11 +571,90 @@ if [[ "${#MATRIX_ROWS[@]}" -eq 0 ]]; then
   exit 2
 fi
 
-echo "==> Step 4: execute generated configs (${#MATRIX_ROWS[@]} runs)"
+FILTERED_ROWS=()
 for row in "${MATRIX_ROWS[@]}"; do
-  IFS=$'\t' read -r group config_path engine dataset_bundle <<< "${row}"
-  echo "--> ${group}: ${engine} ${config_path}"
-  run_generated_config "${group}" "${config_path}" "${engine}" "${dataset_bundle}"
+  IFS=$'\t' read -r group config_path engine dataset_bundle scenario template_name <<< "${row}"
+  if ! matches_csv_filter "${ENGINE_FILTER}" "${engine}"; then
+    continue
+  fi
+  if ! matches_csv_filter "${SCENARIO_FILTER}" "${scenario}"; then
+    continue
+  fi
+  if ! matches_csv_filter "${TEMPLATE_FILTER}" "${template_name}"; then
+    continue
+  fi
+  FILTERED_ROWS+=("${row}")
 done
+MATRIX_ROWS=("${FILTERED_ROWS[@]}")
+
+if [[ -n "${MAX_RUNS}" && "${#MATRIX_ROWS[@]}" -gt "${MAX_RUNS}" ]]; then
+  MATRIX_ROWS=("${MATRIX_ROWS[@]:0:${MAX_RUNS}}")
+fi
+
+if [[ "${#MATRIX_ROWS[@]}" -eq 0 ]]; then
+  echo "error: no matrix rows remain after applying filters" >&2
+  exit 2
+fi
+
+NEEDS_BENCHMARK_BUILD=0
+NEEDS_BENCHMARK_GPU_BUILD=0
+for row in "${MATRIX_ROWS[@]}"; do
+  IFS=$'\t' read -r group _config_path engine _dataset_bundle _scenario _template_name <<< "${row}"
+  if service_engine "${engine}"; then
+    if [[ "${group}" == "gpu" ]]; then
+      NEEDS_BENCHMARK_GPU_BUILD=1
+    else
+      NEEDS_BENCHMARK_BUILD=1
+    fi
+  fi
+done
+
+if [[ "${PREBUILD_IMAGES}" -eq 1 ]]; then
+  if [[ "${NEEDS_BENCHMARK_BUILD}" -eq 1 || "${NEEDS_BENCHMARK_GPU_BUILD}" -eq 1 ]]; then
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "error: docker is required for selected service-engine rows" >&2
+      exit 127
+    fi
+  fi
+  if [[ "${NEEDS_BENCHMARK_BUILD}" -eq 1 ]]; then
+    docker compose build benchmark
+  fi
+  if [[ "${NEEDS_BENCHMARK_GPU_BUILD}" -eq 1 ]]; then
+    docker compose build benchmark-gpu
+  fi
+fi
+
+echo "==> Step 4: execute generated configs (${#MATRIX_ROWS[@]} selected runs)"
+for row in "${MATRIX_ROWS[@]}"; do
+  IFS=$'\t' read -r group config_path engine dataset_bundle scenario template_name <<< "${row}"
+  output_dir="$(output_dir_from_config "${config_path}")"
+  if [[ -z "${output_dir}" ]]; then
+    echo "error: could not resolve output_dir from ${config_path}" >&2
+    exit 2
+  fi
+  if [[ "${SKIP_COMPLETED}" -eq 1 ]] && run_status_is_success "${output_dir}"; then
+    echo "--> skip completed: ${group}: ${engine} ${config_path}"
+    SKIPPED_RUNS="$((SKIPPED_RUNS + 1))"
+    continue
+  fi
+  echo "--> ${group}: ${engine} ${config_path}"
+  if run_generated_config "${group}" "${config_path}" "${engine}" "${dataset_bundle}"; then
+    COMPLETED_RUNS="$((COMPLETED_RUNS + 1))"
+    continue
+  fi
+  FAILED_RUNS="$((FAILED_RUNS + 1))"
+  FAILED_ROW_LABELS+=("${group}:${engine}:${scenario}:${template_name}")
+  if [[ "${CONTINUE_ON_FAILURE}" -eq 1 ]]; then
+    echo "warning: continuing after failed row ${group}:${engine}:${scenario}:${template_name}" >&2
+    continue
+  fi
+  exit 1
+done
+
+if [[ "${FAILED_RUNS}" -gt 0 ]]; then
+  echo "Failed rows (${FAILED_RUNS}):" >&2
+  printf '  - %s\n' "${FAILED_ROW_LABELS[@]}" >&2
+  exit 1
+fi
 
 echo "Figure helper script: ${RENDER_FIGURES_HELPER}"
