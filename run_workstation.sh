@@ -18,6 +18,7 @@ ENGINE_FILTER=""
 SCENARIO_FILTER=""
 TEMPLATE_FILTER=""
 MAX_RUNS=""
+GPU_BENCHMARK_MODE="docker"
 SCRATCH_DIR="${MAXIONBENCH_WORKSTATION_SCRATCH:-${ROOT_DIR}}"
 ORIGINAL_ARGS=("$@")
 COMPLETED_RUNS=0
@@ -57,13 +58,14 @@ Options:
   --scenario-filter <csv>      Run only matching scenario names from the generated matrix
   --template-filter <csv>      Run only matching template file names from the generated matrix
   --max-runs <int>             Execute at most N selected matrix rows after filtering
+  --gpu-benchmark-mode <mode>  GPU benchmark execution: docker or local (default: docker)
   --no-prebuild                Skip one-time docker compose build; service rows build on demand
   -h, --help                   Show this help
 
 Notes:
   - GPU lane is explicit because the A100 may be shared.
-  - Service engines are run through Docker Compose.
-  - Local/in-process engines run directly through `maxionbench run`.
+  - GPU-lane rows use Docker by default; `--gpu-benchmark-mode local` runs the benchmark from the host env.
+  - CPU local/in-process rows run directly through `maxionbench run`.
 EOF
 }
 
@@ -125,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       MAX_RUNS="${2:-}"
       shift 2
       ;;
+    --gpu-benchmark-mode)
+      GPU_BENCHMARK_MODE="${2:-}"
+      shift 2
+      ;;
     --no-prebuild)
       PREBUILD_IMAGES=0
       shift
@@ -150,10 +156,15 @@ case "${LANE}" in
     ;;
 esac
 
-if ! command -v maxionbench >/dev/null 2>&1; then
-  echo "error: 'maxionbench' command not found in PATH" >&2
-  exit 127
-fi
+case "${GPU_BENCHMARK_MODE}" in
+  docker|local)
+    ;;
+  *)
+    echo "error: --gpu-benchmark-mode must be docker or local" >&2
+    exit 2
+    ;;
+esac
+
 if ! command -v python >/dev/null 2>&1; then
   echo "error: 'python' command not found in PATH" >&2
   exit 127
@@ -178,6 +189,7 @@ if [[ -n "${MAX_RUNS}" ]]; then
 fi
 
 CALIBRATE_CONFIG_PATH="${SCENARIO_CONFIG_DIR}/calibrate_d3.yaml"
+D3_PARAMS_PATH="artifacts/calibration/d3_params.yaml"
 if [[ "${SKIP_CALIBRATION}" -eq 0 && ! -f "${CALIBRATE_CONFIG_PATH}" ]]; then
   echo "error: missing ${CALIBRATE_CONFIG_PATH}" >&2
   exit 2
@@ -239,15 +251,19 @@ MILESTONES_OUT="\${2:-${ROOT_DIR}/${RUN_FIGURES_MILESTONES}}"
 FINAL_OUT="\${3:-${ROOT_DIR}/${RUN_FIGURES_FINAL}}"
 cd "\${ROOT_DIR}"
 mkdir -p "\${MILESTONES_OUT}" "\${FINAL_OUT}"
-maxionbench report --input "\${INPUT_DIR}" --mode milestones --out "\${MILESTONES_OUT}"
-maxionbench report --input "\${INPUT_DIR}" --mode final --out "\${FINAL_OUT}"
+python -m maxionbench.cli report --input "\${INPUT_DIR}" --mode milestones --out "\${MILESTONES_OUT}"
+python -m maxionbench.cli report --input "\${INPUT_DIR}" --mode final --out "\${FINAL_OUT}"
 echo "figures generated:"
 echo "- milestones: \${MILESTONES_OUT}"
 echo "- final: \${FINAL_OUT}"
 EOF
 chmod +x "${RENDER_FIGURES_HELPER}"
 
-export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${ROOT_DIR}/${RUN_RESULTS_LOCAL}/lancedb/service"
+export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${RUN_RESULTS_LOCAL}/lancedb/service"
+
+mb() {
+  python -m maxionbench.cli "$@"
+}
 
 finalize_report() {
   local exit_code="$?"
@@ -281,6 +297,7 @@ repo_root=${ROOT_DIR}
 scenario_config_dir=${SCENARIO_CONFIG_DIR}
 engine_config_dir=${ENGINE_CONFIG_DIR}
 lane=${LANE}
+gpu_benchmark_mode=${GPU_BENCHMARK_MODE}
 seed=${SEED}
 scratch_dir=${SCRATCH_DIR}
 skip_s6=${SKIP_S6}
@@ -314,6 +331,7 @@ EOF
 - scenario_config_dir: \`${SCENARIO_CONFIG_DIR}\`
 - engine_config_dir: \`${ENGINE_CONFIG_DIR}\`
 - lane: \`${LANE}\`
+- gpu_benchmark_mode: \`${GPU_BENCHMARK_MODE}\`
 - seed: \`${SEED}\`
 - scratch_dir: \`${SCRATCH_DIR}\`
 - skip_s6: \`${SKIP_S6}\`
@@ -403,6 +421,22 @@ should_preflight() {
   esac
 }
 
+scenario_requires_d3_params() {
+  local dataset_bundle="$1"
+  local scenario="$2"
+  if [[ "${dataset_bundle}" != "D3" ]]; then
+    return 1
+  fi
+  case "${scenario}" in
+    s2_filtered_ann|s3_churn_smooth|s3b_churn_bursty)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 docker_benchmark_service() {
   case "$1" in
     gpu)
@@ -414,6 +448,52 @@ docker_benchmark_service() {
   esac
 }
 
+docker_has_nvidia_runtime() {
+  docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'
+}
+
+docker_gpu_runtime_ready() {
+  docker compose run --rm --entrypoint python benchmark-gpu -c \
+    'import sys; import torch; sys.exit(0 if torch.cuda.is_available() else 1)' \
+    >/dev/null 2>&1
+}
+
+local_gpu_runtime_ready() {
+  python - <<'PY'
+import importlib.util
+import sys
+
+errors = []
+
+torch_spec = importlib.util.find_spec("torch")
+if torch_spec is None:
+    errors.append("python package `torch` is missing")
+else:
+    import torch  # type: ignore[import-not-found]
+
+    if not bool(getattr(torch.cuda, "is_available", lambda: False)()):
+        errors.append("torch.cuda.is_available() is false")
+
+transformers_spec = importlib.util.find_spec("transformers")
+if transformers_spec is None:
+    errors.append("python package `transformers` is missing")
+
+faiss_spec = importlib.util.find_spec("faiss")
+if faiss_spec is None:
+    errors.append("python package `faiss` is missing")
+else:
+    import faiss  # type: ignore[import-not-found]
+
+    if not hasattr(faiss, "StandardGpuResources"):
+        errors.append("faiss import does not expose GPU bindings; uninstall `faiss-cpu` and reinstall GPU FAISS")
+
+if errors:
+    for item in errors:
+        print(item, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 run_generated_config() {
   local group="$1"
   local config_path="$2"
@@ -421,6 +501,10 @@ run_generated_config() {
   local dataset_bundle="$4"
   local config_stem
   config_stem="$(basename "${config_path}" .yaml)"
+  local run_args=(--seed "${SEED}")
+  if [[ -f "${D3_PARAMS_PATH}" ]]; then
+    run_args+=(--d3-params "${D3_PARAMS_PATH}")
+  fi
 
   if should_preflight "${dataset_bundle}"; then
     python -m maxionbench.orchestration.local_preflight \
@@ -429,9 +513,21 @@ run_generated_config() {
       --json | tee "${RUN_PREFLIGHT_DIR}/${config_stem}.json"
   fi
 
-  if service_engine "${engine}"; then
+  if [[ "${group}" == "gpu" && "${GPU_BENCHMARK_MODE}" == "local" ]]; then
+    if service_engine "${engine}"; then
+      bash run_docker_scenario.sh \
+        --config "${config_path}" \
+        --local-benchmark \
+        -- "${run_args[@]}"
+    else
+      mb run --config "${config_path}" "${run_args[@]}"
+    fi
+    return 0
+  fi
+
+  if [[ "${group}" == "gpu" ]] || service_engine "${engine}"; then
     if ! command -v docker >/dev/null 2>&1; then
-      echo "error: docker is required for service engine ${engine}" >&2
+      echo "error: docker is required for ${group} lane / engine ${engine}" >&2
       exit 127
     fi
     local docker_build_args=()
@@ -442,27 +538,27 @@ run_generated_config() {
       --config "${config_path}" \
       "${docker_build_args[@]}" \
       --benchmark-service "$(docker_benchmark_service "${group}")" \
-      -- --seed "${SEED}"
+      -- "${run_args[@]}"
     return 0
   fi
 
-  maxionbench run --config "${config_path}" --seed "${SEED}"
+  mb run --config "${config_path}" "${run_args[@]}"
 }
 
 echo "Run bundle root: ${RUN_BUNDLE_ROOT}"
 echo "Run log: ${REPORT_LOG}"
 
 echo "==> Step 1: workstation sanity"
-maxionbench verify-pins --config-dir configs/scenarios --json
+mb verify-pins --config-dir configs/scenarios --json
 if [[ "${SCENARIO_CONFIG_DIR}" != "configs/scenarios" ]]; then
   VERIFY_ARGS=(--config-dir "${SCENARIO_CONFIG_DIR}" --json)
   if [[ "${SCENARIO_CONFIG_DIR}" == *"scenarios_paper"* ]]; then
     VERIFY_ARGS+=(--strict-d3-scenario-scale)
   fi
-  maxionbench verify-pins "${VERIFY_ARGS[@]}"
+  mb verify-pins "${VERIFY_ARGS[@]}"
 fi
-maxionbench verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json
-maxionbench verify-conformance-configs --config-dir configs/conformance --json
+mb verify-dataset-manifests --manifest-dir maxionbench/datasets/manifests --json
+mb verify-conformance-configs --config-dir configs/conformance --json
 
 echo "==> Step 2: D3 calibration gate"
 if [[ "${SKIP_CALIBRATION}" -eq 0 ]]; then
@@ -513,7 +609,7 @@ PY
     echo "Skipping completed calibration output: ${RUN_RESULTS_LOCAL}/calibrate_d3"
     CALIBRATION_STATUS="skipped_completed"
   else
-    maxionbench run \
+    mb run \
       --config "${CALIBRATE_CONFIG_PATH}" \
       --seed "${SEED}" \
       --repeats 1 \
@@ -521,7 +617,7 @@ PY
       --output-dir "${RUN_RESULTS_LOCAL}/calibrate_d3"
     CALIBRATION_STATUS="ran"
   fi
-  maxionbench verify-d3-calibration --d3-params artifacts/calibration/d3_params.yaml --strict --json
+  mb verify-d3-calibration --d3-params "${D3_PARAMS_PATH}" --strict --json
 else
   echo "Skipping D3 calibration run/check (--skip-calibration)"
   CALIBRATION_STATUS="skipped_flag"
@@ -598,21 +694,31 @@ fi
 
 NEEDS_BENCHMARK_BUILD=0
 NEEDS_BENCHMARK_GPU_BUILD=0
+REQUIRES_D3_PARAMS=0
 for row in "${MATRIX_ROWS[@]}"; do
-  IFS=$'\t' read -r group _config_path engine _dataset_bundle _scenario _template_name <<< "${row}"
-  if service_engine "${engine}"; then
-    if [[ "${group}" == "gpu" ]]; then
+  IFS=$'\t' read -r group _config_path engine dataset_bundle scenario _template_name <<< "${row}"
+  if [[ "${group}" == "gpu" ]]; then
+    if [[ "${GPU_BENCHMARK_MODE}" == "docker" ]]; then
       NEEDS_BENCHMARK_GPU_BUILD=1
-    else
-      NEEDS_BENCHMARK_BUILD=1
     fi
+  elif service_engine "${engine}"; then
+    NEEDS_BENCHMARK_BUILD=1
+  fi
+  if scenario_requires_d3_params "${dataset_bundle}" "${scenario}"; then
+    REQUIRES_D3_PARAMS=1
   fi
 done
+
+if [[ "${REQUIRES_D3_PARAMS}" -eq 1 && ! -f "${D3_PARAMS_PATH}" ]]; then
+  echo "error: selected strict D3 rows require ${D3_PARAMS_PATH}" >&2
+  echo "error: rerun calibration first or provide the calibrated file before using --skip-calibration" >&2
+  exit 2
+fi
 
 if [[ "${PREBUILD_IMAGES}" -eq 1 ]]; then
   if [[ "${NEEDS_BENCHMARK_BUILD}" -eq 1 || "${NEEDS_BENCHMARK_GPU_BUILD}" -eq 1 ]]; then
     if ! command -v docker >/dev/null 2>&1; then
-      echo "error: docker is required for selected service-engine rows" >&2
+      echo "error: docker is required for selected gpu/service-engine rows" >&2
       exit 127
     fi
   fi
@@ -620,7 +726,26 @@ if [[ "${PREBUILD_IMAGES}" -eq 1 ]]; then
     docker compose build benchmark
   fi
   if [[ "${NEEDS_BENCHMARK_GPU_BUILD}" -eq 1 ]]; then
+    if ! docker_has_nvidia_runtime; then
+      echo "error: docker daemon does not expose an NVIDIA runtime" >&2
+      echo "error: install/configure nvidia-container-toolkit and restart Docker before gpu/all lanes" >&2
+      exit 2
+    fi
     docker compose build benchmark-gpu
+    if ! docker_gpu_runtime_ready; then
+      echo "error: benchmark-gpu cannot access a GPU through Docker on this workstation" >&2
+      echo "error: Docker has an NVIDIA runtime but the GPU is still unavailable to the container" >&2
+      echo "error: fix the host NVIDIA driver/device state before rerunning gpu/all lanes" >&2
+      exit 2
+    fi
+  fi
+fi
+
+if [[ "${LANE}" != "cpu" && "${GPU_BENCHMARK_MODE}" == "local" ]]; then
+  if ! local_gpu_runtime_ready; then
+    echo "error: local gpu benchmark mode is not ready in the current Python environment" >&2
+    echo "error: install torch/transformers and ensure `import faiss` exposes GPU bindings before rerunning" >&2
+    exit 2
   fi
 fi
 
