@@ -18,10 +18,29 @@ def test_workstation_script_exists_and_references_local_matrix_workflow() -> Non
     assert "--engine-filter <csv>" in text
     assert "--template-filter <csv>" in text
     assert "--no-prebuild" in text
+    assert "--gpu-benchmark-mode <mode>" in text
     assert 'python -m maxionbench.orchestration.run_matrix' in text
     assert 'python -m maxionbench.orchestration.local_preflight' in text
     assert 'bash run_docker_scenario.sh' in text
     assert 'benchmark-gpu' in text
+    assert 'GPU_BENCHMARK_MODE="docker"' in text
+    assert 'D3_PARAMS_PATH="artifacts/calibration/d3_params.yaml"' in text
+    assert 'mb() {' in text
+    assert 'scenario_requires_d3_params' in text
+    assert 'selected strict D3 rows require ${D3_PARAMS_PATH}' in text
+    assert '--d3-params "${D3_PARAMS_PATH}"' in text
+    assert '--local-benchmark' in text
+    assert 'export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI="${RUN_RESULTS_LOCAL}/lancedb/service"' in text
+    assert 'if [[ "${group}" == "gpu" && "${GPU_BENCHMARK_MODE}" == "local" ]]; then' in text
+    assert 'if [[ "${group}" == "gpu" ]] || service_engine "${engine}"; then' in text
+    assert 'docker_has_nvidia_runtime' in text
+    assert 'docker daemon does not expose an NVIDIA runtime' in text
+    assert 'nvidia-container-toolkit' in text
+    assert 'docker_gpu_runtime_ready' in text
+    assert 'benchmark-gpu cannot access a GPU through Docker on this workstation' in text
+    assert 'local_gpu_runtime_ready' in text
+    assert 'faiss import does not expose GPU bindings' in text
+    assert 'local gpu benchmark mode is not ready in the current Python environment' in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI' in text
     assert 'artifacts/workstation_runs' in text
     assert 'run_status_is_success' in text

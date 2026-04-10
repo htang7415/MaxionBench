@@ -15,9 +15,11 @@ def test_command_md_is_linux_workstation_operator_doc() -> None:
     assert "bash run_workstation.sh --lane cpu" in text
     assert "bash run_workstation.sh --lane gpu" in text
     assert "bash run_workstation.sh --lane all" in text
+    assert "--gpu-benchmark-mode local" in text
     assert "--scratch-dir /mnt/nvme/maxionbench" in text
     assert "bash run_docker_scenario.sh --config configs/scenarios/s1_ann_frontier_qdrant.yaml" in text
     assert "--benchmark-service benchmark-gpu" in text
+    assert "--local-benchmark" in text
     assert "maxionbench report --input artifacts/runs --mode milestones --milestone-id M1" in text
     assert "maxionbench report --input artifacts/runs --mode final --out artifacts/figures/final" in text
     assert "bash save_results_bundle.sh" in text

@@ -38,13 +38,27 @@ def test_docker_workflow_files_exist_and_reference_cpu_and_gpu_benchmarks() -> N
     assert "MAXIONBENCH_OPENSEARCH_IMAGE=opensearchproject/opensearch:2.11.1" in env_text
     assert "MAXIONBENCH_OPENSEARCH_DATA_DIR=./artifacts/containers/opensearch_data" in env_text
 
+    gpu_text = gpu_dockerfile.read_text(encoding="utf-8")
+    assert "FROM python:3.11-slim" in gpu_text
+    assert 'python -m pip install --index-url https://download.pytorch.org/whl/cu124 "torch==2.6.0"' in gpu_text
+    assert 'python -m pip install "${MAXIONBENCH_FAISS_GPU_PIP_SPEC}"' in gpu_text
+    assert 'python -m pip install --upgrade --force-reinstall \\' in gpu_text
+    assert '"h5py>=3.11"' in gpu_text
+    assert '"numpy>=2,<3"' in gpu_text
+
     script_text = run_script.read_text(encoding="utf-8")
     assert "--benchmark-service" in script_text
+    assert "--local-benchmark" in script_text
+    assert 'LOCAL_BENCHMARK=0' in script_text
+    assert 'mb() {' in script_text
     assert 'BENCHMARK_SERVICE="benchmark-gpu"' in script_text
     assert 'docker compose build "${BENCHMARK_SERVICE}"' in script_text
     assert 'OPENSEARCH_DATA_DIR="${MAXIONBENCH_OPENSEARCH_DATA_DIR:-${ROOT_DIR}/artifacts/containers/opensearch_data}"' in script_text
     assert 'mkdir -p "${OPENSEARCH_DATA_DIR}"' in script_text
     assert 'chmod 0777 "${OPENSEARCH_DATA_DIR}"' in script_text
+    assert 'mb wait-adapter --config "${CONFIG_PATH_ABS}"' in script_text
+    assert 'mb run --config "${CONFIG_PATH_ABS}"' in script_text
+    assert 'if [[ "${#SERVICES[@]}" -gt 0 ]]; then' in script_text
     assert 'docker compose run --rm "${BENCHMARK_SERVICE}" wait-adapter --config "${CONFIG_PATH_CONTAINER}"' in script_text
     assert 'docker compose run --rm "${BENCHMARK_SERVICE}" run --config "${CONFIG_PATH_CONTAINER}"' in script_text
     assert 'CONFIG_PATH_CONTAINER="/workspace/' in script_text
