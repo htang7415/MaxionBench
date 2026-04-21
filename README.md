@@ -64,28 +64,18 @@ Figures are written to:
 
 ## How to run this benchmark study
 
-### Linux workstation workflow
+Use the direct terminal workflow in `command.md`.
 
-Install, download, and preprocess:
+It covers:
 
-```bash
-python -m pip install -e ".[dev,engines,reporting,datasets]"
-python -m maxionbench.cli download-datasets --root dataset --cache-dir .cache --crag-examples 500 --json
-bash preprocess_all_datasets.sh
-```
+- install + conformance
+- dataset download + preprocessing
+- embedding precompute
+- Docker service startup
+- portable `B0/B1/B2` matrix generation and execution
+- reporting and archive commands
 
-Run the canonical workstation wrapper:
-
-```bash
-bash run_workstation.sh --lane cpu
-bash run_workstation.sh --lane gpu
-```
-
-Use `--lane all` only when both lanes are available. Service engines are launched locally through Docker Compose; local engines run directly on the host.
-
-### Mac reduced workflow
-
-For the reduced Mac lane, use the commands in `command-mac.md` or run individual configs from `configs/scenarios/`.
+There are no required repo shell wrappers in the current workflow.
 
 ## Validate and generate figures
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -9,9 +10,11 @@ import pytest
 
 from maxionbench.datasets.loaders.processed import (
     PROCESSED_SCHEMA_VERSION,
+    embedding_model_slug,
     load_processed_ann_dataset,
     load_processed_d4_bundle,
     load_processed_filtered_ann_dataset,
+    load_processed_text_dataset,
 )
 
 
@@ -33,6 +36,35 @@ def _write_qrels(path: Path, rows: list[tuple[str, str, int]]) -> None:
         handle.write("query_id\tdoc_id\trelevance\n")
         for qid, did, rel in rows:
             handle.write(f"{qid}\t{did}\t{rel}\n")
+
+
+def _write_precomputed_embeddings(
+    dataset_dir: Path,
+    *,
+    model_id: str,
+    doc_vectors: np.ndarray,
+    query_vectors: np.ndarray,
+    doc_ids: list[str],
+    query_ids: list[str],
+) -> None:
+    embedding_dir = dataset_dir / "embeddings" / embedding_model_slug(model_id)
+    embedding_dir.mkdir(parents=True, exist_ok=True)
+    np.save(embedding_dir / "doc_vectors.npy", np.asarray(doc_vectors, dtype=np.float32))
+    np.save(embedding_dir / "query_vectors.npy", np.asarray(query_vectors, dtype=np.float32))
+    doc_digest = json.dumps(doc_ids, separators=(",", ":")).encode("utf-8")
+    query_digest = json.dumps(query_ids, separators=(",", ":")).encode("utf-8")
+    _write_json(
+        embedding_dir / "meta.json",
+        {
+            "schema_version": "maxionbench-text-embeddings-v1",
+            "model_id": model_id,
+            "dim": int(doc_vectors.shape[1]),
+            "doc_count": int(doc_vectors.shape[0]),
+            "query_count": int(query_vectors.shape[0]),
+            "doc_ids_sha256": hashlib.sha256(doc_digest).hexdigest(),
+            "query_ids_sha256": hashlib.sha256(query_digest).hexdigest(),
+        },
+    )
 
 
 def test_load_processed_ann_dataset_reads_numeric_ground_truth(tmp_path: Path) -> None:
@@ -330,3 +362,70 @@ def test_load_processed_d4_bundle_accepts_qrels_header_row(tmp_path: Path) -> No
         max_queries=10,
     )
     assert ds.query_ids == ["fiqa::q::q1"]
+
+
+def test_load_processed_text_dataset_prefers_precomputed_embeddings(tmp_path: Path) -> None:
+    root = tmp_path / "processed" / "frames_portable"
+    root.mkdir(parents=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "text_retrieval_strict",
+        },
+    )
+    _write_jsonl(
+        root / "corpus.jsonl",
+        [
+            {"doc_id": "doc-a", "text": "misleading lexical tokens"},
+            {"doc_id": "doc-b", "text": "also misleading lexical tokens"},
+        ],
+    )
+    _write_jsonl(root / "queries.jsonl", [{"query_id": "q-1", "text": "misleading lexical tokens"}])
+    _write_qrels(root / "qrels.tsv", [("q-1", "doc-a", 1)])
+    _write_precomputed_embeddings(
+        root,
+        model_id="BAAI/bge-small-en-v1.5",
+        doc_vectors=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        query_vectors=np.asarray([[1.0, 0.0]], dtype=np.float32),
+        doc_ids=["doc-a", "doc-b"],
+        query_ids=["q-1"],
+    )
+
+    ds = load_processed_text_dataset(
+        root,
+        vector_dim=2,
+        seed=17,
+        embedding_model="BAAI/bge-small-en-v1.5",
+        embedding_dim=2,
+        require_precomputed_embeddings=True,
+    )
+    assert ds.doc_ids == ["doc-a", "doc-b"]
+    assert ds.query_ids == ["q-1"]
+    assert np.allclose(ds.doc_vectors, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    assert np.allclose(ds.query_vectors, np.asarray([[1.0, 0.0]], dtype=np.float32))
+
+
+def test_load_processed_text_dataset_requires_precomputed_embeddings_when_requested(tmp_path: Path) -> None:
+    root = tmp_path / "processed" / "frames_portable"
+    root.mkdir(parents=True)
+    _write_json(
+        root / "meta.json",
+        {
+            "schema_version": PROCESSED_SCHEMA_VERSION,
+            "task_type": "text_retrieval_strict",
+        },
+    )
+    _write_jsonl(root / "corpus.jsonl", [{"doc_id": "doc-a", "text": "alpha"}])
+    _write_jsonl(root / "queries.jsonl", [{"query_id": "q-1", "text": "alpha"}])
+    _write_qrels(root / "qrels.tsv", [("q-1", "doc-a", 1)])
+
+    with pytest.raises(FileNotFoundError, match="missing precomputed embeddings"):
+        load_processed_text_dataset(
+            root,
+            vector_dim=2,
+            seed=17,
+            embedding_model="BAAI/bge-small-en-v1.5",
+            embedding_dim=2,
+            require_precomputed_embeddings=True,
+        )

@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -49,6 +50,9 @@ class _ProcessedTextBundle:
     query_ids: list[str]
     query_texts: list[str]
     qrels: dict[str, dict[str, int]]
+    doc_vectors: np.ndarray | None = None
+    query_vectors: np.ndarray | None = None
+    embedding_meta: dict[str, Any] | None = None
 
 
 def load_processed_ann_dataset(
@@ -168,6 +172,9 @@ def load_processed_d4_bundle(
     *,
     vector_dim: int,
     seed: int,
+    embedding_model: str | None = None,
+    embedding_dim: int | None = None,
+    require_precomputed_embeddings: bool = False,
     beir_subsets: Sequence[str] | None = None,
     include_crag: bool = True,
     crag_slice_name: str = "small_slice",
@@ -180,11 +187,25 @@ def load_processed_d4_bundle(
     for subset in list(beir_subsets or []):
         subset_dir = bundle_root / "beir" / subset
         if subset_dir.exists():
-            bundles.append(_load_processed_text_bundle(subset_dir))
+            bundles.append(
+                _load_processed_text_bundle(
+                    subset_dir,
+                    embedding_model=embedding_model,
+                    embedding_dim=embedding_dim,
+                    require_precomputed_embeddings=require_precomputed_embeddings,
+                )
+            )
     if include_crag:
         crag_dir = bundle_root / "crag" / crag_slice_name
         if crag_dir.exists():
-            bundles.append(_load_processed_text_bundle(crag_dir))
+            bundles.append(
+                _load_processed_text_bundle(
+                    crag_dir,
+                    embedding_model=embedding_model,
+                    embedding_dim=embedding_dim,
+                    require_precomputed_embeddings=require_precomputed_embeddings,
+                )
+            )
     if not bundles:
         raise FileNotFoundError(f"no processed D4 bundles found under {bundle_root}")
 
@@ -197,11 +218,19 @@ def load_processed_text_dataset(
     *,
     vector_dim: int,
     seed: int,
+    embedding_model: str | None = None,
+    embedding_dim: int | None = None,
+    require_precomputed_embeddings: bool = False,
     max_docs: int = 200_000,
     max_queries: int = 5_000,
 ) -> D4RetrievalDataset:
     dataset_root = _resolve_processed_root(root)
-    bundle = _load_processed_text_bundle(dataset_root)
+    bundle = _load_processed_text_bundle(
+        dataset_root,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        require_precomputed_embeddings=require_precomputed_embeddings,
+    )
     merged = _merge_text_bundles(bundles=[bundle], max_docs=max_docs, max_queries=max_queries)
     return _build_retrieval_dataset(bundle=merged, vector_dim=vector_dim, seed=seed)
 
@@ -395,7 +424,13 @@ def _unit_vector(vector: np.ndarray) -> np.ndarray:
     return vector / (float(np.linalg.norm(vector)) + 1e-12)
 
 
-def _load_processed_text_bundle(dataset_dir: Path) -> _ProcessedTextBundle:
+def _load_processed_text_bundle(
+    dataset_dir: Path,
+    *,
+    embedding_model: str | None = None,
+    embedding_dim: int | None = None,
+    require_precomputed_embeddings: bool = False,
+) -> _ProcessedTextBundle:
     meta = _load_meta(dataset_dir)
     task_type = str(meta.get("task_type", "")).strip().lower()
     if task_type not in {"text_retrieval", "text_retrieval_strict", "text_retrieval_weak", "text_retrieval_weak_labels"}:
@@ -441,6 +476,14 @@ def _load_processed_text_bundle(dataset_dir: Path) -> _ProcessedTextBundle:
             dataset_dir,
             dropped_queries,
         )
+    embedding_payload = _load_precomputed_text_embeddings(
+        dataset_dir=dataset_dir,
+        doc_ids=list(docs.keys()),
+        query_ids=kept_qids,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        require_precomputed_embeddings=require_precomputed_embeddings,
+    )
     doc_ids = list(docs.keys())
     doc_texts = [docs[doc_id] for doc_id in doc_ids]
     return _ProcessedTextBundle(
@@ -449,6 +492,9 @@ def _load_processed_text_bundle(dataset_dir: Path) -> _ProcessedTextBundle:
         query_ids=kept_qids,
         query_texts=kept_qtexts,
         qrels=qrels,
+        doc_vectors=embedding_payload["doc_vectors"],
+        query_vectors=embedding_payload["query_vectors"],
+        embedding_meta=embedding_payload["meta"],
     )
 
 
@@ -458,14 +504,37 @@ def _merge_text_bundles(
     max_docs: int,
     max_queries: int,
 ) -> _ProcessedTextBundle:
+    has_precomputed = [bundle.doc_vectors is not None or bundle.query_vectors is not None for bundle in bundles]
+    if any(has_precomputed) and not all(has_precomputed):
+        raise ValueError("processed text bundle merge encountered mixed precomputed and non-precomputed embeddings")
     docs: dict[str, str] = {}
+    doc_vectors: dict[str, np.ndarray] = {}
     qrels: dict[str, dict[str, int]] = {}
     query_ids: list[str] = []
     query_texts: list[str] = []
+    query_vectors: list[np.ndarray] = []
+    embedding_meta: dict[str, Any] | None = None
     doc_limit_drops = 0
     query_limit_drops = 0
     query_no_rels_drops = 0
     for bundle in bundles:
+        if bundle.embedding_meta is not None:
+            current_key = (
+                str(bundle.embedding_meta.get("model_id") or ""),
+                int(bundle.embedding_meta.get("dim") or 0),
+            )
+            if embedding_meta is None:
+                embedding_meta = dict(bundle.embedding_meta)
+            else:
+                existing_key = (
+                    str(embedding_meta.get("model_id") or ""),
+                    int(embedding_meta.get("dim") or 0),
+                )
+                if existing_key != current_key:
+                    raise ValueError(
+                        "processed text bundle merge encountered mismatched precomputed embeddings: "
+                        f"{existing_key} vs {current_key}"
+                    )
         for doc_index, (doc_id, doc_text) in enumerate(zip(bundle.doc_ids, bundle.doc_texts)):
             if doc_id in docs:
                 continue
@@ -473,6 +542,8 @@ def _merge_text_bundles(
                 doc_limit_drops += len(bundle.doc_ids) - doc_index
                 break
             docs[doc_id] = doc_text
+            if bundle.doc_vectors is not None:
+                doc_vectors[doc_id] = np.asarray(bundle.doc_vectors[doc_index], dtype=np.float32)
         for query_index, (qid, qtext) in enumerate(zip(bundle.query_ids, bundle.query_texts)):
             if len(query_ids) >= max_queries:
                 query_limit_drops += len(bundle.query_ids) - query_index
@@ -484,6 +555,8 @@ def _merge_text_bundles(
             query_ids.append(qid)
             query_texts.append(qtext)
             qrels[qid] = rels
+            if bundle.query_vectors is not None:
+                query_vectors.append(np.asarray(bundle.query_vectors[query_index], dtype=np.float32))
     if doc_limit_drops or query_limit_drops or query_no_rels_drops:
         _LOG.warning(
             "processed D4 merge dropped docs/queries during bundle merge (doc_limit_drops=%d, query_limit_drops=%d, query_missing_qrels=%d)",
@@ -503,6 +576,13 @@ def _merge_text_bundles(
         query_ids=query_ids,
         query_texts=query_texts,
         qrels=qrels,
+        doc_vectors=(
+            np.asarray([doc_vectors[doc_id] for doc_id in docs.keys()], dtype=np.float32)
+            if doc_vectors
+            else None
+        ),
+        query_vectors=np.asarray(query_vectors, dtype=np.float32) if query_vectors else None,
+        embedding_meta=embedding_meta,
     )
 
 
@@ -514,8 +594,23 @@ def _build_retrieval_dataset(*, bundle: _ProcessedTextBundle, vector_dim: int, s
     doc_token_sets = [set(tokenize_text(text)) for text in bundle.doc_texts]
     query_token_sets = [set(tokenize_text(text)) for text in bundle.query_texts]
     idf = compute_idf(doc_token_sets)
-    doc_vectors = _vectorize_token_sets(doc_token_sets, dim=vector_dim, idf=idf, seed=seed + 11)
-    query_vectors = _vectorize_token_sets(query_token_sets, dim=vector_dim, idf=idf, seed=seed + 17)
+    if bundle.doc_vectors is not None or bundle.query_vectors is not None:
+        if bundle.doc_vectors is None or bundle.query_vectors is None:
+            raise ValueError("processed text bundle must provide both doc_vectors and query_vectors when using precomputed embeddings")
+        if bundle.doc_vectors.ndim != 2 or bundle.query_vectors.ndim != 2:
+            raise ValueError("precomputed embedding arrays must be 2D")
+        if int(bundle.doc_vectors.shape[0]) != len(bundle.doc_ids) or int(bundle.query_vectors.shape[0]) != len(bundle.query_ids):
+            raise ValueError("precomputed embedding row counts must match processed text ids")
+        if int(bundle.doc_vectors.shape[1]) != int(vector_dim) or int(bundle.query_vectors.shape[1]) != int(vector_dim):
+            raise ValueError(
+                f"precomputed embedding dimension mismatch: expected {vector_dim}, "
+                f"docs={int(bundle.doc_vectors.shape[1])}, queries={int(bundle.query_vectors.shape[1])}"
+            )
+        doc_vectors = np.asarray(bundle.doc_vectors, dtype=np.float32)
+        query_vectors = np.asarray(bundle.query_vectors, dtype=np.float32)
+    else:
+        doc_vectors = _vectorize_token_sets(doc_token_sets, dim=vector_dim, idf=idf, seed=seed + 11)
+        query_vectors = _vectorize_token_sets(query_token_sets, dim=vector_dim, idf=idf, seed=seed + 17)
     return D4RetrievalDataset(
         doc_ids=list(bundle.doc_ids),
         doc_vectors=doc_vectors.astype(np.float32, copy=False),
@@ -528,6 +623,77 @@ def _build_retrieval_dataset(*, bundle: _ProcessedTextBundle, vector_dim: int, s
         qrels={qid: dict(rels) for qid, rels in bundle.qrels.items()},
         idf=idf,
     )
+
+
+def embedding_model_slug(model_id: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", str(model_id).strip().lower()).strip("-")
+    if not normalized:
+        raise ValueError("embedding model id must not be empty")
+    return normalized
+
+
+def _load_precomputed_text_embeddings(
+    *,
+    dataset_dir: Path,
+    doc_ids: Sequence[str],
+    query_ids: Sequence[str],
+    embedding_model: str | None,
+    embedding_dim: int | None,
+    require_precomputed_embeddings: bool,
+) -> dict[str, Any]:
+    if not embedding_model:
+        if require_precomputed_embeddings:
+            raise ValueError("require_precomputed_embeddings=True requires embedding_model")
+        return {"doc_vectors": None, "query_vectors": None, "meta": None}
+
+    embedding_dir = dataset_dir / "embeddings" / embedding_model_slug(embedding_model)
+    if not embedding_dir.exists():
+        if require_precomputed_embeddings:
+            raise FileNotFoundError(
+                f"missing precomputed embeddings for {embedding_model!r} under {embedding_dir}; "
+                "run `maxionbench precompute-text-embeddings` first"
+            )
+        return {"doc_vectors": None, "query_vectors": None, "meta": None}
+
+    meta_path = embedding_dir / "meta.json"
+    doc_vectors_path = embedding_dir / "doc_vectors.npy"
+    query_vectors_path = embedding_dir / "query_vectors.npy"
+    if not meta_path.exists() or not doc_vectors_path.exists() or not query_vectors_path.exists():
+        raise FileNotFoundError(
+            f"precomputed embeddings under {embedding_dir} must include meta.json, doc_vectors.npy, and query_vectors.npy"
+        )
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if str(meta.get("model_id") or "") != str(embedding_model):
+        raise ValueError(
+            f"precomputed embedding model mismatch under {embedding_dir}: "
+            f"expected {embedding_model!r}, found {meta.get('model_id')!r}"
+        )
+    dim = int(meta.get("dim") or 0)
+    if embedding_dim is not None and dim != int(embedding_dim):
+        raise ValueError(
+            f"precomputed embedding dim mismatch under {embedding_dir}: "
+            f"expected {embedding_dim}, found {dim}"
+        )
+    if _ordered_ids_sha256(doc_ids) != str(meta.get("doc_ids_sha256") or ""):
+        raise ValueError(f"precomputed doc id checksum mismatch under {embedding_dir}")
+    if _ordered_ids_sha256(query_ids) != str(meta.get("query_ids_sha256") or ""):
+        raise ValueError(f"precomputed query id checksum mismatch under {embedding_dir}")
+    doc_vectors = np.load(doc_vectors_path, mmap_mode="r", allow_pickle=False)
+    query_vectors = np.load(query_vectors_path, mmap_mode="r", allow_pickle=False)
+    if int(doc_vectors.shape[0]) != len(doc_ids) or int(query_vectors.shape[0]) != len(query_ids):
+        raise ValueError(f"precomputed embedding row count mismatch under {embedding_dir}")
+    if int(doc_vectors.shape[1]) != dim or int(query_vectors.shape[1]) != dim:
+        raise ValueError(f"precomputed embedding column count mismatch under {embedding_dir}")
+    return {
+        "doc_vectors": np.asarray(doc_vectors, dtype=np.float32),
+        "query_vectors": np.asarray(query_vectors, dtype=np.float32),
+        "meta": meta,
+    }
+
+
+def _ordered_ids_sha256(ids: Sequence[str]) -> str:
+    payload = json.dumps(list(ids), ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _vectorize_token_sets(

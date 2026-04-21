@@ -7,8 +7,11 @@ import pytest
 from maxionbench.cli import main as cli_main
 from maxionbench.conformance import matrix as conformance_matrix_mod
 from maxionbench.orchestration import runner as runner_mod
+from maxionbench.orchestration import run_matrix as run_matrix_mod
 from maxionbench.tools import download_d1 as download_d1_mod
 from maxionbench.tools import download_datasets as download_datasets_mod
+from maxionbench.tools import execute_run_matrix as execute_run_matrix_mod
+from maxionbench.tools import precompute_text_embeddings as precompute_text_embeddings_mod
 from maxionbench.tools import preprocess_frames_portable as preprocess_frames_portable_mod
 from maxionbench.tools import preprocess_datasets as preprocess_datasets_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
@@ -441,6 +444,154 @@ def test_cli_preprocess_frames_portable_dispatches_flags(monkeypatch) -> None:  
         "6",
         "--seed",
         "42",
+        "--json",
+    ]
+
+
+def test_cli_precompute_text_embeddings_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 58
+
+    monkeypatch.setattr(precompute_text_embeddings_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "precompute-text-embeddings",
+            "--input",
+            "dataset/processed/D4",
+            "--model-id",
+            "BAAI/bge-small-en-v1.5",
+            "--batch-size",
+            "24",
+            "--device",
+            "mps",
+            "--max-length",
+            "256",
+            "--no-normalize",
+            "--force",
+            "--json",
+        ]
+    )
+    assert code == 58
+    assert captured["argv"] == [
+        "--input",
+        "dataset/processed/D4",
+        "--model-id",
+        "BAAI/bge-small-en-v1.5",
+        "--batch-size",
+        "24",
+        "--device",
+        "mps",
+        "--max-length",
+        "256",
+        "--no-normalize",
+        "--force",
+        "--json",
+    ]
+
+
+def test_cli_run_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 59
+
+    monkeypatch.setattr(run_matrix_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "run-matrix",
+            "--scenario-config-dir",
+            "configs/scenarios_portable",
+            "--engine-config-dir",
+            "configs/engines",
+            "--out-dir",
+            "artifacts/run_matrix/portable_b0",
+            "--output-root",
+            "artifacts/runs/portable/b0",
+            "--lane",
+            "cpu",
+            "--json",
+        ]
+    )
+    assert code == 59
+    assert captured["argv"] == [
+        "--scenario-config-dir",
+        "configs/scenarios_portable",
+        "--engine-config-dir",
+        "configs/engines",
+        "--out-dir",
+        "artifacts/run_matrix/portable_b0",
+        "--output-root",
+        "artifacts/runs/portable/b0",
+        "--lane",
+        "cpu",
+        "--json",
+    ]
+
+
+def test_cli_execute_run_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 60
+
+    monkeypatch.setattr(execute_run_matrix_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "execute-run-matrix",
+            "--matrix",
+            "artifacts/run_matrix/portable_b0/run_matrix.json",
+            "--lane",
+            "cpu",
+            "--budget",
+            "b0",
+            "--seed",
+            "42",
+            "--skip-completed",
+            "--continue-on-failure",
+            "--engine-filter",
+            "faiss-cpu,qdrant",
+            "--scenario-filter",
+            "s1_single_hop,s2_streaming_memory",
+            "--template-filter",
+            "s1_single_hop__bge-small-en-v1-5",
+            "--max-runs",
+            "7",
+            "--adapter-timeout-s",
+            "90",
+            "--poll-interval-s",
+            "2",
+            "--json",
+        ]
+    )
+    assert code == 60
+    assert captured["argv"] == [
+        "--matrix",
+        "artifacts/run_matrix/portable_b0/run_matrix.json",
+        "--lane",
+        "cpu",
+        "--adapter-timeout-s",
+        "90.0",
+        "--poll-interval-s",
+        "2.0",
+        "--budget",
+        "b0",
+        "--seed",
+        "42",
+        "--skip-completed",
+        "--continue-on-failure",
+        "--engine-filter",
+        "faiss-cpu,qdrant",
+        "--scenario-filter",
+        "s1_single_hop,s2_streaming_memory",
+        "--template-filter",
+        "s1_single_hop__bge-small-en-v1-5",
+        "--max-runs",
+        "7",
         "--json",
     ]
 

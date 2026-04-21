@@ -25,10 +25,11 @@ def test_readme_describes_study_scope_and_workstation_entrypoints() -> None:
     assert "Linux x86_64 workstation is the primary full-run host." in text
     assert "Mac is the reduced local/dev host." in text
     assert "Default full-run lane is CPU-only; GPU scenarios are explicit opt-in because the A100 may be shared." in text
-    assert "bash run_workstation.sh --lane cpu" in text
-    assert "bash run_workstation.sh --lane gpu" in text
-    assert "command-mac.md" in text
+    assert "Use the direct terminal workflow in `command.md`." in text
+    assert "There are no required repo shell wrappers in the current workflow." in text
 
     assert ".env.slurm" not in text
     assert "run_slurm_pipeline.sh" not in text
     assert "Apptainer" not in text
+    assert "run_workstation.sh" not in text
+    assert "preprocess_all_datasets.sh" not in text

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
 from maxionbench.cli import main as cli_main
+from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
 
@@ -44,6 +47,60 @@ def _write_processed_text_dataset(
         handle.write("query_id\tdoc_id\tscore\n")
         for qid, did, score in qrels:
             handle.write(f"{qid}\t{did}\t{score}\n")
+    _write_precomputed_embeddings(path, docs=docs, queries=queries, qrels=qrels)
+
+
+def _write_precomputed_embeddings(
+    path: Path,
+    *,
+    docs: list[dict],
+    queries: list[dict],
+    qrels: list[tuple[str, str, int]],
+    model_id: str = "BAAI/bge-small-en-v1.5",
+    dim: int = 32,
+) -> None:
+    doc_ids = [str(row["doc_id"]) for row in docs]
+    query_ids = [str(row["query_id"]) for row in queries]
+    qrels_by_query: dict[str, list[str]] = {}
+    for qid, did, score in qrels:
+        if int(score) > 0:
+            qrels_by_query.setdefault(str(qid), []).append(str(did))
+    basis: dict[str, np.ndarray] = {}
+    for idx, doc_id in enumerate(doc_ids):
+        vec = np.zeros(dim, dtype=np.float32)
+        vec[idx % dim] = 1.0
+        basis[doc_id] = vec
+    query_vectors: list[np.ndarray] = []
+    for query_id in query_ids:
+        vec = np.zeros(dim, dtype=np.float32)
+        for doc_id in qrels_by_query.get(query_id, []):
+            vec += basis[doc_id]
+        if not np.any(vec):
+            vec[0] = 1.0
+        vec /= np.linalg.norm(vec) + 1e-12
+        query_vectors.append(vec.astype(np.float32, copy=False))
+    embedding_dir = path / "embeddings" / embedding_model_slug(model_id)
+    embedding_dir.mkdir(parents=True, exist_ok=True)
+    np.save(embedding_dir / "doc_vectors.npy", np.asarray([basis[doc_id] for doc_id in doc_ids], dtype=np.float32))
+    np.save(embedding_dir / "query_vectors.npy", np.asarray(query_vectors, dtype=np.float32))
+    doc_digest = json.dumps(doc_ids, separators=(",", ":")).encode("utf-8")
+    query_digest = json.dumps(query_ids, separators=(",", ":")).encode("utf-8")
+    (embedding_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "maxionbench-text-embeddings-v1",
+                "model_id": model_id,
+                "dim": dim,
+                "doc_count": len(doc_ids),
+                "query_count": len(query_ids),
+                "doc_ids_sha256": hashlib.sha256(doc_digest).hexdigest(),
+                "query_ids_sha256": hashlib.sha256(query_digest).hexdigest(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _portable_cfg(
@@ -182,4 +239,3 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert task_cost_meta["mode"] == "portable-agentic"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns
-
