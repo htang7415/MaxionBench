@@ -11,9 +11,11 @@ from maxionbench.orchestration import run_matrix as run_matrix_mod
 from maxionbench.tools import download_d1 as download_d1_mod
 from maxionbench.tools import download_datasets as download_datasets_mod
 from maxionbench.tools import execute_run_matrix as execute_run_matrix_mod
+from maxionbench.tools import portable_workflow as portable_workflow_mod
 from maxionbench.tools import precompute_text_embeddings as precompute_text_embeddings_mod
 from maxionbench.tools import preprocess_frames_portable as preprocess_frames_portable_mod
 from maxionbench.tools import preprocess_datasets as preprocess_datasets_mod
+from maxionbench.tools import submit_portable as submit_portable_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
 from maxionbench.tools import verify_conformance_configs as verify_conformance_configs_mod
 from maxionbench.tools import verify_d3_calibration as verify_d3_calibration_mod
@@ -790,3 +792,106 @@ def test_cli_verify_promotion_gate_dispatches_portable_flags(monkeypatch) -> Non
         "artifacts/run_matrix/portable_b0/promotion_candidates.json",
         "--json",
     ]
+
+
+def test_cli_submit_portable_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 71
+
+    monkeypatch.setattr(submit_portable_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "submit-portable",
+            "--budget",
+            "b1",
+            "--repo-root",
+            ".",
+            "--scenario-config-dir",
+            "configs/scenarios_portable",
+            "--engine-config-dir",
+            "configs/engines_portable",
+            "--out-dir",
+            "artifacts/run_matrix/portable_b1",
+            "--output-root",
+            "artifacts/runs/portable/b1",
+            "--seed",
+            "42",
+            "--repeats",
+            "2",
+            "--no-retry",
+            "--no-skip-completed",
+            "--continue-on-failure",
+            "--engine-filter",
+            "qdrant,faiss-cpu",
+            "--scenario-filter",
+            "s1_single_hop",
+            "--template-filter",
+            "s1_single_hop__bge-small-en-v1-5.yaml",
+            "--max-runs",
+            "3",
+            "--deadline-hours",
+            "12",
+            "--adapter-timeout-s",
+            "30",
+            "--poll-interval-s",
+            "2",
+            "--no-verify-promotion",
+            "--json",
+        ]
+    )
+    assert code == 71
+    assert captured["argv"] == [
+        "--budget",
+        "b1",
+        "--repo-root",
+        ".",
+        "--scenario-config-dir",
+        "configs/scenarios_portable",
+        "--engine-config-dir",
+        "configs/engines_portable",
+        "--lane",
+        "cpu",
+        "--deadline-hours",
+        "12.0",
+        "--adapter-timeout-s",
+        "30.0",
+        "--poll-interval-s",
+        "2.0",
+        "--out-dir",
+        "artifacts/run_matrix/portable_b1",
+        "--output-root",
+        "artifacts/runs/portable/b1",
+        "--seed",
+        "42",
+        "--repeats",
+        "2",
+        "--no-retry",
+        "--no-skip-completed",
+        "--continue-on-failure",
+        "--engine-filter",
+        "qdrant,faiss-cpu",
+        "--scenario-filter",
+        "s1_single_hop",
+        "--template-filter",
+        "s1_single_hop__bge-small-en-v1-5.yaml",
+        "--max-runs",
+        "3",
+        "--no-verify-promotion",
+        "--json",
+    ]
+
+
+def test_cli_portable_workflow_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 72
+
+    monkeypatch.setattr(portable_workflow_mod, "main", _fake_main)
+    code = cli_main(["portable-workflow", "setup", "--repo-root", ".", "--json"])
+    assert code == 72
+    assert captured["argv"] == ["setup", "--repo-root", ".", "--json"]
