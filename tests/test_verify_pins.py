@@ -27,6 +27,13 @@ def test_verify_pins_passes_for_paper_scenario_configs_with_strict_d3_scale() ->
     assert summary["strict_d3_scenario_scale"] is True
 
 
+def test_verify_pins_passes_for_portable_scenario_configs() -> None:
+    summary = verify_scenario_config_dir(Path("configs/scenarios_portable"))
+    assert summary["pass"] is True
+    assert int(summary["files_checked"]) == 3
+    assert int(summary["error_count"]) == 0
+
+
 def test_verify_pins_detects_drift_in_temp_config_dir(tmp_path: Path) -> None:
     src = Path("configs/scenarios/s5_rerank.yaml")
     payload = yaml.safe_load(src.read_text(encoding="utf-8"))
@@ -137,6 +144,36 @@ def test_verify_pins_detects_s4_clients_grid_drift(tmp_path: Path) -> None:
     assert int(summary["error_count"]) >= 1
     messages = [str(item.get("message", "")) for item in summary["errors"]]
     assert any("clients_grid" in msg for msg in messages)
+
+
+def test_verify_pins_detects_portable_clients_grid_drift(tmp_path: Path) -> None:
+    src = Path("configs/scenarios_portable/s1_single_hop.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["clients_grid"] = [1, 8]
+
+    out = tmp_path / "s1_single_hop.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path)
+    assert summary["pass"] is False
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("clients_grid" in msg for msg in messages)
+
+
+def test_verify_pins_detects_portable_rpc_baseline_drift(tmp_path: Path) -> None:
+    src = Path("configs/scenarios_portable/s2_streaming_memory.yaml")
+    payload = yaml.safe_load(src.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["rpc_baseline_requests"] = 5
+
+    out = tmp_path / "s2_streaming_memory.yaml"
+    out.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+
+    summary = verify_scenario_config_dir(tmp_path)
+    assert summary["pass"] is False
+    messages = [str(item.get("message", "")) for item in summary["errors"]]
+    assert any("rpc_baseline_requests" in msg for msg in messages)
 
 
 def test_verify_pins_allows_d3_50m_k8192_tier(tmp_path: Path) -> None:

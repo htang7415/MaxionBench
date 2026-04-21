@@ -55,6 +55,7 @@ class RunMatrix:
     repo_root: str
     generated_config_dir: str
     output_root: str
+    budget_level: str | None
     cpu_rows: list[RunMatrixRow]
     gpu_rows: list[RunMatrixRow]
     selected_engines: list[str]
@@ -77,10 +78,12 @@ def build_run_matrix(
     engine_config_dir: Path,
     out_dir: Path,
     output_root: str = _DEFAULT_OUTPUT_ROOT,
+    budget_level: str | None = None,
     lane: str = "all",
     skip_s6: bool = False,
 ) -> RunMatrix:
     normalized_lane = _normalize_lane(lane)
+    normalized_budget = _normalize_budget_level(budget_level)
     resolved_repo_root = repo_root.expanduser().resolve()
     resolved_scenarios = _resolve_dir(path=scenario_config_dir, repo_root=resolved_repo_root)
     resolved_engines = _resolve_dir(path=engine_config_dir, repo_root=resolved_repo_root)
@@ -106,6 +109,7 @@ def build_run_matrix(
                     engine_payload=engine_payload,
                     template_name=expanded_template_name,
                     output_root=output_root,
+                    budget_level=normalized_budget,
                 )
                 group = _task_group_for_payload(merged=merged, template_name=expanded_template_name)
                 if normalized_lane == "cpu" and group == "gpu":
@@ -136,6 +140,7 @@ def build_run_matrix(
         repo_root=str(resolved_repo_root),
         generated_config_dir=str(generated_config_dir.resolve()),
         output_root=str(output_root),
+        budget_level=normalized_budget,
         cpu_rows=cpu_rows,
         gpu_rows=gpu_rows,
         selected_engines=selected_engines,
@@ -150,6 +155,7 @@ def build_run_matrix(
                 "repo_root": matrix.repo_root,
                 "generated_config_dir": matrix.generated_config_dir,
                 "output_root": matrix.output_root,
+                "budget_level": matrix.budget_level,
                 "cpu_rows": [asdict(row) for row in matrix.cpu_rows],
                 "gpu_rows": [asdict(row) for row in matrix.gpu_rows],
                 "selected_engines": list(matrix.selected_engines),
@@ -171,6 +177,7 @@ def load_run_matrix(path: Path) -> RunMatrix:
         repo_root=str(payload["repo_root"]),
         generated_config_dir=str(payload["generated_config_dir"]),
         output_root=str(payload.get("output_root", _DEFAULT_OUTPUT_ROOT)),
+        budget_level=_normalize_budget_level(payload.get("budget_level")),
         cpu_rows=[RunMatrixRow(**row) for row in payload.get("cpu_rows", [])],
         gpu_rows=[RunMatrixRow(**row) for row in payload.get("gpu_rows", [])],
         selected_engines=[str(item) for item in payload.get("selected_engines", [])],
@@ -183,6 +190,17 @@ def _normalize_lane(lane: str) -> str:
     normalized = str(lane).strip().lower()
     if normalized not in {"cpu", "gpu", "all"}:
         raise ValueError(f"lane must be one of cpu/gpu/all, got {lane!r}")
+    return normalized
+
+
+def _normalize_budget_level(budget_level: object | None) -> str | None:
+    if budget_level is None:
+        return None
+    normalized = str(budget_level).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in {"b0", "b1", "b2"}:
+        raise ValueError(f"budget_level must be one of b0/b1/b2, got {budget_level!r}")
     return normalized
 
 
@@ -244,8 +262,11 @@ def _compose_config(
     engine_payload: dict[str, Any],
     template_name: str,
     output_root: str,
+    budget_level: str | None,
 ) -> dict[str, Any]:
     merged = dict(scenario_payload)
+    if budget_level is not None:
+        merged["budget_level"] = budget_level
     merged["engine"] = str(engine_payload.get("engine", merged.get("engine", "mock")))
     merged["engine_version"] = str(engine_payload.get("engine_version", merged.get("engine_version", "0.1.0")))
     adapter_options = dict(merged.get("adapter_options") or {})
@@ -332,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--engine-config-dir", default="configs/engines")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--output-root", default=_DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
     parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
     parser.add_argument("--skip-s6", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -344,6 +366,7 @@ def main(argv: list[str] | None = None) -> int:
         engine_config_dir=Path(args.engine_config_dir),
         out_dir=Path(args.out_dir),
         output_root=str(args.output_root),
+        budget_level=args.budget,
         lane=str(args.lane),
         skip_s6=bool(args.skip_s6),
     )
@@ -351,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
         "repo_root": matrix.repo_root,
         "generated_config_dir": matrix.generated_config_dir,
         "output_root": matrix.output_root,
+        "budget_level": matrix.budget_level,
         "lane": matrix.lane,
         "cpu_rows": len(matrix.cpu_rows),
         "gpu_rows": len(matrix.gpu_rows),

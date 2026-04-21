@@ -1,0 +1,3 @@
+engine: faiss-cpu
+engine_version: "cpu"
+adapter_options: {}

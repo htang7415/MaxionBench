@@ -71,12 +71,15 @@ def test_build_run_matrix_portable_expands_embedding_variants(tmp_path: Path) ->
     matrix = build_run_matrix(
         repo_root=Path("."),
         scenario_config_dir=Path("configs/scenarios_portable"),
-        engine_config_dir=Path("configs/engines"),
+        engine_config_dir=Path("configs/engines_portable"),
         out_dir=tmp_path / "portable_matrix",
         output_root="artifacts/runs/portable_matrix",
+        budget_level="b0",
         lane="cpu",
     )
 
+    assert matrix.budget_level == "b0"
+    assert matrix.selected_engines == ["faiss-cpu", "lancedb-inproc", "lancedb-service", "pgvector", "qdrant"]
     s1_rows = [row for row in matrix.cpu_rows if row.scenario == "s1_single_hop" and row.engine == "qdrant"]
     assert s1_rows
     payloads = [yaml.safe_load(Path(row.config_path).read_text(encoding="utf-8")) for row in s1_rows]
@@ -85,3 +88,10 @@ def test_build_run_matrix_portable_expands_embedding_variants(tmp_path: Path) ->
     assert "BAAI/bge-small-en-v1.5" in models
     assert "BAAI/bge-base-en-v1.5" in models
     assert dims == {384, 768}
+    assert all(payload["clients_grid"] == [1, 4, 8] for payload in payloads)
+    assert all(payload["budget_level"] == "b0" for payload in payloads)
+
+    s3_row = next(row for row in matrix.cpu_rows if row.scenario == "s3_multi_hop" and row.engine == "qdrant")
+    s3_payload = yaml.safe_load(Path(s3_row.config_path).read_text(encoding="utf-8"))
+    assert s3_payload["clients_grid"] == [1, 4, 8]
+    assert s3_payload["budget_level"] == "b0"

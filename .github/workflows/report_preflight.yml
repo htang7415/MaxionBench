@@ -29,7 +29,7 @@ jobs:
 
       - name: Verify conformance config catalog
         run: |
-          maxionbench verify-conformance-configs --config-dir configs/conformance --json
+          maxionbench verify-conformance-configs --config-dir configs/conformance --allow-gpu-unavailable --json
 
       - name: Run conformance matrix (structural readiness)
         run: |
@@ -96,7 +96,7 @@ jobs:
 
       - name: Verify conformance config catalog
         run: |
-          maxionbench verify-conformance-configs --config-dir configs/conformance --json
+          maxionbench verify-conformance-configs --config-dir configs/conformance --allow-gpu-unavailable --json
 
       - name: Verify repository hygiene
         run: |

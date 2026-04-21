@@ -155,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines")
     run_matrix_parser.add_argument("--out-dir", required=True)
     run_matrix_parser.add_argument("--output-root", default="artifacts/runs/workstation_matrix")
+    run_matrix_parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
     run_matrix_parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
     run_matrix_parser.add_argument("--skip-s6", action="store_true")
     run_matrix_parser.add_argument("--json", action="store_true")
@@ -229,6 +230,9 @@ def main(argv: list[str] | None = None) -> int:
         "verify-promotion-gate",
         help="Verify strict-readiness artifact before promotion",
     )
+    verify_promotion_gate_parser.add_argument("--portable-results", default=None)
+    verify_promotion_gate_parser.add_argument("--from-budget", default=None, choices=["b0", "b1"])
+    verify_promotion_gate_parser.add_argument("--out-candidates", default=None)
     verify_promotion_gate_parser.add_argument(
         "--strict-readiness-summary",
         default="artifacts/conformance_strict/engine_readiness_summary.json",
@@ -581,6 +585,8 @@ def main(argv: list[str] | None = None) -> int:
             "--lane",
             args.lane,
         ]
+        if args.budget is not None:
+            matrix_argv.extend(["--budget", args.budget])
         if args.skip_s6:
             matrix_argv.append("--skip-s6")
         if args.json:
@@ -686,7 +692,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify-promotion-gate":
         from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
 
-        verify_argv: list[str] = ["--strict-readiness-summary", args.strict_readiness_summary]
+        verify_argv: list[str] = []
+        if args.portable_results:
+            verify_argv.extend(["--portable-results", args.portable_results])
+            if args.from_budget:
+                verify_argv.extend(["--from-budget", args.from_budget])
+            if args.out_candidates:
+                verify_argv.extend(["--out-candidates", args.out_candidates])
+        else:
+            verify_argv.extend(["--strict-readiness-summary", args.strict_readiness_summary])
         if args.conformance_matrix:
             verify_argv.extend(["--conformance-matrix", args.conformance_matrix])
         if args.json:

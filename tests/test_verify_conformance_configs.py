@@ -8,10 +8,11 @@ from maxionbench.tools.verify_conformance_configs import verify_conformance_conf
 
 
 def test_verify_conformance_configs_passes_for_repo_catalog() -> None:
-    summary = verify_conformance_config_dir(config_dir=Path("configs/conformance"))
+    summary = verify_conformance_config_dir(config_dir=Path("configs/conformance"), allow_gpu_unavailable=True)
     assert summary["pass"] is True
     assert int(summary["files_checked"]) >= 1
     assert summary["missing_required_adapters"] == []
+    assert summary["allow_gpu_unavailable"] is True
 
 
 def test_verify_conformance_configs_flags_missing_dir(tmp_path: Path) -> None:

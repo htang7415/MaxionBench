@@ -170,6 +170,15 @@ def test_portable_configs_load_with_new_schema_fields() -> None:
         assert cfg.embedding_dim == 384
         assert cfg.c_llm_in == 0.15
         assert cfg.scenario == scenario
+    s1_cfg = load_run_config(Path("configs/scenarios_portable/s1_single_hop.yaml"))
+    s2_cfg = load_run_config(Path("configs/scenarios_portable/s2_streaming_memory.yaml"))
+    s3_cfg = load_run_config(Path("configs/scenarios_portable/s3_multi_hop.yaml"))
+    assert s1_cfg.clients_grid == [1, 4, 8]
+    assert (s2_cfg.clients_read, s2_cfg.clients_write, s2_cfg.clients_grid) == (8, 2, [8])
+    assert s3_cfg.clients_grid == [1, 4, 8]
+    assert s1_cfg.rpc_baseline_requests == 1000
+    assert s2_cfg.rpc_baseline_requests == 1000
+    assert s3_cfg.rpc_baseline_requests == 1000
 
 
 def test_run_from_config_portable_s1_smoke(tmp_path: Path) -> None:
@@ -192,7 +201,7 @@ def test_run_from_config_portable_s1_smoke(tmp_path: Path) -> None:
         queries=[{"query_id": "fiqa::q::q1", "text": "bond market spreads"}],
         qrels=[("fiqa::q::q1", "fiqa::doc::d1", 2)],
     )
-    cfg_path = _portable_cfg(tmp_path, scenario="s1_single_hop", processed_dataset_path=root, dataset_bundle="D4", clients_grid=[1, 2])
+    cfg_path = _portable_cfg(tmp_path, scenario="s1_single_hop", processed_dataset_path=root, dataset_bundle="D4", clients_grid=[1, 4, 8])
 
     out_dir = run_from_config(cfg_path)
 
@@ -209,6 +218,7 @@ def test_run_from_config_portable_s1_smoke(tmp_path: Path) -> None:
     assert int(metadata["repeats"]) == 1
     assert int(resolved["warmup_s"]) == 10
     assert int(resolved["steady_state_s"]) == 10
+    assert sorted(set(frame["clients_read"].astype(int).tolist())) == [1, 4, 8]
 
 
 def test_run_from_config_portable_s2_smoke(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

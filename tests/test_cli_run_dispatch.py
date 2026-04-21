@@ -506,11 +506,13 @@ def test_cli_run_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[n
             "--scenario-config-dir",
             "configs/scenarios_portable",
             "--engine-config-dir",
-            "configs/engines",
+            "configs/engines_portable",
             "--out-dir",
             "artifacts/run_matrix/portable_b0",
             "--output-root",
             "artifacts/runs/portable/b0",
+            "--budget",
+            "b0",
             "--lane",
             "cpu",
             "--json",
@@ -521,13 +523,15 @@ def test_cli_run_matrix_dispatches_flags(monkeypatch) -> None:  # type: ignore[n
         "--scenario-config-dir",
         "configs/scenarios_portable",
         "--engine-config-dir",
-        "configs/engines",
+        "configs/engines_portable",
         "--out-dir",
         "artifacts/run_matrix/portable_b0",
         "--output-root",
         "artifacts/runs/portable/b0",
         "--lane",
         "cpu",
+        "--budget",
+        "b0",
         "--json",
     ]
 
@@ -744,5 +748,37 @@ def test_cli_verify_promotion_gate_dispatches_flags(monkeypatch) -> None:  # typ
         "artifacts/conformance_strict/engine_readiness_summary.json",
         "--conformance-matrix",
         "artifacts/conformance_strict/conformance_matrix.csv",
+        "--json",
+    ]
+
+
+def test_cli_verify_promotion_gate_dispatches_portable_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 70
+
+    monkeypatch.setattr(verify_promotion_gate_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "verify-promotion-gate",
+            "--portable-results",
+            "artifacts/runs/portable/b0",
+            "--from-budget",
+            "b0",
+            "--out-candidates",
+            "artifacts/run_matrix/portable_b0/promotion_candidates.json",
+            "--json",
+        ]
+    )
+    assert code == 70
+    assert captured["argv"] == [
+        "--portable-results",
+        "artifacts/runs/portable/b0",
+        "--from-budget",
+        "b0",
+        "--out-candidates",
+        "artifacts/run_matrix/portable_b0/promotion_candidates.json",
         "--json",
     ]
