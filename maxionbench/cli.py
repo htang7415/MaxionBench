@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run_parser = subparsers.add_parser("run", help="Run a benchmark scenario")
     run_parser.add_argument("--config", required=True)
+    run_parser.add_argument("--budget", default=None)
     run_parser.add_argument("--seed", type=int, default=None)
     run_parser.add_argument("--repeats", type=int, default=None)
     run_parser.add_argument("--no-retry", action="store_true")
@@ -88,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     download_datasets_parser.add_argument("--root", default="dataset")
     download_datasets_parser.add_argument("--cache-dir", default=".cache")
+    download_datasets_parser.add_argument("--datasets", default=None)
     download_datasets_parser.add_argument("--crag-examples", type=int, default=500)
     download_datasets_parser.add_argument("--skip-d1d2", action="store_true")
     download_datasets_parser.add_argument("--skip-d3", action="store_true")
@@ -119,6 +121,18 @@ def main(argv: list[str] | None = None) -> int:
     preprocess_datasets_parser.add_argument("--chunk-chars", type=int, default=None)
     preprocess_datasets_parser.add_argument("--overlap", type=int, default=None)
     preprocess_datasets_parser.add_argument("--json", action="store_true")
+
+    preprocess_frames_portable_parser = subparsers.add_parser(
+        "preprocess-frames-portable",
+        help="Build the bounded FRAMES-portable corpus from local FRAMES and KILT-style inputs",
+    )
+    preprocess_frames_portable_parser.add_argument("--frames-root", required=True)
+    preprocess_frames_portable_parser.add_argument("--kilt-root", required=True)
+    preprocess_frames_portable_parser.add_argument("--out", required=True)
+    preprocess_frames_portable_parser.add_argument("--same-page-negatives", type=int, default=6)
+    preprocess_frames_portable_parser.add_argument("--cross-question-negatives", type=int, default=6)
+    preprocess_frames_portable_parser.add_argument("--seed", type=int, default=42)
+    preprocess_frames_portable_parser.add_argument("--json", action="store_true")
 
     verify_conformance_configs_parser = subparsers.add_parser(
         "verify-conformance-configs",
@@ -198,9 +212,9 @@ def main(argv: list[str] | None = None) -> int:
     inspect_report_policy_parser.add_argument("--strict", action="store_true")
     inspect_report_policy_parser.add_argument("--json", action="store_true")
 
-    report_parser = subparsers.add_parser("report", help="Generate milestone/final report artifacts")
+    report_parser = subparsers.add_parser("report", help="Generate report artifacts")
     report_parser.add_argument("--input", required=True)
-    report_parser.add_argument("--mode", required=True, choices=["milestones", "final"])
+    report_parser.add_argument("--mode", required=True, choices=["milestones", "final", "portable-agentic"])
     report_parser.add_argument("--out", required=False)
     report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
 
@@ -237,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.orchestration.runner import main as run_main
 
         run_argv: list[str] = ["--config", args.config]
+        if args.budget is not None:
+            run_argv.extend(["--budget", args.budget])
         if args.seed is not None:
             run_argv.extend(["--seed", str(args.seed)])
         if args.repeats is not None:
@@ -329,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
             args.root,
             "--cache-dir",
             args.cache_dir,
+            "--datasets",
+            args.datasets or "",
             "--crag-examples",
             str(args.crag_examples),
             "--timeout-s",
@@ -415,6 +433,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             preprocess_argv.append("--json")
         return preprocess_datasets_main(preprocess_argv)
+    if args.command == "preprocess-frames-portable":
+        from maxionbench.tools.preprocess_frames_portable import main as preprocess_frames_portable_main
+
+        preprocess_argv: list[str] = [
+            "--frames-root",
+            args.frames_root,
+            "--kilt-root",
+            args.kilt_root,
+            "--out",
+            args.out,
+            "--same-page-negatives",
+            str(args.same_page_negatives),
+            "--cross-question-negatives",
+            str(args.cross_question_negatives),
+            "--seed",
+            str(args.seed),
+        ]
+        if args.json:
+            preprocess_argv.append("--json")
+        return preprocess_frames_portable_main(preprocess_argv)
     if args.command == "verify-conformance-configs":
         from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
 
@@ -517,6 +555,19 @@ def main(argv: list[str] | None = None) -> int:
             inspect_argv.append("--json")
         return inspect_report_output_policy_main(inspect_argv)
     if args.command == "report":
+        if args.mode == "portable-agentic":
+            from maxionbench.reports.portable_exports import generate_portable_report_bundle
+
+            if args.milestone_id:
+                raise ValueError("--milestone-id is not valid when --mode portable-agentic")
+            if not args.out:
+                raise ValueError("--out is required when --mode portable-agentic")
+            generate_portable_report_bundle(
+                input_dir=Path(args.input).resolve(),
+                out_dir=Path(args.out).resolve(),
+            )
+            return 0
+
         from maxionbench.reports.paper_exports import generate_report_bundle
 
         if args.mode == "final":

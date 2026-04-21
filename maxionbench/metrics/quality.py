@@ -40,3 +40,18 @@ def ndcg_at_10(retrieved_ids: Sequence[str], relevance: dict[str, float]) -> flo
     if idcg == 0.0:
         return 0.0
     return dcg / idcg
+
+
+def evidence_coverage_at_k(
+    retrieved_ids: Sequence[str],
+    evidence_ids: Sequence[str],
+    *,
+    k: int,
+) -> float:
+    if k <= 0:
+        raise ValueError("k must be positive")
+    evidence = set(evidence_ids)
+    if not evidence:
+        return 0.0
+    hits = len(evidence.intersection(retrieved_ids[:k]))
+    return hits / len(evidence)

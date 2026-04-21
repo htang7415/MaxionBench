@@ -124,6 +124,11 @@ class RunMetadata:
     config_fingerprint: str
     repeats: int
     no_retry: bool
+    profile: str = "legacy"
+    budget_level: str | None = None
+    embedding_model: str | None = None
+    embedding_dim: int | None = None
+    c_llm_in: float = 0.0
     clients_read_grid: list[int] | None = None
     quality_targets: list[float] | None = None
     rhu_references: Mapping[str, float] | None = None
@@ -138,6 +143,8 @@ class RunMetadata:
             raise ValueError("Timed measurements must run with retries disabled.")
         if self.repeats < 1:
             raise ValueError("repeats must be >= 1")
+        if self.c_llm_in < 0:
+            raise ValueError("c_llm_in must be >= 0")
         if self.clients_read < 0 or self.clients_write < 0:
             raise ValueError("client counts must be non-negative")
         missing = [name for name in REQUIRED_METADATA_FIELDS if getattr(self, name, None) is None]

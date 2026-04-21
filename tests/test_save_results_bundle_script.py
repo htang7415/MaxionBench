@@ -11,8 +11,11 @@ def test_save_results_bundle_script_exists_and_mentions_archive_contract() -> No
     assert 'RUN_BUNDLE="artifacts/workstation_runs/latest"' in text
     assert 'RESULTS_ROOT="results"' in text
     assert 'DATASET_ROOT="dataset"' in text
+    assert 'PROFILE="paper"' in text
+    assert "--profile <name>" in text
     assert "--copy-datasets" in text
     assert "archive_manifest.txt" in text
+    assert 'profile=${PROFILE}' in text
     assert 'ln -sfn "${RUN_ID}" "${RESULTS_ROOT_ABS}/latest"' in text
 
 

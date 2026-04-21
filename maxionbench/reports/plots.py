@@ -176,6 +176,11 @@ def load_results(input_dir: Path) -> pd.DataFrame:
         frame["__meta_ground_truth_metric"] = str(metadata.get("ground_truth_metric") or "")
         frame["__meta_ground_truth_engine"] = str(metadata.get("ground_truth_engine") or "")
         frame["__meta_ground_truth_k"] = _safe_float(metadata.get("ground_truth_k"))
+        frame["__meta_profile"] = str(metadata.get("profile") or "")
+        frame["__meta_budget_level"] = str(metadata.get("budget_level") or "")
+        frame["__meta_embedding_model"] = str(metadata.get("embedding_model") or "")
+        frame["__meta_embedding_dim"] = _safe_float(metadata.get("embedding_dim"))
+        frame["__meta_c_llm_in"] = _safe_float(metadata.get("c_llm_in"))
         rhu_weights = metadata.get("rhu_weights")
         if not isinstance(rhu_weights, dict):
             rhu_weights = {}

@@ -1,0 +1,29 @@
+profile: portable-agentic
+budget_level: b1
+engine: mock
+engine_version: 0.1.0
+embedding_model: BAAI/bge-small-en-v1.5
+embedding_dim: 384
+c_llm_in: 0.15
+scenario: s3_multi_hop
+dataset_bundle: FRAMES_PORTABLE
+dataset_hash: portable-s3-unresolved
+processed_dataset_path: ${MAXIONBENCH_PORTABLE_FRAMES_PATH:-dataset/processed/frames_portable}
+seed: 42
+repeats: 1
+no_retry: true
+output_dir: artifacts/runs/portable/s3_multi_hop_mock
+quality_target: 0.30
+quality_targets: [0.30]
+clients_read: 4
+clients_write: 0
+clients_grid: [4]
+search_sweep:
+  - hnsw_ef: 32
+  - hnsw_ef: 64
+rpc_baseline_requests: 5
+sla_threshold_ms: 150.0
+vector_dim: 384
+num_vectors: 1
+num_queries: 1
+top_k: 10

@@ -10,7 +10,11 @@ def test_workstation_script_exists_and_references_local_matrix_workflow() -> Non
     text = script.read_text(encoding="utf-8")
     assert 'SCENARIO_CONFIG_DIR="configs/scenarios_paper"' in text
     assert 'ENGINE_CONFIG_DIR="configs/engines"' in text
+    assert 'PROFILE="paper"' in text
+    assert 'BUDGET=""' in text
     assert 'LANE="cpu"' in text
+    assert "--profile <paper|portable-agentic>" in text
+    assert "--budget <b0|b1|b2>" in text
     assert "--lane <cpu|gpu|all>" in text
     assert "--skip-completed" in text
     assert "--continue-on-failure" in text
@@ -41,6 +45,8 @@ def test_workstation_script_exists_and_references_local_matrix_workflow() -> Non
     assert 'local_gpu_runtime_ready' in text
     assert 'faiss import does not expose GPU bindings' in text
     assert 'local gpu benchmark mode is not ready in the current Python environment' in text
+    assert 'run_portable_profile() {' in text
+    assert 'report --mode portable-agentic' in text
     assert 'MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI' in text
     assert 'artifacts/workstation_runs' in text
     assert 'run_status_is_success' in text

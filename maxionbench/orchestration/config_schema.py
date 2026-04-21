@@ -26,8 +26,13 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RunConfig:
+    profile: str = "legacy"
+    budget_level: str | None = None
     engine: str = "mock"
     engine_version: str = "0.1.0"
+    embedding_model: str | None = None
+    embedding_dim: int | None = None
+    c_llm_in: float = 0.0
     adapter_options: dict[str, Any] = field(default_factory=dict)
     index_params: dict[str, Any] = field(default_factory=dict)
     scenario: str = "s1_ann_frontier"
@@ -212,9 +217,14 @@ def _validate(cfg: RunConfig) -> None:
         "s4_hybrid",
         "s5_rerank",
         "s6_fusion",
+        "s1_single_hop",
+        "s2_streaming_memory",
+        "s3_multi_hop",
     }
     if cfg.scenario not in allowed:
         raise ValueError(f"Unsupported scenario: {cfg.scenario}")
+    if cfg.budget_level is not None and cfg.budget_level not in {"b0", "b1", "b2"}:
+        raise ValueError("budget_level must be one of b0,b1,b2 when provided")
     if cfg.repeats < 1:
         raise ValueError("repeats must be >= 1")
     if cfg.top_k < 1:
@@ -275,6 +285,10 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("s6 candidate budgets must be >= 1")
     if cfg.d4_max_docs < 1 or cfg.d4_max_queries < 1:
         raise ValueError("d4_max_docs and d4_max_queries must be >= 1")
+    if cfg.c_llm_in < 0:
+        raise ValueError("c_llm_in must be >= 0")
+    if cfg.embedding_dim is not None and cfg.embedding_dim < 1:
+        raise ValueError("embedding_dim must be >= 1 when provided")
     if cfg.d4_use_real_data and not cfg.processed_dataset_path and not cfg.d4_beir_root and not cfg.d4_crag_path:
         raise ValueError("d4_use_real_data requires at least one of processed_dataset_path, d4_beir_root, or d4_crag_path")
     if cfg.d4_use_real_data and cfg.d4_beir_root and not cfg.d4_beir_subsets:

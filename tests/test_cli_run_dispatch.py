@@ -9,6 +9,7 @@ from maxionbench.conformance import matrix as conformance_matrix_mod
 from maxionbench.orchestration import runner as runner_mod
 from maxionbench.tools import download_d1 as download_d1_mod
 from maxionbench.tools import download_datasets as download_datasets_mod
+from maxionbench.tools import preprocess_frames_portable as preprocess_frames_portable_mod
 from maxionbench.tools import preprocess_datasets as preprocess_datasets_mod
 from maxionbench.tools import verify_branch_protection as verify_branch_mod
 from maxionbench.tools import verify_conformance_configs as verify_conformance_configs_mod
@@ -70,6 +71,36 @@ def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignor
         "--behavior-dir",
         "docs/behavior",
         "--allow-gpu-unavailable",
+    ]
+
+
+def test_cli_run_dispatches_budget_override(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 32
+
+    monkeypatch.setattr(runner_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "run",
+            "--config",
+            "configs/scenarios_portable/s1_single_hop.yaml",
+            "--budget",
+            "b1",
+        ]
+    )
+    assert code == 32
+    assert captured["argv"] == [
+        "--config",
+        "configs/scenarios_portable/s1_single_hop.yaml",
+        "--budget",
+        "b1",
+        "--conformance-matrix",
+        "artifacts/conformance/conformance_matrix.csv",
+        "--behavior-dir",
+        "docs/behavior",
     ]
 
 
@@ -260,6 +291,8 @@ def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: i
             "dataset",
             "--cache-dir",
             ".cache",
+            "--datasets",
+            "",
             "--crag-examples",
             "123",
             "--skip-d3",
@@ -275,6 +308,8 @@ def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: i
         "dataset",
         "--cache-dir",
         ".cache",
+        "--datasets",
+        "",
         "--crag-examples",
         "123",
         "--timeout-s",
@@ -282,6 +317,40 @@ def test_cli_download_datasets_dispatches_flags(monkeypatch) -> None:  # type: i
         "--skip-d3",
         "--force",
         "--json",
+    ]
+
+
+def test_cli_download_datasets_dispatches_dataset_filter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 54
+
+    monkeypatch.setattr(download_datasets_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "download-datasets",
+            "--root",
+            "dataset",
+            "--cache-dir",
+            ".cache",
+            "--datasets",
+            "scifact,fiqa,crag,frames",
+        ]
+    )
+    assert code == 54
+    assert captured["argv"] == [
+        "--root",
+        "dataset",
+        "--cache-dir",
+        ".cache",
+        "--datasets",
+        "scifact,fiqa,crag,frames",
+        "--crag-examples",
+        "500",
+        "--timeout-s",
+        "60.0",
     ]
 
 
@@ -330,6 +399,50 @@ def test_cli_preprocess_datasets_dispatches_ann_hdf5(monkeypatch) -> None:  # ty
 def test_cli_preprocess_datasets_rejects_missing_required_flags() -> None:
     with pytest.raises(SystemExit):
         cli_main(["preprocess-datasets", "ann-hdf5", "--out", "dataset/processed/D1/gist-960-euclidean"])
+
+
+def test_cli_preprocess_frames_portable_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, list[str]] = {}
+
+    def _fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = list(argv or [])
+        return 56
+
+    monkeypatch.setattr(preprocess_frames_portable_mod, "main", _fake_main)
+    code = cli_main(
+        [
+            "preprocess-frames-portable",
+            "--frames-root",
+            "dataset/raw/frames",
+            "--kilt-root",
+            "dataset/raw/kilt",
+            "--out",
+            "dataset/processed/frames_portable",
+            "--same-page-negatives",
+            "6",
+            "--cross-question-negatives",
+            "6",
+            "--seed",
+            "42",
+            "--json",
+        ]
+    )
+    assert code == 56
+    assert captured["argv"] == [
+        "--frames-root",
+        "dataset/raw/frames",
+        "--kilt-root",
+        "dataset/raw/kilt",
+        "--out",
+        "dataset/processed/frames_portable",
+        "--same-page-negatives",
+        "6",
+        "--cross-question-negatives",
+        "6",
+        "--seed",
+        "42",
+        "--json",
+    ]
 
 
 def test_cli_verify_conformance_configs_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]
