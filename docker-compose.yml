@@ -34,7 +34,7 @@ services:
     gpus: all
 
   qdrant:
-    image: ${MAXIONBENCH_QDRANT_IMAGE:-qdrant/qdrant:latest}
+    image: ${MAXIONBENCH_QDRANT_IMAGE:-qdrant/qdrant:v1.17.1}
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -42,7 +42,7 @@ services:
       - qdrant_storage:/qdrant/storage
 
   pgvector:
-    image: ${MAXIONBENCH_PGVECTOR_IMAGE:-pgvector/pgvector:pg16}
+    image: ${MAXIONBENCH_PGVECTOR_IMAGE:-pgvector/pgvector:0.8.2-pg16-trixie}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -72,7 +72,7 @@ services:
       - "${MAXIONBENCH_OPENSEARCH_DATA_DIR:-./artifacts/containers/opensearch_data}:/usr/share/opensearch/data"
 
   weaviate:
-    image: ${MAXIONBENCH_WEAVIATE_IMAGE:-cr.weaviate.io/semitechnologies/weaviate:latest}
+    image: ${MAXIONBENCH_WEAVIATE_IMAGE:-cr.weaviate.io/semitechnologies/weaviate:1.30.6}
     environment:
       QUERY_DEFAULTS_LIMIT: "20"
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"

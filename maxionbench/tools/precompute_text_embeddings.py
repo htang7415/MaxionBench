@@ -45,6 +45,7 @@ def precompute_text_embeddings(
     max_length: int = 512,
     normalize: bool = True,
     force: bool = False,
+    require_device: str | None = None,
 ) -> dict[str, Any]:
     if batch_size < 1:
         raise ValueError("batch_size must be >= 1")
@@ -60,6 +61,7 @@ def precompute_text_embeddings(
         device=device,
         max_length=max_length,
         normalize=normalize,
+        require_device=require_device,
     )
 
     outputs: list[dict[str, Any]] = []
@@ -219,6 +221,7 @@ def _load_text_encoder(
     device: str,
     max_length: int,
     normalize: bool,
+    require_device: str | None = None,
 ) -> _TextEncoder:
     try:
         import torch  # type: ignore[import-not-found]
@@ -231,6 +234,7 @@ def _load_text_encoder(
         ) from exc
 
     resolved_device = _resolve_torch_device(torch=torch, requested=device)
+    _validate_required_device(resolved_device=resolved_device, require_device=require_device)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModel.from_pretrained(model_id)
     model.to(resolved_device)
@@ -282,6 +286,20 @@ def _resolve_torch_device(*, torch: Any, requested: str) -> str:
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
+
+
+def _validate_required_device(*, resolved_device: str, require_device: str | None) -> None:
+    if require_device is None:
+        return
+    expected = str(require_device).strip().lower()
+    if not expected:
+        return
+    observed = str(resolved_device).strip().lower()
+    if observed != expected:
+        raise RuntimeError(
+            f"embedding preflight failed: resolved torch device is {observed!r}, expected {expected!r}. "
+            "Install a compatible torch build or pass an explicit --device after accepting the runtime cost."
+        )
 
 
 def _ordered_ids_sha256(ids: Sequence[str]) -> str:
@@ -336,6 +354,11 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument(
+        "--require-device",
+        default=None,
+        help="Fail before model loading unless the resolved torch device matches this value, e.g. mps on Apple Silicon.",
+    )
     parser.add_argument("--no-normalize", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -352,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         max_length=args.max_length,
         normalize=not bool(args.no_normalize),
         force=bool(args.force),
+        require_device=args.require_device,
     )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
