@@ -15,9 +15,12 @@ _DATASET_ROOT_TOKEN = "${MAXIONBENCH_DATASET_ROOT:-dataset}"
 _DEFAULT_OUTPUT_ROOT = "artifacts/runs/workstation_matrix"
 _SCENARIO_ORDER = {
     "s1_ann_frontier": 0,
+    "s1_single_hop": 0,
     "s1_ann_frontier_d3": 1,
     "s2_filtered_ann": 2,
+    "s2_streaming_memory": 2,
     "s3_churn_smooth": 3,
+    "s3_multi_hop": 3,
     "s3b_churn_bursty": 4,
     "s4_hybrid": 5,
     "s5_rerank": 6,
@@ -31,6 +34,10 @@ _S1_TEMPLATE_ORDER = {
     "s1_ann_frontier_d2": 3,
     "s1_ann_frontier_d3": 4,
 }
+_PORTABLE_EMBEDDING_VARIANTS = (
+    ("bge-small-en-v1-5", "BAAI/bge-small-en-v1.5", 384),
+    ("bge-base-en-v1-5", "BAAI/bge-base-en-v1.5", 768),
+)
 
 
 @dataclass(frozen=True)
@@ -90,36 +97,38 @@ def build_run_matrix(
     selected_engines: list[str] = []
 
     for template_name, scenario_payload in templates:
-        selected_templates.append(template_name)
-        for engine_name, engine_payload in engines:
-            merged = _compose_config(
-                scenario_payload=scenario_payload,
-                engine_payload=engine_payload,
-                template_name=template_name,
-                output_root=output_root,
-            )
-            group = _task_group_for_payload(merged=merged, template_name=template_name)
-            if normalized_lane == "cpu" and group == "gpu":
-                continue
-            if normalized_lane == "gpu" and group != "gpu":
-                continue
-            if engine_name not in selected_engines:
-                selected_engines.append(engine_name)
-            target_path = generated_config_dir / group / f"{Path(template_name).stem}__{_slug(engine_name)}.yaml"
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(yaml.safe_dump(merged, sort_keys=True), encoding="utf-8")
-            row = RunMatrixRow(
-                group=group,
-                config_path=str(target_path.resolve()),
-                engine=str(merged.get("engine", engine_name)),
-                scenario=str(merged.get("scenario", "")),
-                dataset_bundle=str(merged.get("dataset_bundle", "")),
-                template_name=template_name,
-            )
-            if group == "gpu":
-                gpu_rows.append(row)
-            else:
-                cpu_rows.append(row)
+        expanded_templates = _expand_template_variants(template_name=template_name, payload=scenario_payload)
+        selected_templates.extend(name for name, _ in expanded_templates)
+        for expanded_template_name, expanded_payload in expanded_templates:
+            for engine_name, engine_payload in engines:
+                merged = _compose_config(
+                    scenario_payload=expanded_payload,
+                    engine_payload=engine_payload,
+                    template_name=expanded_template_name,
+                    output_root=output_root,
+                )
+                group = _task_group_for_payload(merged=merged, template_name=expanded_template_name)
+                if normalized_lane == "cpu" and group == "gpu":
+                    continue
+                if normalized_lane == "gpu" and group != "gpu":
+                    continue
+                if engine_name not in selected_engines:
+                    selected_engines.append(engine_name)
+                target_path = generated_config_dir / group / f"{Path(expanded_template_name).stem}__{_slug(engine_name)}.yaml"
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text(yaml.safe_dump(merged, sort_keys=True), encoding="utf-8")
+                row = RunMatrixRow(
+                    group=group,
+                    config_path=str(target_path.resolve()),
+                    engine=str(merged.get("engine", engine_name)),
+                    scenario=str(merged.get("scenario", "")),
+                    dataset_bundle=str(merged.get("dataset_bundle", "")),
+                    template_name=expanded_template_name,
+                )
+                if group == "gpu":
+                    gpu_rows.append(row)
+                else:
+                    cpu_rows.append(row)
 
     cpu_rows.sort(key=_row_sort_key)
     gpu_rows.sort(key=_row_sort_key)
@@ -200,6 +209,20 @@ def _load_templates(root: Path, *, skip_s6: bool) -> list[tuple[str, dict[str, A
         templates.append((path.name, dict(payload)))
     templates.sort(key=lambda item: _template_sort_key(template_name=item[0], payload=item[1]))
     return templates
+
+
+def _expand_template_variants(*, template_name: str, payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    if str(payload.get("profile", "")).strip().lower() != "portable-agentic":
+        return [(template_name, dict(payload))]
+    stem = Path(template_name).stem
+    variants: list[tuple[str, dict[str, Any]]] = []
+    for suffix, model_id, dim in _PORTABLE_EMBEDDING_VARIANTS:
+        variant = dict(payload)
+        variant["embedding_model"] = model_id
+        variant["embedding_dim"] = dim
+        variant["vector_dim"] = dim
+        variants.append((f"{stem}__{suffix}.yaml", variant))
+    return variants
 
 
 def _load_engine_payloads(root: Path) -> list[tuple[str, dict[str, Any]]]:

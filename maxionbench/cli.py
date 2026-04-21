@@ -134,6 +134,51 @@ def main(argv: list[str] | None = None) -> int:
     preprocess_frames_portable_parser.add_argument("--seed", type=int, default=42)
     preprocess_frames_portable_parser.add_argument("--json", action="store_true")
 
+    precompute_text_embeddings_parser = subparsers.add_parser(
+        "precompute-text-embeddings",
+        help="Precompute model-backed embeddings for processed text datasets",
+    )
+    precompute_text_embeddings_parser.add_argument("--input", required=True)
+    precompute_text_embeddings_parser.add_argument("--model-id", required=True)
+    precompute_text_embeddings_parser.add_argument("--batch-size", type=int, default=16)
+    precompute_text_embeddings_parser.add_argument("--device", default="auto")
+    precompute_text_embeddings_parser.add_argument("--max-length", type=int, default=512)
+    precompute_text_embeddings_parser.add_argument("--no-normalize", action="store_true")
+    precompute_text_embeddings_parser.add_argument("--force", action="store_true")
+    precompute_text_embeddings_parser.add_argument("--json", action="store_true")
+
+    run_matrix_parser = subparsers.add_parser(
+        "run-matrix",
+        help="Build a generated run matrix from scenario and engine configs",
+    )
+    run_matrix_parser.add_argument("--scenario-config-dir", default="configs/scenarios_paper")
+    run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines")
+    run_matrix_parser.add_argument("--out-dir", required=True)
+    run_matrix_parser.add_argument("--output-root", default="artifacts/runs/workstation_matrix")
+    run_matrix_parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
+    run_matrix_parser.add_argument("--skip-s6", action="store_true")
+    run_matrix_parser.add_argument("--json", action="store_true")
+
+    execute_run_matrix_parser = subparsers.add_parser(
+        "execute-run-matrix",
+        help="Execute a generated run matrix sequentially",
+    )
+    execute_run_matrix_parser.add_argument("--matrix", required=True)
+    execute_run_matrix_parser.add_argument("--lane", default="cpu", choices=["cpu", "gpu", "all"])
+    execute_run_matrix_parser.add_argument("--budget", default=None)
+    execute_run_matrix_parser.add_argument("--seed", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--repeats", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--no-retry", action="store_true")
+    execute_run_matrix_parser.add_argument("--skip-completed", action="store_true")
+    execute_run_matrix_parser.add_argument("--continue-on-failure", action="store_true")
+    execute_run_matrix_parser.add_argument("--engine-filter", default=None)
+    execute_run_matrix_parser.add_argument("--scenario-filter", default=None)
+    execute_run_matrix_parser.add_argument("--template-filter", default=None)
+    execute_run_matrix_parser.add_argument("--max-runs", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
+    execute_run_matrix_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    execute_run_matrix_parser.add_argument("--json", action="store_true")
+
     verify_conformance_configs_parser = subparsers.add_parser(
         "verify-conformance-configs",
         help="Verify conformance config catalog shape and required adapter coverage",
@@ -453,6 +498,84 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             preprocess_argv.append("--json")
         return preprocess_frames_portable_main(preprocess_argv)
+    if args.command == "precompute-text-embeddings":
+        from maxionbench.tools.precompute_text_embeddings import main as precompute_text_embeddings_main
+
+        precompute_argv: list[str] = [
+            "--input",
+            args.input,
+            "--model-id",
+            args.model_id,
+            "--batch-size",
+            str(args.batch_size),
+            "--device",
+            args.device,
+            "--max-length",
+            str(args.max_length),
+        ]
+        if args.no_normalize:
+            precompute_argv.append("--no-normalize")
+        if args.force:
+            precompute_argv.append("--force")
+        if args.json:
+            precompute_argv.append("--json")
+        return precompute_text_embeddings_main(precompute_argv)
+    if args.command == "run-matrix":
+        from maxionbench.orchestration.run_matrix import main as run_matrix_main
+
+        matrix_argv = [
+            "--scenario-config-dir",
+            args.scenario_config_dir,
+            "--engine-config-dir",
+            args.engine_config_dir,
+            "--out-dir",
+            args.out_dir,
+            "--output-root",
+            args.output_root,
+            "--lane",
+            args.lane,
+        ]
+        if args.skip_s6:
+            matrix_argv.append("--skip-s6")
+        if args.json:
+            matrix_argv.append("--json")
+        return run_matrix_main(matrix_argv)
+    if args.command == "execute-run-matrix":
+        from maxionbench.tools.execute_run_matrix import main as execute_run_matrix_main
+
+        execute_argv = [
+            "--matrix",
+            args.matrix,
+            "--lane",
+            args.lane,
+            "--adapter-timeout-s",
+            str(args.adapter_timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.budget is not None:
+            execute_argv.extend(["--budget", args.budget])
+        if args.seed is not None:
+            execute_argv.extend(["--seed", str(args.seed)])
+        if args.repeats is not None:
+            execute_argv.extend(["--repeats", str(args.repeats)])
+        if args.no_retry:
+            execute_argv.append("--no-retry")
+        if args.skip_completed:
+            execute_argv.append("--skip-completed")
+        if args.continue_on_failure:
+            execute_argv.append("--continue-on-failure")
+        if args.engine_filter is not None:
+            execute_argv.extend(["--engine-filter", args.engine_filter])
+        if args.scenario_filter is not None:
+            execute_argv.extend(["--scenario-filter", args.scenario_filter])
+        if args.template_filter is not None:
+            execute_argv.extend(["--template-filter", args.template_filter])
+        if args.max_runs is not None:
+            execute_argv.extend(["--max-runs", str(args.max_runs)])
+        if args.json:
+            execute_argv.append("--json")
+        return execute_run_matrix_main(execute_argv)
     if args.command == "verify-conformance-configs":
         from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
 

@@ -66,3 +66,22 @@ def test_build_run_matrix_normalizes_d3_and_d4_dataset_paths(tmp_path: Path) -> 
     assert d4_payload["processed_dataset_path"] == "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D4"
     assert all(Path(row.template_name).stem != "s6_fusion" for row in matrix.iter_rows())
 
+
+def test_build_run_matrix_portable_expands_embedding_variants(tmp_path: Path) -> None:
+    matrix = build_run_matrix(
+        repo_root=Path("."),
+        scenario_config_dir=Path("configs/scenarios_portable"),
+        engine_config_dir=Path("configs/engines"),
+        out_dir=tmp_path / "portable_matrix",
+        output_root="artifacts/runs/portable_matrix",
+        lane="cpu",
+    )
+
+    s1_rows = [row for row in matrix.cpu_rows if row.scenario == "s1_single_hop" and row.engine == "qdrant"]
+    assert s1_rows
+    payloads = [yaml.safe_load(Path(row.config_path).read_text(encoding="utf-8")) for row in s1_rows]
+    models = {str(payload["embedding_model"]) for payload in payloads}
+    dims = {int(payload["vector_dim"]) for payload in payloads}
+    assert "BAAI/bge-small-en-v1.5" in models
+    assert "BAAI/bge-base-en-v1.5" in models
+    assert dims == {384, 768}
