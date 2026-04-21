@@ -39,11 +39,8 @@ datasets = [
 engines = [
   "faiss-cpu>=1.8.0",
   "lancedb>=0.7.0",
-  "opensearch-py>=2.6.0",
   "psycopg[binary]>=3.2.0",
-  "pymilvus>=2.4.0",
   "qdrant-client>=1.9.0",
-  "weaviate-client>=4.6.0",
 ]
 reporting = [
   "matplotlib>=3.8",

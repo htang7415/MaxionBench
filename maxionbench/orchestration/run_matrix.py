@@ -308,11 +308,8 @@ def _normalize_pipeline_dataset_refs(*, payload: dict[str, Any], template_name: 
 
 def _task_group_for_payload(*, merged: dict[str, Any], template_name: str) -> str:
     scenario = str(merged.get("scenario", "")).strip().lower()
-    engine = _slug(str(merged.get("engine", "")))
     template = Path(template_name).stem.lower()
     if scenario == "s5_rerank":
-        return "gpu"
-    if engine == "faiss_gpu":
         return "gpu"
     if "track_b" in template or "track_c" in template:
         return "gpu"
@@ -349,8 +346,8 @@ def _slug(value: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Build a local workstation run matrix from scenario and engine configs")
-    parser.add_argument("--scenario-config-dir", default="configs/scenarios_paper")
-    parser.add_argument("--engine-config-dir", default="configs/engines")
+    parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
+    parser.add_argument("--engine-config-dir", default="configs/engines_portable")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--output-root", default=_DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])

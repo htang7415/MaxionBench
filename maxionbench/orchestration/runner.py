@@ -2057,9 +2057,6 @@ def _gpu_count_for_cfg(cfg: RunConfig) -> float:
             return max(0.0, float(explicit))
         except (TypeError, ValueError):
             pass
-    normalized = cfg.engine.lower().replace("_", "-")
-    if normalized == "faiss-gpu":
-        return 1.0
     return 0.0
 
 

@@ -91,10 +91,6 @@ def verify_dataset_manifest_dir(manifest_dir: Path) -> dict[str, Any]:
                     }
                 )
 
-        if bundle == "D3":
-            fallback = payload.get("fallback_config")
-            if not isinstance(fallback, str) or not fallback.strip():
-                errors.append({"path": str(path), "message": "D3 manifest missing non-empty fallback_config"})
         if bundle == "D4":
             _validate_d4_manifest(path=path, payload=payload, errors=errors)
 

@@ -31,10 +31,8 @@ def _write_config(
     path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
 
 
-def _write_conformance_matrix(path: Path, *, include_faiss_gpu: bool = True) -> None:
+def _write_conformance_matrix(path: Path) -> None:
     adapters = list(REQUIRED_ADAPTERS)
-    if not include_faiss_gpu:
-        adapters = [name for name in adapters if name != "faiss-gpu"]
     frame = pd.DataFrame([{"adapter": adapter, "status": "pass"} for adapter in adapters])
     frame.to_csv(path, index=False)
 
@@ -105,7 +103,7 @@ def test_pre_run_gate_ignores_unrelated_failed_adapters(tmp_path: Path) -> None:
     pd.DataFrame(
         [
             {"adapter": "qdrant", "status": "pass"},
-            {"adapter": "milvus", "status": "fail"},
+            {"adapter": "pgvector", "status": "fail"},
         ]
     ).to_csv(matrix_path, index=False)
 
@@ -143,7 +141,7 @@ def test_pre_run_gate_cli_reports_failure_json(tmp_path: Path, capsys) -> None: 
     behavior_dir = tmp_path / "behavior"
     shutil.copytree(Path("docs/behavior"), behavior_dir)
     matrix_path = tmp_path / "conformance_matrix.csv"
-    _write_conformance_matrix(matrix_path, include_faiss_gpu=False)
+    _write_conformance_matrix(matrix_path)
 
     code = cli_main(
         [
@@ -190,14 +188,14 @@ def test_pre_run_gate_cli_reports_target_failure_json(tmp_path: Path, capsys) ->
     assert payload["readiness"]["pass"] is False
 
 
-def test_pre_run_gate_cli_allows_gpu_omission_flag(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+def test_pre_run_gate_cli_accepts_deprecated_gpu_omission_flag(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     cfg_path = tmp_path / "qdrant.yaml"
     _write_config(cfg_path, engine="qdrant")
 
     behavior_dir = tmp_path / "behavior"
     shutil.copytree(Path("docs/behavior"), behavior_dir)
     matrix_path = tmp_path / "conformance_matrix.csv"
-    _write_conformance_matrix(matrix_path, include_faiss_gpu=False)
+    _write_conformance_matrix(matrix_path)
 
     code = cli_main(
         [

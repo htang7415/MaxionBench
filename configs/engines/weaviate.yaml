@@ -1,8 +1,0 @@
-engine: weaviate
-engine_version: "1.x"
-adapter_options:
-  host: ${MAXIONBENCH_WEAVIATE_HOST:-127.0.0.1}
-  port: ${MAXIONBENCH_WEAVIATE_PORT:-8080}
-  scheme: ${MAXIONBENCH_WEAVIATE_SCHEME:-http}
-  timeout_s: 30.0
-  healthcheck_timeout_s: 5.0

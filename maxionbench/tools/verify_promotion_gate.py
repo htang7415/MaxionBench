@@ -16,14 +16,10 @@ from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_stat
 
 REQUIRED_ADAPTERS = (
     "qdrant",
-    "milvus",
-    "weaviate",
-    "opensearch",
     "pgvector",
     "lancedb-service",
     "lancedb-inproc",
     "faiss-cpu",
-    "faiss-gpu",
 )
 
 PORTABLE_SCENARIOS = ("s1_single_hop", "s2_streaming_memory", "s3_multi_hop")
@@ -55,10 +51,8 @@ PORTABLE_PROMOTION_RULES: dict[str, dict[str, Any]] = {
 
 
 def _expected_required_adapters(*, allow_gpu_unavailable: bool) -> list[str]:
-    expected = list(REQUIRED_ADAPTERS)
-    if allow_gpu_unavailable:
-        expected = [name for name in expected if name != "faiss-gpu"]
-    return expected
+    del allow_gpu_unavailable
+    return list(REQUIRED_ADAPTERS)
 
 
 def verify_promotion_gate(
@@ -154,13 +148,7 @@ def verify_promotion_gate(
             reasons.append("strict readiness summary has non-integer conformance_status_counts values")
         else:
             non_pass_counts = {k: v for k, v in status_counts.items() if k != "pass" and v > 0}
-            allow_faiss_gpu_nonpass = bool(allow_gpu_unavailable) and (resolved_matrix_path is not None)
-            if non_pass_counts and bool(allow_gpu_unavailable) and (resolved_matrix_path is None):
-                reasons.append(
-                    "strict readiness summary has non-pass conformance_status_counts in allow_gpu_unavailable mode; "
-                    "provide --conformance-matrix to verify faiss-gpu-only non-pass rows"
-                )
-            elif non_pass_counts and not allow_faiss_gpu_nonpass:
+            if non_pass_counts:
                 reasons.append(
                     "strict readiness summary conformance_status_counts includes non-pass rows "
                     f"{dict(sorted(non_pass_counts.items()))}"
@@ -234,19 +222,6 @@ def verify_promotion_gate(
                 reasons.append(
                     "strict readiness summary required_adapters missing in conformance matrix "
                     f"{missing_from_matrix}"
-                )
-        if bool(allow_gpu_unavailable):
-            disallowed_non_pass: dict[str, dict[str, int]] = {}
-            for adapter, per_status in (matrix_adapter_status_counts or {}).items():
-                if adapter == "faiss-gpu":
-                    continue
-                non_pass_for_adapter = {k: v for k, v in per_status.items() if k != "pass" and v > 0}
-                if non_pass_for_adapter:
-                    disallowed_non_pass[adapter] = dict(sorted(non_pass_for_adapter.items()))
-            if disallowed_non_pass:
-                reasons.append(
-                    "allow_gpu_unavailable mode permits non-pass matrix rows only for `faiss-gpu`; "
-                    f"found non-pass rows for other adapters {dict(sorted(disallowed_non_pass.items()))}"
                 )
         if require_mock_pass:
             mock_status_counts = (matrix_adapter_status_counts or {}).get("mock", {})

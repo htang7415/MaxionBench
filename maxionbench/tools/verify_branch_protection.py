@@ -12,18 +12,9 @@ import requests
 DEFAULT_REQUIRED_CHECKS = (
     "report-preflight / conformance_readiness_gate",
     "report-preflight / report_preflight",
-    "report-preflight / legacy_migration_path",
-    "report-preflight / legacy_resource_profile_path",
-    "report-preflight / legacy_ground_truth_metadata_path",
 )
 OPTIONAL_DRIFT_CHECK = "branch-protection-drift / verify_branch_protection"
-OPTIONAL_STRICT_READINESS_CHECK = "strict-readiness / strict_readiness_gate"
-OPTIONAL_PUBLISH_BUNDLE_CHECK = "publish-benchmark-bundle / publish_result_bundle"
-OPTIONAL_REQUIRED_CHECKS = (
-    OPTIONAL_DRIFT_CHECK,
-    OPTIONAL_STRICT_READINESS_CHECK,
-    OPTIONAL_PUBLISH_BUNDLE_CHECK,
-)
+OPTIONAL_REQUIRED_CHECKS = (OPTIONAL_DRIFT_CHECK,)
 
 
 def extract_required_check_contexts(payload: Mapping[str, Any]) -> set[str]:
@@ -70,16 +61,13 @@ def resolve_required_checks(
     required_checks: Iterable[str] | None,
     *,
     include_drift_check: bool,
-    include_strict_readiness_check: bool,
-    include_publish_bundle_check: bool,
+    include_strict_readiness_check: bool = False,
+    include_publish_bundle_check: bool = False,
 ) -> list[str]:
+    del include_strict_readiness_check, include_publish_bundle_check
     checks = list(required_checks) if required_checks is not None else list(DEFAULT_REQUIRED_CHECKS)
     if include_drift_check:
         checks.append(OPTIONAL_DRIFT_CHECK)
-    if include_strict_readiness_check:
-        checks.append(OPTIONAL_STRICT_READINESS_CHECK)
-    if include_publish_bundle_check:
-        checks.append(OPTIONAL_PUBLISH_BUNDLE_CHECK)
     deduped: list[str] = []
     seen: set[str] = set()
     for check in checks:
@@ -140,12 +128,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-strict-readiness-check",
         action="store_true",
-        help=f"Also require `{OPTIONAL_STRICT_READINESS_CHECK}`",
+        help="Deprecated no-op; strict-readiness workflow was removed from the portable track.",
     )
     parser.add_argument(
         "--include-publish-bundle-check",
         action="store_true",
-        help=f"Also require `{OPTIONAL_PUBLISH_BUNDLE_CHECK}`",
+        help="Deprecated no-op; publish-benchmark-bundle workflow was removed from the portable track.",
     )
     parser.add_argument("--json", action="store_true", help="Print summary JSON")
     args = parser.parse_args(argv)

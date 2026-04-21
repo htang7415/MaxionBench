@@ -361,7 +361,7 @@ def _expect_equal(
 
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Verify scenario configs against pinned benchmark values")
-    parser.add_argument("--config-dir", default="configs/scenarios")
+    parser.add_argument("--config-dir", default="configs/scenarios_portable")
     parser.add_argument(
         "--allow-dev-calibrate-d3-scale",
         action="store_true",

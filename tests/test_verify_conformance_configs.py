@@ -45,22 +45,18 @@ def test_verify_conformance_configs_detects_invalid_adapter_options_json(tmp_pat
     assert any("adapter_options_json is not valid JSON" in msg for msg in messages)
 
 
-def test_verify_conformance_configs_allows_missing_faiss_gpu_when_opted_in(tmp_path: Path) -> None:
-    config_dir = tmp_path / "cfg_no_gpu"
+def test_verify_conformance_configs_flags_missing_required_adapter(tmp_path: Path) -> None:
+    config_dir = tmp_path / "cfg_missing_qdrant"
     config_dir.mkdir(parents=True, exist_ok=True)
     src_dir = Path("configs/conformance")
     for path in sorted(src_dir.glob("*.json")):
-        if path.name == "faiss_gpu.json":
+        if path.name == "qdrant_local.json":
             continue
         (config_dir / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
-    strict = verify_conformance_config_dir(config_dir=config_dir, allow_gpu_unavailable=False)
-    assert strict["pass"] is False
-    assert "faiss-gpu" in strict["missing_required_adapters"]
-
-    relaxed = verify_conformance_config_dir(config_dir=config_dir, allow_gpu_unavailable=True)
-    assert relaxed["pass"] is True
-    assert "faiss-gpu" not in relaxed["required_adapters"]
+    summary = verify_conformance_config_dir(config_dir=config_dir, allow_gpu_unavailable=True)
+    assert summary["pass"] is False
+    assert "qdrant" in summary["missing_required_adapters"]
 
 
 def test_verify_conformance_configs_cli_failure_json(

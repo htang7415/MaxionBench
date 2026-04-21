@@ -1,9 +1,0 @@
-engine: opensearch
-engine_version: "2.x"
-adapter_options:
-  host: ${MAXIONBENCH_OPENSEARCH_HOST:-127.0.0.1}
-  port: ${MAXIONBENCH_OPENSEARCH_PORT:-9200}
-  scheme: ${MAXIONBENCH_OPENSEARCH_SCHEME:-http}
-  timeout_s: 30.0
-  healthcheck_timeout_s: 5.0
-  verify_ssl: false

@@ -434,14 +434,12 @@ def _inflation_status(row: pd.Series) -> str:
 
 def _engine_class(engine: str) -> str:
     lower = engine.lower()
-    if lower in {"qdrant", "milvus"}:
+    if lower == "qdrant":
         return "vector-first"
-    if lower in {"weaviate", "opensearch"}:
-        return "hybrid/search-first"
     if lower in {"pgvector", "postgresql", "postgres"}:
         return "db-first"
     if lower in {"lancedb-inproc", "lancedb-service", "lancedb_inproc", "lancedb_service"}:
         return "embedded/local"
-    if lower in {"faiss-cpu", "faiss-gpu", "faiss_cpu", "faiss_gpu"}:
+    if lower in {"faiss-cpu", "faiss_cpu"}:
         return "baseline"
     return "other"

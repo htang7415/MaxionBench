@@ -46,7 +46,7 @@ def wait_for_adapter(
 
 def _service_tcp_probe(*, adapter_name: str, adapter_options: dict[str, Any]) -> dict[str, Any] | None:
     normalized_name = str(adapter_name).strip().lower()
-    if normalized_name in {"qdrant", "milvus", "opensearch", "weaviate"}:
+    if normalized_name == "qdrant":
         host = str(adapter_options.get("host", "")).strip()
         port = adapter_options.get("port")
         if host and port is not None:

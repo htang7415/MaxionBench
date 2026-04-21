@@ -13,23 +13,14 @@ from typing import Any
 
 # Services that run as Docker containers in the portable profile
 _PORTABLE_SERVICES: list[str] = ["qdrant", "pgvector"]
-# Full reference profile adds the remaining engines
-_REFERENCE_SERVICES: list[str] = ["qdrant", "pgvector", "opensearch", "weaviate", "milvus"]
-_ALL_SERVICES: list[str] = ["qdrant", "pgvector", "opensearch", "weaviate", "milvus"]
-
 _PROFILE_MAP: dict[str, list[str]] = {
     "portable": _PORTABLE_SERVICES,
-    "reference": _REFERENCE_SERVICES,
-    "all": _ALL_SERVICES,
 }
 
 # Host-side ports exposed by docker-compose.yml for each service
 _SERVICE_ADAPTER_MAP: dict[str, tuple[str, dict[str, Any]]] = {
     "qdrant": ("qdrant", {"host": "localhost", "port": 6333}),
     "pgvector": ("pgvector", {"dsn": "postgresql://postgres:postgres@localhost:5432/postgres"}),
-    "opensearch": ("opensearch", {"host": "localhost", "port": 9200}),
-    "weaviate": ("weaviate", {"host": "localhost", "port": 8080}),
-    "milvus": ("milvus", {"host": "localhost", "port": 19530}),
 }
 
 _LANCEDB_ENV_NOTE = (
@@ -323,9 +314,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=["up", "down", "status", "wait"])
     parser.add_argument(
         "--profile",
-        choices=["portable", "reference", "all"],
+        choices=["portable"],
         default="portable",
-        help="Service group to target (default: portable = qdrant, pgvector)",
+        help="Service group to target (portable = qdrant, pgvector)",
     )
     parser.add_argument(
         "--services",

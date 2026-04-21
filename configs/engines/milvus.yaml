@@ -1,5 +1,0 @@
-engine: milvus
-engine_version: "2.x"
-adapter_options:
-  host: ${MAXIONBENCH_MILVUS_HOST:-127.0.0.1}
-  port: ${MAXIONBENCH_MILVUS_PORT:-19530}
