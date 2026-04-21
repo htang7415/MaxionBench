@@ -246,11 +246,21 @@ def _extract_archive(*, archive_path: Path, workdir: Path) -> Path:
 
 
 def download_beir(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
+    return download_beir_subsets(root=root, timeout_s=timeout_s, force=force, subsets=BEIR_DATASETS)
+
+
+def download_beir_subsets(
+    *,
+    root: Path,
+    timeout_s: float,
+    force: bool,
+    subsets: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
     _validate_timeout(timeout_s)
     beir_root = (root / "D4" / "beir").resolve()
     beir_root.mkdir(parents=True, exist_ok=True)
     fetched: dict[str, Any] = {}
-    for dataset in BEIR_DATASETS:
+    for dataset in subsets:
         dst = beir_root / dataset
         if dst.exists() and not force:
             fetched[dataset] = {"path": str(dst), "source": "cache_hit"}
@@ -267,6 +277,22 @@ def download_beir(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any
             copytree_replace(src=src, dst=dst)
         fetched[dataset] = {"path": str(dst), "source": "download"}
     return fetched
+
+
+def prepare_frames_workspace(*, root: Path) -> dict[str, Any]:
+    frames_root = (root / "D4" / "frames").resolve()
+    frames_root.mkdir(parents=True, exist_ok=True)
+    readme_path = frames_root / "README.manual.txt"
+    if not readme_path.exists():
+        readme_path.write_text(
+            (
+                "FRAMES raw assets are not downloaded automatically.\n"
+                "Place the local FRAMES export under this directory or pass an alternate\n"
+                "path to `maxionbench preprocess-frames-portable --frames-root ...`.\n"
+            ),
+            encoding="utf-8",
+        )
+    return {"path": str(frames_root), "source": "manual_required"}
 
 
 def make_small_crag_slice(*, source_bz2: Path, output_jsonl: Path, max_examples: int, force: bool) -> dict[str, Any]:
@@ -307,13 +333,14 @@ def download_crag(*, root: Path, timeout_s: float, force: bool, max_examples: in
     return {"archive": full_meta, "slice": slice_meta}
 
 
-def write_manifest(*, root: Path, crag_examples: int) -> Path:
+def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[str] | None = None) -> Path:
     payload = {
         "profile": "community_bootstrap",
         "note": (
             "Local/community dataset bootstrap. This tree is convenient for development, "
             "but it does not replace the pinned paper-lane D2/D3/D4 dataset requirements in prompt.md."
         ),
+        "requested_datasets": list(requested_datasets or []),
         "D1": [
             "glove-100-angular.hdf5",
             "sift-128-euclidean.hdf5",
@@ -329,6 +356,7 @@ def write_manifest(*, root: Path, crag_examples: int) -> Path:
             "beir": list(BEIR_DATASETS),
             "crag_source_archive": "crag_task_1_and_2_dev_v4.jsonl.bz2",
             "crag_small_slice": f"crag_task_1_and_2_dev_v4.first_{crag_examples}.jsonl",
+            "frames_workspace": "D4/frames/",
         },
     }
     path = (root / "manifest.json").resolve()
@@ -341,6 +369,7 @@ def download_datasets(
     root: Path,
     cache_dir: Path,
     crag_examples: int,
+    datasets: list[str] | None = None,
     skip_d1d2: bool = False,
     skip_d3: bool = False,
     skip_d4: bool = False,
@@ -351,10 +380,22 @@ def download_datasets(
     cache_dir = cache_dir.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    selected = {item.strip().lower() for item in (datasets or []) if item.strip()}
+    selected_beir = [dataset for dataset in BEIR_DATASETS if dataset in selected]
+    want_frames = "frames" in selected
+    if selected:
+        want_d1d2 = bool(selected & {"d1", "d2", "ann", "ann-hdf5"})
+        want_d3 = bool(selected & {"d3", "yfcc", "yfcc-10m"})
+        want_d4 = bool(selected_beir or selected & {"d4", "crag", "frames"})
+    else:
+        want_d1d2 = not skip_d1d2
+        want_d3 = not skip_d3
+        want_d4 = not skip_d4
 
     summary: dict[str, Any] = {
         "root": str(root),
         "cache_dir": str(cache_dir),
+        "requested_datasets": sorted(selected),
         "community_bootstrap": True,
         "warning": (
             "This downloader populates the requested local/community layout. "
@@ -362,24 +403,33 @@ def download_datasets(
         ),
         "fetched": {},
     }
-    if not skip_d1d2:
+    if want_d1d2:
         summary["fetched"]["d1_d2"] = download_ann_benchmarks(root=root, timeout_s=timeout_s, force=force)
-    if not skip_d3:
+    if want_d3:
         summary["fetched"]["d3"] = download_bigann_yfcc(
             root=root,
             cache_dir=cache_dir,
             timeout_s=timeout_s,
             force=force,
         )
-    if not skip_d4:
-        summary["fetched"]["d4_beir"] = download_beir(root=root, timeout_s=timeout_s, force=force)
-        summary["fetched"]["d4_crag"] = download_crag(
-            root=root,
-            timeout_s=timeout_s,
-            force=force,
-            max_examples=crag_examples,
-        )
-    manifest_path = write_manifest(root=root, crag_examples=crag_examples)
+    if want_d4:
+        if not selected or selected_beir:
+            summary["fetched"]["d4_beir"] = download_beir_subsets(
+                root=root,
+                timeout_s=timeout_s,
+                force=force,
+                subsets=tuple(selected_beir or BEIR_DATASETS),
+            )
+        if not selected or "crag" in selected:
+            summary["fetched"]["d4_crag"] = download_crag(
+                root=root,
+                timeout_s=timeout_s,
+                force=force,
+                max_examples=crag_examples,
+            )
+        if not selected or want_frames:
+            summary["fetched"]["d4_frames"] = prepare_frames_workspace(root=root)
+    manifest_path = write_manifest(root=root, crag_examples=crag_examples, requested_datasets=sorted(selected))
     summary["manifest_path"] = str(manifest_path)
     return summary
 
@@ -388,6 +438,7 @@ def parse_args(argv: list[str] | None = None):
     parser = ArgumentParser(description="Download the requested local/community dataset tree under dataset/")
     parser.add_argument("--root", type=Path, default=Path("dataset"))
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache"))
+    parser.add_argument("--datasets", default="", help="Optional comma-separated dataset selection")
     parser.add_argument("--crag-examples", type=int, default=500)
     parser.add_argument("--skip-d1d2", action="store_true")
     parser.add_argument("--skip-d3", action="store_true")
@@ -404,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         root=args.root,
         cache_dir=args.cache_dir,
         crag_examples=int(args.crag_examples),
+        datasets=[item for item in str(args.datasets).split(",") if item.strip()],
         skip_d1d2=bool(args.skip_d1d2),
         skip_d3=bool(args.skip_d3),
         skip_d4=bool(args.skip_d4),

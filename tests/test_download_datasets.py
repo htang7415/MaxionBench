@@ -70,6 +70,33 @@ def test_download_beir_extracts_selected_subsets(tmp_path: Path, monkeypatch: py
     assert (root / "D4" / "beir" / "nfcorpus" / "qrels" / "test.tsv").exists()
 
 
+def test_download_beir_subsets_filters_requested_datasets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive_path = tmp_path / "scifact.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("scifact/corpus.jsonl", '{"_id":"d1","text":"doc"}\n')
+        archive.writestr("scifact/queries.jsonl", '{"_id":"q1","text":"query"}\n')
+        archive.writestr("scifact/qrels/test.tsv", "query-id\tcorpus-id\tscore\nq1\td1\t1\n")
+
+    def _fake_download_file(*, url: str, dest: Path, timeout_s: float, force: bool):
+        del url, timeout_s, force
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(archive_path.read_bytes())
+        return {"path": str(dest), "source": "download"}
+
+    monkeypatch.setattr(download_datasets_mod, "download_file", _fake_download_file)
+    root = tmp_path / "dataset"
+    summary = download_datasets_mod.download_beir_subsets(
+        root=root,
+        timeout_s=20.0,
+        force=False,
+        subsets=("scifact",),
+    )
+
+    assert set(summary.keys()) == {"scifact"}
+    assert (root / "D4" / "beir" / "scifact" / "corpus.jsonl").exists()
+    assert not (root / "D4" / "beir" / "fiqa").exists()
+
+
 def test_download_crag_writes_archive_and_slice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source_bz2 = tmp_path / "crag_source.jsonl.bz2"
     with bz2.open(source_bz2, "wt", encoding="utf-8") as handle:
@@ -92,6 +119,15 @@ def test_download_crag_writes_archive_and_slice(tmp_path: Path, monkeypatch: pyt
     assert slice_path.exists()
     assert summary["slice"]["examples"] == 3
     assert len([line for line in slice_path.read_text(encoding="utf-8").splitlines() if line.strip()]) == 3
+
+
+def test_prepare_frames_workspace_creates_manual_placeholder(tmp_path: Path) -> None:
+    summary = download_datasets_mod.prepare_frames_workspace(root=tmp_path / "dataset")
+    frames_root = tmp_path / "dataset" / "D4" / "frames"
+
+    assert summary["source"] == "manual_required"
+    assert frames_root.exists()
+    assert (frames_root / "README.manual.txt").exists()
 
 
 def test_download_file_sets_explicit_user_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -224,6 +260,54 @@ def test_download_bigann_yfcc_uses_existing_dst_cache_before_clone(tmp_path: Pat
     assert summary["source"] == "cache_hit"
 
 
+def test_download_datasets_respects_dataset_filter_without_d1d2_or_d3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, int] = {"ann": 0, "d3": 0, "beir": 0, "crag": 0, "frames": 0}
+
+    def _fake_download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool):
+        del root, timeout_s, force
+        calls["ann"] += 1
+        return {"ok": True}
+
+    def _fake_download_bigann_yfcc(*, root: Path, cache_dir: Path, timeout_s: float, force: bool, requirements_file: str | None = None):
+        del root, cache_dir, timeout_s, force, requirements_file
+        calls["d3"] += 1
+        return {"ok": True}
+
+    def _fake_download_beir_subsets(*, root: Path, timeout_s: float, force: bool, subsets: tuple[str, ...] | list[str]):
+        del root, timeout_s, force
+        calls["beir"] += 1
+        return {"subsets": list(subsets)}
+
+    def _fake_download_crag(*, root: Path, timeout_s: float, force: bool, max_examples: int):
+        del root, timeout_s, force, max_examples
+        calls["crag"] += 1
+        return {"ok": True}
+
+    def _fake_prepare_frames_workspace(*, root: Path):
+        del root
+        calls["frames"] += 1
+        return {"ok": True}
+
+    monkeypatch.setattr(download_datasets_mod, "download_ann_benchmarks", _fake_download_ann_benchmarks)
+    monkeypatch.setattr(download_datasets_mod, "download_bigann_yfcc", _fake_download_bigann_yfcc)
+    monkeypatch.setattr(download_datasets_mod, "download_beir_subsets", _fake_download_beir_subsets)
+    monkeypatch.setattr(download_datasets_mod, "download_crag", _fake_download_crag)
+    monkeypatch.setattr(download_datasets_mod, "prepare_frames_workspace", _fake_prepare_frames_workspace)
+
+    summary = download_datasets_mod.download_datasets(
+        root=tmp_path / "dataset",
+        cache_dir=tmp_path / ".cache",
+        crag_examples=500,
+        datasets=["scifact", "fiqa", "crag", "frames"],
+    )
+
+    assert calls == {"ann": 0, "d3": 0, "beir": 1, "crag": 1, "frames": 1}
+    assert summary["requested_datasets"] == ["crag", "fiqa", "frames", "scifact"]
+
+
 def test_stage_bigann_snapshot_extracts_repo_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     archive_source = tmp_path / "bigann_snapshot.tar.gz"
     payload_root = tmp_path / "payload" / download_datasets_mod.BIGANN_SNAPSHOT_ROOT_NAME
@@ -292,8 +376,9 @@ def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monke
 
     monkeypatch.setattr(download_datasets_mod, "download_ann_benchmarks", lambda **kwargs: {"d1_d2": "ok"})
     monkeypatch.setattr(download_datasets_mod, "download_bigann_yfcc", lambda **kwargs: {"d3": "ok"})
-    monkeypatch.setattr(download_datasets_mod, "download_beir", lambda **kwargs: {"beir": "ok"})
+    monkeypatch.setattr(download_datasets_mod, "download_beir_subsets", lambda **kwargs: {"beir": "ok"})
     monkeypatch.setattr(download_datasets_mod, "download_crag", lambda **kwargs: {"crag": "ok"})
+    monkeypatch.setattr(download_datasets_mod, "prepare_frames_workspace", lambda **kwargs: {"frames": "ok"})
 
     summary = download_datasets_mod.download_datasets(
         root=root,
@@ -314,6 +399,7 @@ def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monke
     assert "d3" not in summary["fetched"]
     assert "d4_beir" in summary["fetched"]
     assert "d4_crag" in summary["fetched"]
+    assert "d4_frames" in summary["fetched"]
 
 
 def test_download_beir_rejects_invalid_timeout(tmp_path: Path) -> None:

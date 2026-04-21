@@ -192,6 +192,20 @@ def load_processed_d4_bundle(
     return _build_retrieval_dataset(bundle=merged, vector_dim=vector_dim, seed=seed)
 
 
+def load_processed_text_dataset(
+    root: Path,
+    *,
+    vector_dim: int,
+    seed: int,
+    max_docs: int = 200_000,
+    max_queries: int = 5_000,
+) -> D4RetrievalDataset:
+    dataset_root = _resolve_processed_root(root)
+    bundle = _load_processed_text_bundle(dataset_root)
+    merged = _merge_text_bundles(bundles=[bundle], max_docs=max_docs, max_queries=max_queries)
+    return _build_retrieval_dataset(bundle=merged, vector_dim=vector_dim, seed=seed)
+
+
 def dataset_dir_sha256(path: Path) -> str:
     root = _resolve_processed_root(path)
     digest = hashlib.sha256()

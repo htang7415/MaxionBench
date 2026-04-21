@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,7 @@ from maxionbench.datasets.loaders.processed import (
     load_processed_ann_dataset,
     load_processed_d4_bundle,
     load_processed_filtered_ann_dataset,
+    load_processed_text_dataset,
 )
 from maxionbench.metrics.cost_rhu import rhu_hours
 from maxionbench.metrics.robustness import p99_inflation
@@ -50,6 +51,8 @@ from maxionbench.scenarios.s2_filtered_ann import S2Config, run as run_s2
 from maxionbench.scenarios.s3_churn_smooth import S3Config, run as run_s3
 from maxionbench.scenarios.s3b_churn_bursty import S3bConfig, run as run_s3b
 from maxionbench.scenarios.s4_hybrid import S4Config, run as run_s4
+from maxionbench.scenarios.portable_text_retrieval import PortableTextConfig, evaluate_text_queries, ingest_text_dataset
+from maxionbench.scenarios.s2_streaming_memory import StreamingMemoryConfig, run as run_streaming_memory
 from maxionbench.scenarios.s5_rerank import S5Config, run as run_s5
 from maxionbench.scenarios.s6_fusion import S6Config, run as run_s6
 from maxionbench.schemas.result_schema import (
@@ -142,10 +145,17 @@ _RAG_NDCG_BANDS: list[tuple[str, float, float]] = [
     ("high", 0.55, 1.0000001),
 ]
 
+_PORTABLE_BUDGETS: dict[str, dict[str, int]] = {
+    "b0": {"warmup_s": 10, "steady_state_s": 10, "repeats": 1},
+    "b1": {"warmup_s": 15, "steady_state_s": 30, "repeats": 1},
+    "b2": {"warmup_s": 30, "steady_state_s": 60, "repeats": 2},
+}
+
 
 def parse_args(argv: list[str] | None = None) -> Namespace:
     parser = ArgumentParser(description="Run a MaxionBench scenario.")
     parser.add_argument("--config", required=True, help="Path to scenario YAML config")
+    parser.add_argument("--budget", default=None, help="Portable benchmark budget level (b0, b1, or b2)")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--no-retry", action="store_true", default=None)
@@ -172,6 +182,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
     behavior_dir = Path(str(overrides.pop("behavior_dir", "docs/behavior")))
     allow_gpu_unavailable = bool(overrides.pop("allow_gpu_unavailable", False))
     cfg = load_run_config(config_path, overrides=overrides)
+    cfg = _apply_portable_budget(cfg=cfg, cli_overrides=cli_overrides or {})
     output_dir = Path(cfg.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "logs").mkdir(parents=True, exist_ok=True)
@@ -247,6 +258,12 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
             rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
         elif cfg.scenario == "s6_fusion":
             rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s1_single_hop":
+            rows = _run_portable_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s2_streaming_memory":
+            rows = _run_portable_s2_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
+        elif cfg.scenario == "s3_multi_hop":
+            rows = _run_portable_s3_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
         else:
             raise ValueError(f"Unsupported scenario: {cfg.scenario}")
 
@@ -302,6 +319,11 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
             config_fingerprint=config_fingerprint,
             repeats=cfg.repeats,
             no_retry=cfg.no_retry,
+            profile=cfg.profile,
+            budget_level=cfg.budget_level,
+            embedding_model=cfg.embedding_model,
+            embedding_dim=cfg.embedding_dim,
+            c_llm_in=cfg.c_llm_in,
             clients_read_grid=list(cfg.clients_grid),
             quality_targets=list(cfg.quality_targets),
             rhu_references=_rhu_references_payload(cfg),
@@ -426,6 +448,22 @@ def _create_benchmark_adapter(*, cfg: RunConfig, metric: str = "ip") -> Any:
     return adapter
 
 
+def _apply_portable_budget(*, cfg: RunConfig, cli_overrides: Mapping[str, Any]) -> RunConfig:
+    if cfg.profile != "portable-agentic" and cfg.scenario not in {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}:
+        return cfg
+    budget = str(cfg.budget_level or "").strip().lower()
+    if budget not in _PORTABLE_BUDGETS:
+        return cfg
+    budget_cfg = _PORTABLE_BUDGETS[budget]
+    repeats = cfg.repeats if cli_overrides.get("repeats") is not None else int(budget_cfg["repeats"])
+    return replace(
+        cfg,
+        warmup_s=int(budget_cfg["warmup_s"]),
+        steady_state_s=int(budget_cfg["steady_state_s"]),
+        repeats=repeats,
+    )
+
+
 def _run_s1_rows(
     *,
     cfg: RunConfig,
@@ -476,6 +514,301 @@ def _run_s1_rows(
             except Exception:
                 pass
     return rows, sweep_diagnostics, selection_summary
+
+
+def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    dataset = _load_portable_s1_dataset(cfg, config_path=config_path)
+    rows: list[ResultRow] = []
+    for repeat_idx in range(cfg.repeats):
+        for client_count in cfg.clients_grid:
+            sweep_runs: list[_SweepRun] = []
+            for search_params in cfg.search_sweep:
+                setup_start = time.perf_counter()
+                adapter = _create_benchmark_adapter(cfg=cfg)
+                baseline = measure_rpc_baseline(
+                    request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+                    request_count=cfg.rpc_baseline_requests,
+                )
+                ingest_text_dataset(adapter, dataset)
+                result = evaluate_text_queries(
+                    adapter=adapter,
+                    cfg=PortableTextConfig(
+                        top_k=cfg.top_k,
+                        clients_read=client_count,
+                        sla_threshold_ms=cfg.sla_threshold_ms,
+                        warmup_s=cfg.warmup_s,
+                        steady_state_s=cfg.steady_state_s,
+                        phase_timing_mode=cfg.phase_timing_mode,
+                        phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+                        search_params=search_params,
+                    ),
+                    dataset=dataset,
+                )
+                stats = adapter.stats()
+                adapter.drop(collection="maxionbench")
+                profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count)
+                resource_payload = _resource_payload(profile=profile, rate=rate)
+                duration = max(result.measured_elapsed_s, 1e-9)
+                rhu_h = rhu_hours(duration_s=duration, rate=rate)
+                setup_elapsed_s = time.perf_counter() - setup_start
+                payload = _portable_payload(
+                    cfg=cfg,
+                    search_params=search_params,
+                    primary_quality_metric="ndcg_at_10",
+                    primary_quality_value=result.ndcg_at_10,
+                    avg_retrieved_input_tokens=result.avg_retrieved_input_tokens,
+                    measured_requests=result.measured_requests,
+                    rhu_h=rhu_h,
+                    extra={
+                        "evidence_coverage_at_5": result.evidence_coverage_at_5,
+                        "evidence_coverage_at_10": result.evidence_coverage_at_10,
+                        "evidence_coverage_at_20": result.evidence_coverage_at_20,
+                    },
+                )
+                sweep_runs.append(
+                    _SweepRun(
+                        client_count=client_count,
+                        search_params=payload,
+                        p50_ms=result.p50_ms,
+                        p95_ms=result.p95_ms,
+                        p99_ms=result.p99_ms,
+                        qps=result.qps,
+                        recall_at_10=result.recall_at_10,
+                        ndcg_at_10=result.ndcg_at_10,
+                        mrr_at_10=result.mrr_at_10,
+                        sla_violation_rate=result.sla_violation_rate,
+                        errors=result.errors,
+                        rhu_h=rhu_h,
+                        rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
+                        rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                        setup_elapsed_s=setup_elapsed_s,
+                        warmup_target_s=cfg.warmup_s,
+                        warmup_elapsed_s=result.warmup_elapsed_s,
+                        warmup_requests=result.warmup_requests,
+                        measure_target_s=cfg.steady_state_s,
+                        measure_elapsed_s=result.measured_elapsed_s,
+                        measure_requests=result.measured_requests,
+                        error_examples=(),
+                        resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                        resource_gpu_count=resource_payload["gpu_count"],
+                        resource_ram_gib=resource_payload["ram_gib"],
+                        resource_disk_tb=resource_payload["disk_tb"],
+                        rhu_rate=resource_payload["rhu_rate"],
+                    )
+                )
+            rows.extend(
+                _select_portable_quality_rows(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    sweep_runs=sweep_runs,
+                    config_fingerprint=config_fingerprint,
+                    quality_getter=lambda run: run.ndcg_at_10,
+                    suffix="portable_s1",
+                )
+            )
+    return rows
+
+
+def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    background, events = _load_portable_s2_datasets(cfg, config_path=config_path)
+    rows: list[ResultRow] = []
+    freshness_floor = _portable_s2_freshness_floor(cfg.budget_level)
+    for repeat_idx in range(cfg.repeats):
+        for client_count in cfg.clients_grid:
+            sweep_runs: list[_SweepRun] = []
+            for search_params in cfg.search_sweep:
+                setup_start = time.perf_counter()
+                adapter = _create_benchmark_adapter(cfg=cfg)
+                baseline = measure_rpc_baseline(
+                    request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+                    request_count=cfg.rpc_baseline_requests,
+                )
+                result = run_streaming_memory(
+                    adapter=adapter,
+                    cfg=StreamingMemoryConfig(
+                        top_k=cfg.top_k,
+                        clients_read=client_count,
+                        clients_write=cfg.clients_write,
+                        sla_threshold_ms=cfg.sla_threshold_ms,
+                        warmup_s=cfg.warmup_s,
+                        steady_state_s=cfg.steady_state_s,
+                        phase_timing_mode=cfg.phase_timing_mode,
+                        phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+                        search_params=search_params,
+                    ),
+                    background=background,
+                    events=events,
+                )
+                stats = adapter.stats()
+                adapter.drop(collection="maxionbench")
+                profile, rate = _resource_profile_and_rate_for_cfg(
+                    cfg=cfg,
+                    stats=stats,
+                    client_count=client_count + cfg.clients_write,
+                )
+                resource_payload = _resource_payload(profile=profile, rate=rate)
+                duration = max(result.static.measured_elapsed_s, 1e-9)
+                rhu_h = rhu_hours(duration_s=duration, rate=rate)
+                setup_elapsed_s = time.perf_counter() - setup_start
+                payload = _portable_payload(
+                    cfg=cfg,
+                    search_params=search_params,
+                    primary_quality_metric="ndcg_at_10",
+                    primary_quality_value=result.static.ndcg_at_10,
+                    avg_retrieved_input_tokens=result.static.avg_retrieved_input_tokens,
+                    measured_requests=result.static.measured_requests,
+                    rhu_h=rhu_h,
+                    extra={
+                        "freshness_hit_at_1s": result.freshness_hit_at_1s,
+                        "freshness_hit_at_5s": result.freshness_hit_at_5s,
+                        "stale_answer_rate_at_5s": result.stale_answer_rate_at_5s,
+                        "p95_visibility_latency_ms": result.p95_visibility_latency_ms,
+                        "event_count": result.event_count,
+                        "freshness_floor_for_budget": freshness_floor,
+                    },
+                )
+                sweep_runs.append(
+                    _SweepRun(
+                        client_count=client_count,
+                        search_params=payload,
+                        p50_ms=result.static.p50_ms,
+                        p95_ms=result.static.p95_ms,
+                        p99_ms=result.static.p99_ms,
+                        qps=result.static.qps,
+                        recall_at_10=result.static.recall_at_10,
+                        ndcg_at_10=result.static.ndcg_at_10,
+                        mrr_at_10=result.static.mrr_at_10,
+                        sla_violation_rate=result.static.sla_violation_rate,
+                        errors=result.static.errors,
+                        rhu_h=rhu_h,
+                        rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
+                        rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                        setup_elapsed_s=setup_elapsed_s,
+                        warmup_target_s=cfg.warmup_s,
+                        warmup_elapsed_s=result.static.warmup_elapsed_s,
+                        warmup_requests=result.static.warmup_requests,
+                        measure_target_s=cfg.steady_state_s,
+                        measure_elapsed_s=result.static.measured_elapsed_s,
+                        measure_requests=result.static.measured_requests,
+                        error_examples=(),
+                        resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                        resource_gpu_count=resource_payload["gpu_count"],
+                        resource_ram_gib=resource_payload["ram_gib"],
+                        resource_disk_tb=resource_payload["disk_tb"],
+                        rhu_rate=resource_payload["rhu_rate"],
+                    )
+                )
+            rows.extend(
+                _select_portable_quality_rows(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    sweep_runs=[
+                        run
+                        for run in sweep_runs
+                        if float(run.search_params.get("freshness_hit_at_5s", 0.0)) >= freshness_floor
+                    ],
+                    config_fingerprint=config_fingerprint,
+                    quality_getter=lambda run: run.ndcg_at_10,
+                    suffix="portable_s2",
+                )
+            )
+    return rows
+
+
+def _run_portable_s3_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
+    dataset = _load_portable_s3_dataset(cfg, config_path=config_path)
+    rows: list[ResultRow] = []
+    for repeat_idx in range(cfg.repeats):
+        for client_count in cfg.clients_grid:
+            sweep_runs: list[_SweepRun] = []
+            for search_params in cfg.search_sweep:
+                setup_start = time.perf_counter()
+                adapter = _create_benchmark_adapter(cfg=cfg)
+                baseline = measure_rpc_baseline(
+                    request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
+                    request_count=cfg.rpc_baseline_requests,
+                )
+                ingest_text_dataset(adapter, dataset)
+                result = evaluate_text_queries(
+                    adapter=adapter,
+                    cfg=PortableTextConfig(
+                        top_k=cfg.top_k,
+                        clients_read=client_count,
+                        sla_threshold_ms=cfg.sla_threshold_ms,
+                        warmup_s=cfg.warmup_s,
+                        steady_state_s=cfg.steady_state_s,
+                        phase_timing_mode=cfg.phase_timing_mode,
+                        phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+                        search_params=search_params,
+                    ),
+                    dataset=dataset,
+                )
+                stats = adapter.stats()
+                adapter.drop(collection="maxionbench")
+                profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count)
+                resource_payload = _resource_payload(profile=profile, rate=rate)
+                duration = max(result.measured_elapsed_s, 1e-9)
+                rhu_h = rhu_hours(duration_s=duration, rate=rate)
+                setup_elapsed_s = time.perf_counter() - setup_start
+                payload = _portable_payload(
+                    cfg=cfg,
+                    search_params=search_params,
+                    primary_quality_metric="evidence_coverage@10",
+                    primary_quality_value=result.evidence_coverage_at_10,
+                    avg_retrieved_input_tokens=result.avg_retrieved_input_tokens,
+                    measured_requests=result.measured_requests,
+                    rhu_h=rhu_h,
+                    extra={
+                        "evidence_coverage_at_5": result.evidence_coverage_at_5,
+                        "evidence_coverage_at_10": result.evidence_coverage_at_10,
+                        "evidence_coverage_at_20": result.evidence_coverage_at_20,
+                    },
+                )
+                sweep_runs.append(
+                    _SweepRun(
+                        client_count=client_count,
+                        search_params=payload,
+                        p50_ms=result.p50_ms,
+                        p95_ms=result.p95_ms,
+                        p99_ms=result.p99_ms,
+                        qps=result.qps,
+                        recall_at_10=result.recall_at_10,
+                        ndcg_at_10=result.ndcg_at_10,
+                        mrr_at_10=result.mrr_at_10,
+                        sla_violation_rate=result.sla_violation_rate,
+                        errors=result.errors,
+                        rhu_h=rhu_h,
+                        rtt_baseline_ms_p50=baseline["rtt_baseline_ms_p50"],
+                        rtt_baseline_ms_p99=baseline["rtt_baseline_ms_p99"],
+                        setup_elapsed_s=setup_elapsed_s,
+                        warmup_target_s=cfg.warmup_s,
+                        warmup_elapsed_s=result.warmup_elapsed_s,
+                        warmup_requests=result.warmup_requests,
+                        measure_target_s=cfg.steady_state_s,
+                        measure_elapsed_s=result.measured_elapsed_s,
+                        measure_requests=result.measured_requests,
+                        error_examples=(),
+                        resource_cpu_vcpu=resource_payload["cpu_vcpu"],
+                        resource_gpu_count=resource_payload["gpu_count"],
+                        resource_ram_gib=resource_payload["ram_gib"],
+                        resource_disk_tb=resource_payload["disk_tb"],
+                        rhu_rate=resource_payload["rhu_rate"],
+                    )
+                )
+            rows.extend(
+                _select_portable_quality_rows(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    sweep_runs=sweep_runs,
+                    config_fingerprint=config_fingerprint,
+                    quality_getter=lambda run: float(run.search_params.get("evidence_coverage_at_10", 0.0)),
+                    suffix="portable_s3",
+                )
+            )
+    return rows
 
 
 def _prepare_s1_context(
@@ -1349,6 +1682,120 @@ def _select_matched_quality_rows(
     return rows, selection_summary
 
 
+def _select_portable_quality_rows(
+    *,
+    cfg: RunConfig,
+    repeat_idx: int,
+    client_count: int,
+    sweep_runs: list[_SweepRun],
+    config_fingerprint: str,
+    quality_getter: Any,
+    suffix: str,
+) -> list[ResultRow]:
+    rows: list[ResultRow] = []
+    candidates = [
+        MatchedQualityCandidate(
+            quality=float(quality_getter(run)),
+            p99_ms=run.p99_ms,
+            qps=run.qps,
+            rhu_h=run.rhu_h,
+            payload=run,
+        )
+        for run in sweep_runs
+    ]
+    for target in cfg.quality_targets:
+        selected = select_candidate(candidates, target_quality=target)
+        if selected is None:
+            continue
+        run = selected.payload
+        rows.append(
+            ResultRow(
+                run_id=_run_id(config_fingerprint, repeat_idx, client_count, target, suffix=suffix),
+                timestamp_utc=utc_now_iso(),
+                repeat_idx=repeat_idx,
+                engine=cfg.engine,
+                engine_version=cfg.engine_version,
+                scenario=cfg.scenario,
+                dataset_bundle=cfg.dataset_bundle,
+                dataset_hash=cfg.dataset_hash,
+                seed=cfg.seed,
+                clients_read=client_count,
+                clients_write=cfg.clients_write,
+                quality_target=target,
+                search_params_json=json.dumps(run.search_params, sort_keys=True),
+                recall_at_10=run.recall_at_10,
+                ndcg_at_10=run.ndcg_at_10,
+                mrr_at_10=run.mrr_at_10,
+                p50_ms=run.p50_ms,
+                p95_ms=run.p95_ms,
+                p99_ms=run.p99_ms,
+                qps=run.qps,
+                rhu_h=run.rhu_h,
+                resource_cpu_vcpu=run.resource_cpu_vcpu,
+                resource_gpu_count=run.resource_gpu_count,
+                resource_ram_gib=run.resource_ram_gib,
+                resource_disk_tb=run.resource_disk_tb,
+                rhu_rate=run.rhu_rate,
+                sla_threshold_ms=cfg.sla_threshold_ms,
+                sla_violation_rate=run.sla_violation_rate,
+                errors=run.errors,
+                rtt_baseline_ms_p50=run.rtt_baseline_ms_p50,
+                rtt_baseline_ms_p99=run.rtt_baseline_ms_p99,
+                setup_elapsed_s=run.setup_elapsed_s,
+                warmup_target_s=run.warmup_target_s,
+                warmup_elapsed_s=run.warmup_elapsed_s,
+                warmup_requests=run.warmup_requests,
+                measure_target_s=run.measure_target_s,
+                measure_elapsed_s=run.measure_elapsed_s,
+                measure_requests=run.measure_requests,
+            )
+        )
+    return rows
+
+
+def _portable_payload(
+    *,
+    cfg: RunConfig,
+    search_params: Mapping[str, Any],
+    primary_quality_metric: str,
+    primary_quality_value: float,
+    avg_retrieved_input_tokens: float,
+    measured_requests: int,
+    rhu_h: float,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    retrieval_cost = float(rhu_h) / max(int(measured_requests), 1)
+    embedding_cost = 0.0
+    llm_context_cost = float(cfg.c_llm_in) * float(avg_retrieved_input_tokens)
+    payload = {
+        "profile": cfg.profile,
+        "budget_level": cfg.budget_level,
+        "embedding_model": cfg.embedding_model,
+        "embedding_dim": cfg.embedding_dim,
+        "search_params": dict(search_params),
+        "primary_quality_metric": primary_quality_metric,
+        "primary_quality_value": float(primary_quality_value),
+        "avg_retrieved_input_tokens": float(avg_retrieved_input_tokens),
+        "retrieval_cost_est": retrieval_cost,
+        "embedding_cost_est": embedding_cost,
+        "llm_context_cost_est": llm_context_cost,
+        "task_cost_est": retrieval_cost + embedding_cost + llm_context_cost,
+        "c_llm_in": float(cfg.c_llm_in),
+    }
+    if extra:
+        payload.update(dict(extra))
+    return payload
+
+
+def _portable_s2_freshness_floor(budget_level: str | None) -> float:
+    normalized = str(budget_level or "").strip().lower()
+    if normalized == "b1":
+        return 0.6
+    if normalized == "b2":
+        return 0.8
+    return 0.0
+
+
 def _s1_sweep_diagnostics_payload(
     *,
     cfg: RunConfig,
@@ -1478,6 +1925,27 @@ def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:
     scenario = cfg.scenario.lower()
     dataset = cfg.dataset_bundle.upper()
 
+    if scenario == "s1_single_hop":
+        return {
+            "source": "portable_text_qrels",
+            "metric": "ndcg_at_10",
+            "k": 10,
+            "engine": "processed_text_qrels",
+        }
+    if scenario == "s2_streaming_memory":
+        return {
+            "source": "portable_text_qrels_plus_streaming_events",
+            "metric": "ndcg_at_10",
+            "k": 10,
+            "engine": "processed_text_qrels",
+        }
+    if scenario == "s3_multi_hop":
+        return {
+            "source": "frames_portable_gold_evidence",
+            "metric": "evidence_coverage@10",
+            "k": 10,
+            "engine": "frames_portable_qrels",
+        }
     if scenario == "calibrate_d3":
         return {
             "source": "d3_calibration_eval",
@@ -1896,6 +2364,82 @@ def _maybe_load_d4_data(cfg: RunConfig, *, config_path: Path) -> D4RetrievalData
     )
 
 
+def _load_portable_s1_dataset(cfg: RunConfig, *, config_path: Path) -> D4RetrievalDataset:
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is not None:
+        return load_processed_d4_bundle(
+            processed_dataset_path,
+            vector_dim=cfg.vector_dim,
+            seed=cfg.seed,
+            beir_subsets=list(cfg.d4_beir_subsets),
+            include_crag=False,
+            max_docs=cfg.d4_max_docs,
+            max_queries=cfg.d4_max_queries,
+        )
+    beir_root = _resolve_optional_config_value_path(value=cfg.d4_beir_root, config_path=config_path)
+    if beir_root is None:
+        raise FileNotFoundError(
+            "portable S1 requires processed_dataset_path or d4_beir_root pointing at local text bundles"
+        )
+    return load_d4_from_local_bundles(
+        vector_dim=cfg.vector_dim,
+        seed=cfg.seed,
+        beir_root=beir_root,
+        beir_subsets=list(cfg.d4_beir_subsets),
+        beir_split=cfg.d4_beir_split,
+        crag_path=None,
+        include_crag=False,
+        max_docs=cfg.d4_max_docs,
+        max_queries=cfg.d4_max_queries,
+    )
+
+
+def _load_portable_s2_datasets(cfg: RunConfig, *, config_path: Path) -> tuple[D4RetrievalDataset, D4RetrievalDataset]:
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is None:
+        raise FileNotFoundError("portable S2 requires processed_dataset_path pointing at the processed D4 root")
+    background = load_processed_d4_bundle(
+        processed_dataset_path,
+        vector_dim=cfg.vector_dim,
+        seed=cfg.seed,
+        beir_subsets=list(cfg.d4_beir_subsets),
+        include_crag=False,
+        max_docs=cfg.d4_max_docs,
+        max_queries=cfg.d4_max_queries,
+    )
+    events_path = processed_dataset_path / "crag" / "small_slice"
+    events = load_processed_text_dataset(
+        events_path,
+        vector_dim=cfg.vector_dim,
+        seed=cfg.seed,
+        max_docs=cfg.d4_max_docs,
+        max_queries=cfg.d4_max_queries,
+    )
+    return background, events
+
+
+def _load_portable_s3_dataset(cfg: RunConfig, *, config_path: Path) -> D4RetrievalDataset:
+    processed_dataset_path = _resolve_optional_config_value_path(
+        value=cfg.processed_dataset_path,
+        config_path=config_path,
+    )
+    if processed_dataset_path is None:
+        raise FileNotFoundError("portable S3 requires processed_dataset_path pointing at the FRAMES-portable dataset")
+    return load_processed_text_dataset(
+        processed_dataset_path,
+        vector_dim=cfg.vector_dim,
+        seed=cfg.seed,
+        max_docs=cfg.d4_max_docs,
+        max_queries=cfg.d4_max_queries,
+    )
+
+
 def _to_s1_data(dataset: D1AnnDataset) -> S1Data:
     return S1Data(
         ids=dataset.ids,
@@ -1966,6 +2510,7 @@ def _write_runner_log(path: Path, rows: list[ResultRow], *, config_fingerprint: 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     overrides = {
+        "budget_level": args.budget,
         "seed": args.seed,
         "repeats": args.repeats,
         "no_retry": args.no_retry if args.no_retry is True else None,
