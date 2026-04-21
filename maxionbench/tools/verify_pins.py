@@ -13,6 +13,10 @@ PINNED_BEIR_SUBSETS = ["scifact", "fiqa", "nfcorpus"]
 PINNED_RAG_CRAG_SOURCE = "facebookresearch/CRAG"
 PINNED_RAG_CRAG_PATH = "data/crag_task_1_and_2_dev_v4.jsonl.bz2"
 PINNED_ANN_QUALITY_TARGETS = [0.80, 0.90, 0.95]
+PINNED_PORTABLE_EMBEDDING_MODELS = {
+    "BAAI/bge-small-en-v1.5": 384,
+    "BAAI/bge-base-en-v1.5": 768,
+}
 D3_VECTOR_DIM = 192
 D3_10M_MIN_VECTORS = 10_000_000
 D3_50M_MIN_VECTORS = 50_000_000
@@ -61,10 +65,11 @@ def verify_scenario_config_dir(
 def _verify_common_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     _expect_equal(errors, path, "no_retry", cfg.no_retry, True)
-    _expect_equal(errors, path, "warmup_s", cfg.warmup_s, 120)
-    _expect_equal(errors, path, "steady_state_s", cfg.steady_state_s, 300)
     _expect_equal(errors, path, "rpc_baseline_requests", cfg.rpc_baseline_requests, 1000)
     _expect_equal(errors, path, "top_k", cfg.top_k, 10)
+    if str(cfg.profile).strip().lower() != "portable-agentic":
+        _expect_equal(errors, path, "warmup_s", cfg.warmup_s, 120)
+        _expect_equal(errors, path, "steady_state_s", cfg.steady_state_s, 300)
     _expect_equal(errors, path, "c_ref_vcpu", cfg.c_ref_vcpu, 96.0)
     _expect_equal(errors, path, "g_ref_gpu", cfg.g_ref_gpu, 1.0)
     _expect_equal(errors, path, "r_ref_gib", cfg.r_ref_gib, 512.0)
@@ -84,6 +89,9 @@ def _verify_scenario_pins(
     strict_d3_scenario_scale: bool,
 ) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
+    if str(cfg.profile).strip().lower() == "portable-agentic":
+        return _verify_portable_scenario_pins(path, cfg)
+
     scenario = cfg.scenario
     if scenario == "calibrate_d3":
         _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
@@ -211,6 +219,87 @@ def _verify_scenario_pins(
         }
     )
     return errors
+
+
+def _verify_portable_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    scenario = cfg.scenario
+    _expect_equal(errors, path, "profile", cfg.profile, "portable-agentic")
+    if cfg.budget_level not in {"b0", "b1", "b2"}:
+        errors.append(
+            {
+                "file": str(path),
+                "field": "budget_level",
+                "expected": "one of b0/b1/b2",
+                "actual": cfg.budget_level,
+                "message": f"budget_level drift in {path.name}: expected one of b0/b1/b2, got {cfg.budget_level!r}",
+            }
+        )
+    _expect_equal(errors, path, "quality_targets length", len(cfg.quality_targets), 1)
+    _expect_portable_embedding(errors, path, cfg)
+
+    if scenario == "s1_single_hop":
+        _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "D4")
+        _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
+        _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [1, 4, 8])
+        _expect_equal(errors, path, "quality_targets", _normalized_float_list(cfg.quality_targets), [0.25])
+        _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, False)
+        _expect_equal(errors, path, "d4_beir_subsets", cfg.d4_beir_subsets, ["scifact", "fiqa"])
+        _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 50.0)
+        return errors
+
+    if scenario == "s2_streaming_memory":
+        _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "D4")
+        _expect_equal(errors, path, "clients_read", cfg.clients_read, 8)
+        _expect_equal(errors, path, "clients_write", cfg.clients_write, 2)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [8])
+        _expect_equal(errors, path, "quality_targets", _normalized_float_list(cfg.quality_targets), [0.25])
+        _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, False)
+        _expect_equal(errors, path, "d4_beir_subsets", cfg.d4_beir_subsets, ["scifact", "fiqa"])
+        _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 120.0)
+        return errors
+
+    if scenario == "s3_multi_hop":
+        _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "FRAMES_PORTABLE")
+        _expect_equal(errors, path, "clients_read", cfg.clients_read, 1)
+        _expect_equal(errors, path, "clients_write", cfg.clients_write, 0)
+        _expect_equal(errors, path, "clients_grid", cfg.clients_grid, [1, 4, 8])
+        _expect_equal(errors, path, "quality_targets", _normalized_float_list(cfg.quality_targets), [0.30])
+        _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 150.0)
+        return errors
+
+    errors.append(
+        {
+            "file": str(path),
+            "field": "scenario",
+            "expected": "portable-agentic scenario",
+            "actual": scenario,
+            "message": f"unsupported portable-agentic scenario for pin verification: {scenario}",
+        }
+    )
+    return errors
+
+
+def _expect_portable_embedding(errors: list[dict[str, Any]], path: Path, cfg: RunConfig) -> None:
+    model = str(cfg.embedding_model or "")
+    expected_dim = PINNED_PORTABLE_EMBEDDING_MODELS.get(model)
+    if expected_dim is None:
+        errors.append(
+            {
+                "file": str(path),
+                "field": "embedding_model",
+                "expected": sorted(PINNED_PORTABLE_EMBEDDING_MODELS),
+                "actual": cfg.embedding_model,
+                "message": (
+                    f"embedding_model drift in {path.name}: expected one of "
+                    f"{sorted(PINNED_PORTABLE_EMBEDDING_MODELS)!r}, got {cfg.embedding_model!r}"
+                ),
+            }
+        )
+        return
+    _expect_equal(errors, path, "embedding_dim", cfg.embedding_dim, expected_dim)
+    _expect_equal(errors, path, "vector_dim", cfg.vector_dim, expected_dim)
 
 
 def _verify_d3_pins(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:

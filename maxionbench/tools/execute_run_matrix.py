@@ -34,6 +34,7 @@ def execute_run_matrix(
     poll_interval_s: float = 1.0,
 ) -> dict[str, Any]:
     matrix = load_run_matrix(matrix_path)
+    effective_budget = budget if budget is not None else matrix.budget_level
     selected_rows = list(
         _filter_rows(
             rows=matrix.iter_rows(lane=lane),
@@ -46,7 +47,7 @@ def execute_run_matrix(
     summary: dict[str, Any] = {
         "matrix_path": str(matrix_path.expanduser().resolve()),
         "lane": lane,
-        "budget": budget,
+        "budget": effective_budget,
         "selected_rows": len(selected_rows),
         "completed_rows": 0,
         "skipped_rows": 0,
@@ -54,8 +55,8 @@ def execute_run_matrix(
         "failures": [],
     }
     overrides: dict[str, Any] = {}
-    if budget is not None:
-        overrides["budget"] = budget
+    if effective_budget is not None:
+        overrides["budget_level"] = effective_budget
     if seed is not None:
         overrides["seed"] = seed
     if repeats is not None:

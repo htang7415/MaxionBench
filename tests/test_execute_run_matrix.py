@@ -38,6 +38,7 @@ def _write_matrix(path: Path, *, rows: list[dict]) -> None:
                 "selected_engines": sorted({str(row["engine"]) for row in rows}),
                 "selected_templates": sorted({str(row["template_name"]) for row in rows}),
                 "lane": "cpu",
+                "budget_level": "b0",
             },
             indent=2,
             sort_keys=True,
@@ -110,7 +111,7 @@ def test_execute_run_matrix_skips_completed_and_filters_rows(tmp_path: Path, mon
     assert summary["skipped_rows"] == 1
     assert summary["completed_rows"] == 1
     assert summary["failed_rows"] == 0
-    assert calls == [("run", str(cfg_b.resolve()), {"budget": "b0", "seed": 42})]
+    assert calls == [("run", str(cfg_b.resolve()), {"budget_level": "b0", "seed": 42})]
 
 
 def test_execute_run_matrix_can_continue_after_failure(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -23,7 +23,7 @@ d4_include_crag: false
 search_sweep:
   - hnsw_ef: 32
   - hnsw_ef: 64
-rpc_baseline_requests: 5
+rpc_baseline_requests: 1000
 sla_threshold_ms: 120.0
 vector_dim: 384
 num_vectors: 1

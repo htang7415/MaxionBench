@@ -17,13 +17,13 @@ quality_target: 0.25
 quality_targets: [0.25]
 clients_read: 1
 clients_write: 0
-clients_grid: [1, 8]
+clients_grid: [1, 4, 8]
 d4_beir_subsets: [scifact, fiqa]
 d4_include_crag: false
 search_sweep:
   - hnsw_ef: 32
   - hnsw_ef: 64
-rpc_baseline_requests: 5
+rpc_baseline_requests: 1000
 sla_threshold_ms: 50.0
 vector_dim: 384
 num_vectors: 1

@@ -15,13 +15,13 @@ no_retry: true
 output_dir: artifacts/runs/portable/s3_multi_hop_mock
 quality_target: 0.30
 quality_targets: [0.30]
-clients_read: 4
+clients_read: 1
 clients_write: 0
-clients_grid: [4]
+clients_grid: [1, 4, 8]
 search_sweep:
   - hnsw_ef: 32
   - hnsw_ef: 64
-rpc_baseline_requests: 5
+rpc_baseline_requests: 1000
 sla_threshold_ms: 150.0
 vector_dim: 384
 num_vectors: 1

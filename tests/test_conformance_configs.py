@@ -37,5 +37,6 @@ def test_conformance_configs_cover_required_adapters_and_shape() -> None:
         metric = payload.get("metric", None)
         assert isinstance(metric, str) and metric in {"ip", "l2", "cosine"}
 
-    required = set(REQUIRED_ADAPTERS) | {"mock"}
+    required = (set(REQUIRED_ADAPTERS) - {"faiss-gpu"}) | {"mock"}
     assert required.issubset(adapters)
+    assert "faiss-gpu" not in adapters

@@ -1,7 +1,0 @@
-{
-  "adapter": "faiss-gpu",
-  "adapter_options_json": "{\"device_id\":0}",
-  "collection": "conformance",
-  "dimension": 4,
-  "metric": "ip"
-}

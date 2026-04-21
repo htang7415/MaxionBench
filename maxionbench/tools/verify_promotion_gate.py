@@ -5,9 +5,14 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import csv
 import json
+import math
 from pathlib import Path
 import sys
 from typing import Any
+
+import pandas as pd
+
+from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_status
 
 REQUIRED_ADAPTERS = (
     "qdrant",
@@ -20,6 +25,33 @@ REQUIRED_ADAPTERS = (
     "faiss-cpu",
     "faiss-gpu",
 )
+
+PORTABLE_SCENARIOS = ("s1_single_hop", "s2_streaming_memory", "s3_multi_hop")
+PORTABLE_PROMOTION_RULES: dict[str, dict[str, Any]] = {
+    "b0": {
+        "to_budget": "b1",
+        "quality_thresholds": {
+            "s1_single_hop": 0.1875,
+            "s2_streaming_memory": 0.1875,
+            "s3_multi_hop": 0.225,
+        },
+        "s2_freshness_hit_at_5s": 0.6,
+        "max_error_rate": 0.05,
+        "prune_survivors": False,
+    },
+    "b1": {
+        "to_budget": "b2",
+        "quality_thresholds": {
+            "s1_single_hop": 0.225,
+            "s2_streaming_memory": 0.225,
+            "s3_multi_hop": 0.27,
+        },
+        "s2_freshness_hit_at_5s": 0.8,
+        "max_error_rate": 0.05,
+        "prune_survivors": True,
+        "max_survivors_per_scenario": 3,
+    },
+}
 
 
 def _expected_required_adapters(*, allow_gpu_unavailable: bool) -> list[str]:
@@ -260,6 +292,261 @@ def verify_promotion_gate(
     }
 
 
+def verify_portable_promotion_gate(
+    *,
+    results_path: Path,
+    from_budget: str,
+    out_candidates_path: Path | None = None,
+) -> dict[str, Any]:
+    budget = str(from_budget).strip().lower()
+    if budget not in PORTABLE_PROMOTION_RULES:
+        raise ValueError(f"from_budget must be one of {sorted(PORTABLE_PROMOTION_RULES)}, got {from_budget!r}")
+    path = results_path.expanduser().resolve()
+    frame = _load_results_frame(path)
+    rule = PORTABLE_PROMOTION_RULES[budget]
+    rows = [
+        row
+        for row in (_portable_candidate_from_row(row) for row in frame.to_dict(orient="records"))
+        if row is not None and row["budget_level"] == budget
+    ]
+
+    survivors: list[dict[str, Any]] = []
+    rejections: list[dict[str, Any]] = []
+    for row in rows:
+        reject_reasons = _portable_rejection_reasons(row=row, rule=rule)
+        if reject_reasons:
+            rejected = dict(row)
+            rejected["reasons"] = reject_reasons
+            rejections.append(rejected)
+        else:
+            survivors.append(dict(row))
+
+    promoted = _prune_portable_survivors(survivors=survivors, rule=rule)
+    observed_scenarios = sorted({str(row["scenario"]) for row in rows})
+    survivor_scenarios = sorted({str(row["scenario"]) for row in promoted})
+    missing_scenarios = [scenario for scenario in PORTABLE_SCENARIOS if scenario not in observed_scenarios]
+    missing_survivors = [scenario for scenario in PORTABLE_SCENARIOS if scenario not in survivor_scenarios]
+
+    reasons: list[str] = []
+    if not rows:
+        reasons.append(f"no portable-agentic result rows found for budget {budget}")
+    if missing_scenarios:
+        reasons.append(f"missing portable scenarios for budget {budget}: {missing_scenarios}")
+    if missing_survivors:
+        reasons.append(f"no promoted survivor for portable scenarios: {missing_survivors}")
+
+    summary = {
+        "mode": "portable-agentic-promotion",
+        "results_path": str(path),
+        "from_budget": budget,
+        "to_budget": str(rule["to_budget"]),
+        "thresholds": {
+            "quality": dict(rule["quality_thresholds"]),
+            "s2_freshness_hit_at_5s": float(rule["s2_freshness_hit_at_5s"]),
+            "max_error_rate": float(rule["max_error_rate"]),
+        },
+        "prune_survivors": bool(rule.get("prune_survivors", False)),
+        "max_survivors_per_scenario": rule.get("max_survivors_per_scenario"),
+        "rows_checked": len(rows),
+        "survivor_count_before_prune": len(survivors),
+        "promoted_survivor_count": len(promoted),
+        "rejected_count": len(rejections),
+        "observed_scenarios": observed_scenarios,
+        "missing_scenarios": missing_scenarios,
+        "missing_survivors": missing_survivors,
+        "survivors": promoted,
+        "rejections": rejections,
+        "ready_for_promotion": len(reasons) == 0,
+        "reasons": reasons,
+        "pass": len(reasons) == 0,
+    }
+    if out_candidates_path is not None:
+        out_path = out_candidates_path.expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        summary["out_candidates_path"] = str(out_path)
+    return summary
+
+
+def _load_results_frame(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Portable results path not found: {path}")
+    if path.is_file():
+        if path.suffix != ".parquet":
+            raise ValueError(f"Portable results file must be a .parquet file: {path}")
+        return pd.read_parquet(path)
+
+    frames: list[pd.DataFrame] = []
+    for result_path in sorted(path.rglob("results.parquet")):
+        status_path = result_path.parent / RUN_STATUS_FILENAME
+        if status_path.exists():
+            status = str(read_run_status(status_path).get("status") or "").strip().lower()
+            if status != "success":
+                continue
+        frame = pd.read_parquet(result_path)
+        frame["__run_path"] = str(result_path.parent)
+        frames.append(frame)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _portable_candidate_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    scenario = str(row.get("scenario") or "").strip()
+    payload = _json_mapping(row.get("search_params_json"))
+    profile = str(payload.get("profile") or row.get("profile") or row.get("__meta_profile") or "").strip()
+    if scenario not in PORTABLE_SCENARIOS and profile != "portable-agentic":
+        return None
+    budget_level = str(payload.get("budget_level") or row.get("budget_level") or row.get("__meta_budget_level") or "").strip().lower()
+    embedding_model = str(payload.get("embedding_model") or row.get("embedding_model") or row.get("__meta_embedding_model") or "")
+    clients_read = _safe_int(row.get("clients_read"), default=0)
+    quality = _portable_quality_value(scenario=scenario, row=row, payload=payload)
+    freshness = _safe_float(payload.get("freshness_hit_at_5s", row.get("freshness_hit_at_5s")))
+    errors = _safe_int(row.get("errors"), default=0)
+    measured_requests = _safe_int(row.get("measure_requests", payload.get("measured_requests")), default=0)
+    error_rate = float(errors) / max(float(measured_requests), 1.0)
+    task_cost = _safe_float(payload.get("task_cost_est", row.get("task_cost_est")))
+    p99_ms = _safe_float(row.get("p99_ms"))
+    qps = _safe_float(row.get("qps"))
+    candidate = {
+        "run_id": str(row.get("run_id") or ""),
+        "scenario": scenario,
+        "budget_level": budget_level,
+        "engine": str(row.get("engine") or ""),
+        "embedding_model": embedding_model,
+        "clients_read": clients_read,
+        "clients_write": _safe_int(row.get("clients_write"), default=0),
+        "quality_target": _safe_float(row.get("quality_target")),
+        "primary_quality_metric": str(payload.get("primary_quality_metric") or _portable_quality_metric(scenario)),
+        "primary_quality_value": quality,
+        "freshness_hit_at_5s": freshness,
+        "error_rate": error_rate,
+        "errors": errors,
+        "measure_requests": measured_requests,
+        "task_cost_est": task_cost,
+        "p99_ms": p99_ms,
+        "qps": qps,
+    }
+    candidate["config_key"] = (
+        f"{candidate['scenario']}|{candidate['engine']}|{candidate['embedding_model']}|"
+        f"clients={candidate['clients_read']}|target={candidate['quality_target']}"
+    )
+    return candidate
+
+
+def _portable_quality_value(*, scenario: str, row: dict[str, Any], payload: dict[str, Any]) -> float:
+    if scenario == "s3_multi_hop":
+        return _first_finite(
+            payload.get("evidence_coverage_at_10"),
+            payload.get("primary_quality_value"),
+            row.get("evidence_coverage_at_10"),
+            row.get("ndcg_at_10"),
+        )
+    return _first_finite(payload.get("primary_quality_value"), row.get("ndcg_at_10"))
+
+
+def _portable_quality_metric(scenario: str) -> str:
+    if scenario == "s3_multi_hop":
+        return "evidence_coverage@10"
+    return "ndcg_at_10"
+
+
+def _portable_rejection_reasons(*, row: dict[str, Any], rule: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    scenario = str(row["scenario"])
+    threshold = float(rule["quality_thresholds"].get(scenario, math.inf))
+    quality = _safe_float(row.get("primary_quality_value"))
+    if not _finite_at_least(quality, threshold):
+        reasons.append(f"{_portable_quality_metric(scenario)}={quality} below {threshold}")
+    error_rate = _safe_float(row.get("error_rate"))
+    max_error_rate = float(rule["max_error_rate"])
+    if not math.isfinite(error_rate) or error_rate > max_error_rate:
+        reasons.append(f"error_rate={error_rate} above {max_error_rate}")
+    if scenario == "s2_streaming_memory":
+        freshness = _safe_float(row.get("freshness_hit_at_5s"))
+        freshness_threshold = float(rule["s2_freshness_hit_at_5s"])
+        if not _finite_at_least(freshness, freshness_threshold):
+            reasons.append(f"freshness_hit_at_5s={freshness} below {freshness_threshold}")
+    return reasons
+
+
+def _prune_portable_survivors(*, survivors: list[dict[str, Any]], rule: dict[str, Any]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        survivors,
+        key=lambda row: (
+            str(row["scenario"]),
+            _sortable_float(row.get("task_cost_est")),
+            _sortable_float(row.get("p99_ms")),
+            -_sortable_float(row.get("qps")),
+            str(row.get("engine") or ""),
+            str(row.get("embedding_model") or ""),
+            int(row.get("clients_read") or 0),
+        ),
+    )
+    if not bool(rule.get("prune_survivors", False)):
+        return ordered
+    limit = int(rule.get("max_survivors_per_scenario", 3))
+    counts: dict[str, int] = {}
+    pruned: list[dict[str, Any]] = []
+    for row in ordered:
+        scenario = str(row["scenario"])
+        count = counts.get(scenario, 0)
+        if count >= limit:
+            continue
+        counts[scenario] = count + 1
+        pruned.append(row)
+    return pruned
+
+
+def _json_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _first_finite(*values: Any) -> float:
+    for value in values:
+        candidate = _safe_float(value)
+        if math.isfinite(candidate):
+            return candidate
+    return float("nan")
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        if value is None:
+            return float("nan")
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _safe_int(value: Any, *, default: int) -> int:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, float) and math.isnan(value):
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _finite_at_least(value: float, threshold: float) -> bool:
+    return math.isfinite(value) and value >= threshold
+
+
+def _sortable_float(value: Any) -> float:
+    candidate = _safe_float(value)
+    return candidate if math.isfinite(candidate) else math.inf
+
+
 def _read_matrix_status_counts(
     path: Path,
 ) -> tuple[int, dict[str, int], dict[str, int], dict[str, dict[str, int]]]:
@@ -292,6 +579,13 @@ def _read_matrix_status_counts(
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Verify strict-readiness artifact for promotion gate")
     parser.add_argument(
+        "--portable-results",
+        default=None,
+        help="Directory or results.parquet file to check against portable B0/B1 promotion rules",
+    )
+    parser.add_argument("--from-budget", default=None, choices=sorted(PORTABLE_PROMOTION_RULES))
+    parser.add_argument("--out-candidates", default=None, help="Optional JSON path for promoted portable candidates")
+    parser.add_argument(
         "--strict-readiness-summary",
         default="artifacts/conformance_strict/engine_readiness_summary.json",
         help="Path to strict readiness summary JSON artifact",
@@ -305,10 +599,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        summary = verify_promotion_gate(
-            strict_readiness_summary_path=Path(args.strict_readiness_summary),
-            conformance_matrix_path=Path(args.conformance_matrix) if args.conformance_matrix else None,
-        )
+        if args.portable_results:
+            if args.from_budget is None:
+                parser.error("--from-budget is required with --portable-results")
+            summary = verify_portable_promotion_gate(
+                results_path=Path(args.portable_results),
+                from_budget=str(args.from_budget),
+                out_candidates_path=Path(args.out_candidates) if args.out_candidates else None,
+            )
+        else:
+            summary = verify_promotion_gate(
+                strict_readiness_summary_path=Path(args.strict_readiness_summary),
+                conformance_matrix_path=Path(args.conformance_matrix) if args.conformance_matrix else None,
+            )
     except (FileNotFoundError, ValueError) as exc:
         print(f"verify-promotion-gate failed: {exc}", file=sys.stderr)
         return 2
