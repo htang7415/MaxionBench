@@ -291,6 +291,52 @@ def main(argv: list[str] | None = None) -> int:
     conformance_matrix_parser.add_argument("--timeout-s", type=float, default=300.0)
     conformance_matrix_parser.add_argument("--adapters", default="")
 
+    services_parser = subparsers.add_parser(
+        "services",
+        help="Manage benchmark service containers (docker compose up/down/status/wait)",
+    )
+    services_parser.add_argument("action", choices=["up", "down", "status", "wait"])
+    services_parser.add_argument(
+        "--profile",
+        choices=["portable", "reference", "all"],
+        default="portable",
+        help="Service group to target (default: portable = qdrant, pgvector)",
+    )
+    services_parser.add_argument(
+        "--services",
+        default=None,
+        help="Comma-separated explicit service list; overrides --profile",
+    )
+    services_parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Poll service health after 'up' until ready",
+    )
+    services_parser.add_argument("--volumes", action="store_true", help="Remove volumes on 'down'")
+    services_parser.add_argument("--timeout-s", type=float, default=120.0)
+    services_parser.add_argument("--poll-interval-s", type=float, default=2.0)
+    services_parser.add_argument("--compose-file", default=None)
+    services_parser.add_argument("--json", action="store_true")
+
+    archive_parser = subparsers.add_parser(
+        "archive",
+        help="Archive run artifacts into a versioned, compressed bundle",
+    )
+    archive_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Archive identifier (default: UTC timestamp)",
+    )
+    archive_parser.add_argument("--results-dir", default="results")
+    archive_parser.add_argument("--runs-dir", default=None)
+    archive_parser.add_argument("--figures-dir", default=None)
+    archive_parser.add_argument("--frames-portable-dir", default=None)
+    archive_parser.add_argument("--conformance-dir", default=None)
+    archive_parser.add_argument("--docs", default=None)
+    archive_parser.add_argument("--no-tar", action="store_true")
+    archive_parser.add_argument("--dry-run", action="store_true")
+    archive_parser.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "run":
         from maxionbench.orchestration.runner import main as run_main
@@ -762,6 +808,46 @@ def main(argv: list[str] | None = None) -> int:
         if str(args.adapters).strip():
             matrix_argv.extend(["--adapters", args.adapters])
         return conformance_matrix_main(matrix_argv)
+    if args.command == "services":
+        from maxionbench.tools.service_lifecycle import main as services_main
+
+        services_argv: list[str] = [args.action, "--profile", args.profile]
+        if args.services:
+            services_argv.extend(["--services", args.services])
+        if args.wait:
+            services_argv.append("--wait")
+        if args.volumes:
+            services_argv.append("--volumes")
+        services_argv.extend(["--timeout-s", str(args.timeout_s)])
+        services_argv.extend(["--poll-interval-s", str(args.poll_interval_s)])
+        if args.compose_file:
+            services_argv.extend(["--compose-file", args.compose_file])
+        if args.json:
+            services_argv.append("--json")
+        return services_main(services_argv)
+    if args.command == "archive":
+        from maxionbench.tools.archive import main as archive_main
+
+        archive_argv: list[str] = ["--results-dir", args.results_dir]
+        if args.run_id:
+            archive_argv.extend(["--run-id", args.run_id])
+        if args.runs_dir:
+            archive_argv.extend(["--runs-dir", args.runs_dir])
+        if args.figures_dir:
+            archive_argv.extend(["--figures-dir", args.figures_dir])
+        if args.frames_portable_dir:
+            archive_argv.extend(["--frames-portable-dir", args.frames_portable_dir])
+        if args.conformance_dir:
+            archive_argv.extend(["--conformance-dir", args.conformance_dir])
+        if args.docs:
+            archive_argv.extend(["--docs", args.docs])
+        if args.no_tar:
+            archive_argv.append("--no-tar")
+        if args.dry_run:
+            archive_argv.append("--dry-run")
+        if args.json:
+            archive_argv.append("--json")
+        return archive_main(archive_argv)
     raise ValueError(f"Unsupported command {args.command}")
 
 
