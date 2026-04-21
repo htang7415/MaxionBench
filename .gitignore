@@ -1,25 +1,26 @@
-project.md
-prompt.md
-command.md
-document.md
-AGENTS.md
-CLAUDE.md
-command-mac.md
-dataset
-containers
-artifacts
-maxionbench.egg-info
+# Local datasets and benchmark outputs
+dataset/
+containers/
+artifacts/
+results/
+results_quick_check/
+logs/
+
+# Python/package build outputs
+build/
+*.egg-info/
+maxionbench.egg-info/
 
 # Python bytecode/test caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.cache
+.cache/
 
+# Ignore local docs/scripts by default; keep the main README visible
+*.md
 *.sh
-!run_workstation.sh
-!run_docker_scenario.sh
-!save_results_bundle.sh
+!README.md
 
 # Local generated benchmark outputs
 artifacts/ci/
@@ -29,7 +30,5 @@ artifacts/conformance_local/
 artifacts/figures/
 artifacts/runs/
 artifacts/workstation_runs/
-results/
 ci_s1_smoke_local.yaml
 .claude/settings.local.json
-logs

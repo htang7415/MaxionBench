@@ -1,9 +1,0 @@
-{
-  "config_dir": "/home/data/htang228/ML_files/MaxionBench/configs/conformance",
-  "container_image": "",
-  "container_runtime": "",
-  "generated_at_utc": "2026-04-06T15:00:57.046594+00:00",
-  "hostname": "me-r031516",
-  "matrix_path": "/home/data/htang228/ML_files/MaxionBench/results_quick_check/conformance/conformance_matrix.csv",
-  "python_executable": "/home/htang228/anaconda3/envs/maxion/bin/python3.11"
-}
