@@ -29,8 +29,7 @@ def emit_adapter_context(
 
 
 def emit_pre_create_diagnostics(*, adapter_name: str, adapter_options: Mapping[str, Any]) -> None:
-    if adapter_name == "faiss-gpu":
-        _emit(_faiss_gpu_diagnostics(adapter_options=adapter_options))
+    del adapter_name, adapter_options
 
 
 def emit_post_create_diagnostics(
@@ -48,49 +47,6 @@ def emit_post_create_diagnostics(
                 create_adapter_latency_s=create_adapter_latency_s,
             )
         )
-
-
-def _faiss_gpu_diagnostics(*, adapter_options: Mapping[str, Any]) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "event": "conformance_adapter_diagnostics",
-        "adapter": "faiss-gpu",
-        "device_id": int(adapter_options.get("device_id", 0)),
-    }
-    try:
-        import faiss  # type: ignore[import-not-found]
-    except Exception as exc:
-        payload["faiss_import_ok"] = False
-        payload["import_error"] = _exc_summary(exc)
-        return payload
-
-    payload["faiss_import_ok"] = True
-    payload["faiss_version"] = getattr(faiss, "__version__", None)
-    get_num_gpus = getattr(faiss, "get_num_gpus", None)
-    if callable(get_num_gpus):
-        try:
-            payload["cuda_device_count"] = int(get_num_gpus())
-        except Exception as exc:
-            payload["cuda_device_count_error"] = _exc_summary(exc)
-    else:
-        payload["cuda_device_count"] = None
-        payload["cuda_device_count_error"] = "faiss.get_num_gpus unavailable"
-
-    if not hasattr(faiss, "StandardGpuResources"):
-        payload["standard_gpu_resources_ok"] = False
-        payload["standard_gpu_resources_error"] = "faiss.StandardGpuResources unavailable"
-        return payload
-
-    started = time.perf_counter()
-    try:
-        resources = faiss.StandardGpuResources()
-        payload["standard_gpu_resources_ok"] = True
-        payload["standard_gpu_resources_type"] = type(resources).__name__
-        payload["standard_gpu_resources_latency_s"] = round(time.perf_counter() - started, 6)
-    except Exception as exc:
-        payload["standard_gpu_resources_ok"] = False
-        payload["standard_gpu_resources_error"] = _exc_summary(exc)
-        payload["standard_gpu_resources_latency_s"] = round(time.perf_counter() - started, 6)
-    return payload
 
 
 def _pgvector_diagnostics(*, adapter: Any, collection: str, create_adapter_latency_s: float) -> dict[str, Any]:

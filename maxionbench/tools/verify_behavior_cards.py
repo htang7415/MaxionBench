@@ -9,13 +9,9 @@ from typing import Any
 
 REQUIRED_CARD_FILES = (
     "faiss_cpu.md",
-    "faiss_gpu.md",
     "lancedb.md",
-    "milvus.md",
-    "opensearch.md",
     "pgvector.md",
     "qdrant.md",
-    "weaviate.md",
 )
 FORBIDDEN_LANCEDB_SPLIT_FILES = (
     "lancedb_service.md",

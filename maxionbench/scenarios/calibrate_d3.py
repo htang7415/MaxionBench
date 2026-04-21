@@ -70,7 +70,7 @@ def _load_vectors_for_calibration(cfg: CalibrateD3Config) -> tuple[np.ndarray, s
         if cfg.require_real_data:
             raise ValueError(
                 "paper-grade calibrate_d3 requires a real D3 dataset_path. "
-                "Provide a concrete dataset_path or set MAXIONBENCH_D3_DATASET_PATH for configs/scenarios_paper/calibrate_d3.yaml."
+                "Provide a concrete dataset_path or set MAXIONBENCH_D3_DATASET_PATH."
             )
         return (
             generate_synthetic_vectors(num_vectors=cfg.num_vectors, dim=cfg.vector_dim, seed=cfg.seed),

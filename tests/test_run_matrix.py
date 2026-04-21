@@ -7,67 +7,7 @@ import yaml
 from maxionbench.orchestration.run_matrix import build_run_matrix
 
 
-def test_build_run_matrix_cpu_lane_filters_gpu_rows_and_generates_configs(tmp_path: Path) -> None:
-    matrix = build_run_matrix(
-        repo_root=Path("."),
-        scenario_config_dir=Path("configs/scenarios_paper"),
-        engine_config_dir=Path("configs/engines"),
-        out_dir=tmp_path / "cpu_matrix",
-        output_root="artifacts/runs/paper_cpu_matrix",
-        lane="cpu",
-    )
-
-    assert matrix.lane == "cpu"
-    assert matrix.cpu_rows
-    assert matrix.gpu_rows == []
-    assert any(row.engine == "qdrant" for row in matrix.cpu_rows)
-    assert all(row.scenario != "s5_rerank" for row in matrix.cpu_rows)
-
-    sample_path = Path(matrix.cpu_rows[0].config_path)
-    assert sample_path.exists()
-    payload = yaml.safe_load(sample_path.read_text(encoding="utf-8"))
-    assert isinstance(payload, dict)
-    assert str(payload["output_dir"]).startswith("artifacts/runs/paper_cpu_matrix/")
-
-
-def test_build_run_matrix_gpu_lane_contains_s5_or_faiss_gpu(tmp_path: Path) -> None:
-    matrix = build_run_matrix(
-        repo_root=Path("."),
-        scenario_config_dir=Path("configs/scenarios_paper"),
-        engine_config_dir=Path("configs/engines"),
-        out_dir=tmp_path / "gpu_matrix",
-        output_root="artifacts/runs/paper_gpu_matrix",
-        lane="gpu",
-    )
-
-    assert matrix.lane == "gpu"
-    assert matrix.cpu_rows == []
-    assert matrix.gpu_rows
-    assert any(row.scenario == "s5_rerank" or row.engine == "faiss-gpu" for row in matrix.gpu_rows)
-
-
-def test_build_run_matrix_normalizes_d3_and_d4_dataset_paths(tmp_path: Path) -> None:
-    matrix = build_run_matrix(
-        repo_root=Path("."),
-        scenario_config_dir=Path("configs/scenarios_paper"),
-        engine_config_dir=Path("configs/engines"),
-        out_dir=tmp_path / "all_matrix",
-        output_root="artifacts/runs/paper_all_matrix",
-        lane="all",
-        skip_s6=True,
-    )
-
-    d3_s2 = next(row for row in matrix.cpu_rows if row.scenario == "s2_filtered_ann")
-    d3_payload = yaml.safe_load(Path(d3_s2.config_path).read_text(encoding="utf-8"))
-    assert d3_payload["dataset_path"] == "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D3/yfcc-10M/base.npy"
-
-    d4_s4 = next(row for row in matrix.cpu_rows if row.scenario == "s4_hybrid")
-    d4_payload = yaml.safe_load(Path(d4_s4.config_path).read_text(encoding="utf-8"))
-    assert d4_payload["processed_dataset_path"] == "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D4"
-    assert all(Path(row.template_name).stem != "s6_fusion" for row in matrix.iter_rows())
-
-
-def test_build_run_matrix_portable_expands_embedding_variants(tmp_path: Path) -> None:
+def test_build_run_matrix_portable_expands_embedding_variants_and_saves_budget(tmp_path: Path) -> None:
     matrix = build_run_matrix(
         repo_root=Path("."),
         scenario_config_dir=Path("configs/scenarios_portable"),
@@ -78,20 +18,31 @@ def test_build_run_matrix_portable_expands_embedding_variants(tmp_path: Path) ->
         lane="cpu",
     )
 
+    assert matrix.lane == "cpu"
     assert matrix.budget_level == "b0"
+    assert matrix.gpu_rows == []
     assert matrix.selected_engines == ["faiss-cpu", "lancedb-inproc", "lancedb-service", "pgvector", "qdrant"]
+    assert len(matrix.cpu_rows) == 30
+
     s1_rows = [row for row in matrix.cpu_rows if row.scenario == "s1_single_hop" and row.engine == "qdrant"]
     assert s1_rows
     payloads = [yaml.safe_load(Path(row.config_path).read_text(encoding="utf-8")) for row in s1_rows]
     models = {str(payload["embedding_model"]) for payload in payloads}
     dims = {int(payload["vector_dim"]) for payload in payloads}
-    assert "BAAI/bge-small-en-v1.5" in models
-    assert "BAAI/bge-base-en-v1.5" in models
+    assert models == {"BAAI/bge-small-en-v1.5", "BAAI/bge-base-en-v1.5"}
     assert dims == {384, 768}
     assert all(payload["clients_grid"] == [1, 4, 8] for payload in payloads)
     assert all(payload["budget_level"] == "b0" for payload in payloads)
 
-    s3_row = next(row for row in matrix.cpu_rows if row.scenario == "s3_multi_hop" and row.engine == "qdrant")
-    s3_payload = yaml.safe_load(Path(s3_row.config_path).read_text(encoding="utf-8"))
-    assert s3_payload["clients_grid"] == [1, 4, 8]
-    assert s3_payload["budget_level"] == "b0"
+
+def test_build_run_matrix_default_paths_are_portable(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.chdir(Path(".").resolve())
+    matrix = build_run_matrix(
+        repo_root=Path("."),
+        scenario_config_dir=Path("configs/scenarios_portable"),
+        engine_config_dir=Path("configs/engines_portable"),
+        out_dir=tmp_path / "matrix",
+        lane="cpu",
+    )
+
+    assert {row.scenario for row in matrix.cpu_rows} == {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}

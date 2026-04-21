@@ -14,25 +14,17 @@ from maxionbench.tools.verify_behavior_cards import verify_behavior_cards
 
 REQUIRED_ADAPTERS = (
     "qdrant",
-    "milvus",
-    "weaviate",
-    "opensearch",
     "pgvector",
     "lancedb-service",
     "lancedb-inproc",
     "faiss-cpu",
-    "faiss-gpu",
 )
 BEHAVIOR_CARD_BY_ADAPTER = {
     "qdrant": "qdrant.md",
-    "milvus": "milvus.md",
-    "weaviate": "weaviate.md",
-    "opensearch": "opensearch.md",
     "pgvector": "pgvector.md",
     "lancedb-service": "lancedb.md",
     "lancedb-inproc": "lancedb.md",
     "faiss-cpu": "faiss_cpu.md",
-    "faiss-gpu": "faiss_gpu.md",
 }
 
 
@@ -91,9 +83,6 @@ def verify_engine_readiness(
 
     resolved_target_adapter = str(target_adapter).strip() if target_adapter is not None else ""
     required_adapters = [resolved_target_adapter] if resolved_target_adapter else list(REQUIRED_ADAPTERS)
-    if allow_gpu_unavailable and not resolved_target_adapter:
-        required_adapters = [name for name in required_adapters if name != "faiss-gpu"]
-
     for adapter in required_adapters:
         matches = normalized[normalized["adapter"] == adapter]
         if matches.empty:
@@ -157,8 +146,6 @@ def verify_engine_readiness(
             if require_mock_pass:
                 strict_scope_adapters.append("mock")
             strict_frame = strict_frame[strict_frame["adapter"].isin(strict_scope_adapters)]
-        elif allow_gpu_unavailable:
-            strict_frame = strict_frame[strict_frame["adapter"] != "faiss-gpu"]
         non_pass = strict_frame[strict_frame["status"] != "pass"]
         if not non_pass.empty:
             status_counts: dict[str, int] = {}
@@ -170,7 +157,7 @@ def verify_engine_readiness(
                 if require_mock_pass:
                     strict_scope = f"{strict_scope} + mock"
             else:
-                strict_scope = "excluding `faiss-gpu` rows" if allow_gpu_unavailable else "across all rows"
+                strict_scope = "across all rows"
             errors.append(
                 {
                     "source": "conformance_matrix",
@@ -240,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-gpu-unavailable",
         action="store_true",
-        help="Allow missing/non-pass `faiss-gpu` readiness when GPU Track B is intentionally omitted.",
+        help="Deprecated no-op retained for older command invocations.",
     )
     parser.add_argument(
         "--allow-nonpass-status",

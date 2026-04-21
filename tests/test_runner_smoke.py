@@ -482,9 +482,6 @@ def test_validate_outputs_rejects_missing_or_negative_stage_timing(tmp_path: Pat
 
 
 def test_gpu_count_resolution() -> None:
-    faiss_gpu_cfg = RunConfig(engine="faiss-gpu", no_retry=True)
-    assert _gpu_count_for_cfg(faiss_gpu_cfg) == 1.0
-
     explicit_cfg = RunConfig(engine="mock", adapter_options={"gpu_count": 2}, no_retry=True)
     assert _gpu_count_for_cfg(explicit_cfg) == 2.0
 

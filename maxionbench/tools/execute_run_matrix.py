@@ -14,7 +14,7 @@ from maxionbench.orchestration.runner import run_from_config
 from maxionbench.schemas.result_schema import read_run_status
 from maxionbench.tools.wait_adapter import wait_for_adapter
 
-_SERVICE_ENGINES = {"qdrant", "pgvector", "opensearch", "weaviate", "milvus"}
+_SERVICE_ENGINES = {"qdrant", "pgvector"}
 
 
 def execute_run_matrix(

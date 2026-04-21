@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         "verify-pins",
         help="Verify pinned scenario config values",
     )
-    verify_pins_parser.add_argument("--config-dir", default="configs/scenarios")
+    verify_pins_parser.add_argument("--config-dir", default="configs/scenarios_portable")
     verify_pins_parser.add_argument("--allow-dev-calibrate-d3-scale", action="store_true")
     verify_pins_parser.add_argument("--strict-d3-scenario-scale", action="store_true")
     verify_pins_parser.add_argument("--json", action="store_true")
@@ -152,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         "run-matrix",
         help="Build a generated run matrix from scenario and engine configs",
     )
-    run_matrix_parser.add_argument("--scenario-config-dir", default="configs/scenarios_paper")
-    run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines")
+    run_matrix_parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
+    run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines_portable")
     run_matrix_parser.add_argument("--out-dir", required=True)
     run_matrix_parser.add_argument("--output-root", default="artifacts/runs/workstation_matrix")
     run_matrix_parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
@@ -304,9 +304,9 @@ def main(argv: list[str] | None = None) -> int:
     services_parser.add_argument("action", choices=["up", "down", "status", "wait"])
     services_parser.add_argument(
         "--profile",
-        choices=["portable", "reference", "all"],
+        choices=["portable"],
         default="portable",
-        help="Service group to target (default: portable = qdrant, pgvector)",
+        help="Service group to target (portable = qdrant, pgvector)",
     )
     services_parser.add_argument(
         "--services",

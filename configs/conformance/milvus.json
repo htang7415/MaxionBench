@@ -1,7 +1,0 @@
-{
-  "adapter": "milvus",
-  "adapter_options_json": "{\"host\":\"${MAXIONBENCH_MILVUS_HOST:-127.0.0.1}\",\"port\":\"${MAXIONBENCH_MILVUS_PORT:-19530}\"}",
-  "collection": "conformance",
-  "dimension": 4,
-  "metric": "ip"
-}

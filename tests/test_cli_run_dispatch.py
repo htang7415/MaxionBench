@@ -37,7 +37,7 @@ def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignor
         [
             "run",
             "--config",
-            "configs/scenarios/s1_ann_frontier.yaml",
+            "configs/scenarios_portable/s1_single_hop.yaml",
             "--seed",
             "42",
             "--repeats",
@@ -58,7 +58,7 @@ def test_cli_run_dispatches_readiness_flags(monkeypatch) -> None:  # type: ignor
     assert code == 31
     assert captured["argv"] == [
         "--config",
-        "configs/scenarios/s1_ann_frontier.yaml",
+        "configs/scenarios_portable/s1_single_hop.yaml",
         "--seed",
         "42",
         "--repeats",
@@ -225,7 +225,7 @@ def test_cli_wait_adapter_dispatches_config_flags(monkeypatch) -> None:  # type:
         [
             "wait-adapter",
             "--config",
-            "configs/scenarios/s1_ann_frontier_qdrant.yaml",
+            "configs/scenarios_portable/s1_single_hop.yaml",
             "--timeout-s",
             "45",
             "--poll-interval-s",
@@ -240,7 +240,7 @@ def test_cli_wait_adapter_dispatches_config_flags(monkeypatch) -> None:  # type:
         "--poll-interval-s",
         "2.0",
         "--config",
-        "configs/scenarios/s1_ann_frontier_qdrant.yaml",
+        "configs/scenarios_portable/s1_single_hop.yaml",
         "--json",
     ]
 
@@ -684,7 +684,7 @@ def test_cli_pre_run_gate_dispatches_flags(monkeypatch) -> None:  # type: ignore
         [
             "pre-run-gate",
             "--config",
-            "configs/scenarios/s1_ann_frontier.yaml",
+            "configs/scenarios_portable/s1_single_hop.yaml",
             "--conformance-matrix",
             "artifacts/conformance/conformance_matrix.csv",
             "--behavior-dir",
@@ -696,7 +696,7 @@ def test_cli_pre_run_gate_dispatches_flags(monkeypatch) -> None:  # type: ignore
     assert code == 63
     assert captured["argv"] == [
         "--config",
-        "configs/scenarios/s1_ann_frontier.yaml",
+        "configs/scenarios_portable/s1_single_hop.yaml",
         "--conformance-matrix",
         "artifacts/conformance/conformance_matrix.csv",
         "--behavior-dir",
@@ -714,9 +714,9 @@ def test_cli_verify_pins_dispatches_flags(monkeypatch) -> None:  # type: ignore[
         return 65
 
     monkeypatch.setattr(verify_pins_mod, "main", _fake_main)
-    code = cli_main(["verify-pins", "--config-dir", "configs/scenarios_paper", "--strict-d3-scenario-scale", "--json"])
+    code = cli_main(["verify-pins", "--config-dir", "configs/scenarios_portable", "--json"])
     assert code == 65
-    assert captured["argv"] == ["--config-dir", "configs/scenarios_paper", "--strict-d3-scenario-scale", "--json"]
+    assert captured["argv"] == ["--config-dir", "configs/scenarios_portable", "--json"]
 
 
 def test_cli_verify_dataset_manifests_dispatches_flags(monkeypatch) -> None:  # type: ignore[no-untyped-def]

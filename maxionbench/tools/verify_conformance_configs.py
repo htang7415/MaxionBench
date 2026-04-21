@@ -20,8 +20,6 @@ def verify_conformance_config_dir(
     resolved = config_dir.resolve()
     errors: list[dict[str, Any]] = []
     required_adapters = sorted(set(REQUIRED_ADAPTERS) | {"mock"})
-    if allow_gpu_unavailable:
-        required_adapters = [name for name in required_adapters if name != "faiss-gpu"]
     adapters_seen: set[str] = set()
 
     if not resolved.exists():

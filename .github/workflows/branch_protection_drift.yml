@@ -4,15 +4,6 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
-    inputs:
-      include_strict_readiness_check:
-        description: "Also require strict-readiness workflow status"
-        required: false
-        default: "false"
-      include_publish_bundle_check:
-        description: "Also require publish-benchmark-bundle workflow status"
-        required: false
-        default: "false"
 
 jobs:
   verify_branch_protection:
@@ -47,17 +38,8 @@ jobs:
             --token "${TOKEN}"
             --required-check "report-preflight / conformance_readiness_gate"
             --required-check "report-preflight / report_preflight"
-            --required-check "report-preflight / legacy_migration_path"
-            --required-check "report-preflight / legacy_resource_profile_path"
-            --required-check "report-preflight / legacy_ground_truth_metadata_path"
             --json
           )
-          if [[ "${{ inputs.include_strict_readiness_check }}" == "true" ]]; then
-            ARGS+=(--include-strict-readiness-check)
-          fi
-          if [[ "${{ inputs.include_publish_bundle_check }}" == "true" ]]; then
-            ARGS+=(--include-publish-bundle-check)
-          fi
           maxionbench verify-branch-protection \
             "${ARGS[@]}" | tee branch_protection_summary.json
 
