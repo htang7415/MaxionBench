@@ -155,6 +155,7 @@ class PgVectorAdapter(BaseAdapter):
             )
         with self._writer.cursor() as cur:
             cur.execute(stmt, params)
+        self._writer.commit()
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
@@ -205,6 +206,7 @@ class PgVectorAdapter(BaseAdapter):
             for doc_id, vector in zip(ids, vectors):
                 cur.execute(stmt, (self._vector_literal(vector), str(doc_id)))
                 updated += max(cur.rowcount, 0)
+        self._writer.commit()
         return updated
 
     def update_payload(self, ids: Sequence[str], payload: Mapping[str, Any]) -> int:
@@ -220,6 +222,7 @@ class PgVectorAdapter(BaseAdapter):
             for doc_id in ids:
                 cur.execute(stmt, (payload_json, str(doc_id)))
                 updated += max(cur.rowcount, 0)
+        self._writer.commit()
         return updated
 
     def delete(self, ids: Sequence[str]) -> int:
@@ -234,6 +237,7 @@ class PgVectorAdapter(BaseAdapter):
             for doc_id in ids:
                 cur.execute(stmt, (str(doc_id),))
                 deleted += max(cur.rowcount, 0)
+        self._writer.commit()
         self._deleted_total += deleted
         return deleted
 

@@ -34,11 +34,17 @@ def profile_from_adapter_stats(
         raise ValueError("client_count must be non-negative")
     if min_cpu_vcpu <= 0:
         raise ValueError("min_cpu_vcpu must be positive")
+    if gpu_count < 0:
+        raise ValueError("gpu_count must be non-negative")
+    if stats.ram_usage_bytes < 0:
+        raise ValueError("stats.ram_usage_bytes must be non-negative")
+    if stats.disk_usage_bytes < 0:
+        raise ValueError("stats.disk_usage_bytes must be non-negative")
     return ResourceProfile(
         cpu_vcpu=max(float(client_count), float(min_cpu_vcpu)),
-        gpu_count=max(0.0, float(gpu_count)),
-        ram_gib=max(0.0, float(stats.ram_usage_bytes) / _GIB),
-        disk_tb=max(0.0, float(stats.disk_usage_bytes) / _TIB),
+        gpu_count=float(gpu_count),
+        ram_gib=float(stats.ram_usage_bytes) / _GIB,
+        disk_tb=float(stats.disk_usage_bytes) / _TIB,
     )
 
 

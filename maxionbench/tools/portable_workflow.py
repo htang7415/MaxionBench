@@ -30,6 +30,9 @@ _EMBEDDING_MODELS = ("BAAI/bge-small-en-v1.5", "BAAI/bge-base-en-v1.5")
 def ensure_lancedb_service_uri(*, repo_root: Path) -> str:
     current = str(os.environ.get("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI") or "").strip()
     if current:
+        # This helper intentionally respects an existing process-level override.
+        # The portable workflow commands run as single CLI invocations, so later
+        # calls in the same process should reuse the first resolved value.
         return current
     default_uri = str((repo_root / _DEFAULT_LANCEDB_SERVICE_URI).resolve())
     os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] = default_uri

@@ -9,7 +9,7 @@ import numpy as np
 
 def percentile_ms(samples_ms: Sequence[float], percentile: float) -> float:
     if not samples_ms:
-        return 0.0
+        raise ValueError("samples_ms must be non-empty")
     arr = np.asarray(samples_ms, dtype=np.float64)
     return float(np.percentile(arr, percentile))
 

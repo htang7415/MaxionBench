@@ -53,7 +53,16 @@ def test_run_metadata_validate_accepts_valid_hardware_runtime_mapping() -> None:
 
 def test_run_metadata_validate_requires_hardware_runtime_mapping() -> None:
     metadata = _base_metadata(hardware_runtime=None)
-    with pytest.raises(ValueError, match="hardware_runtime must be provided as a mapping"):
+    with pytest.raises(ValueError, match="hardware_runtime must be provided as a dict"):
+        metadata.validate()
+
+
+def test_run_metadata_validate_requires_hardware_runtime_dict() -> None:
+    class _CustomMapping(dict):
+        pass
+
+    metadata = _base_metadata(hardware_runtime=_CustomMapping())
+    with pytest.raises(ValueError, match="hardware_runtime must be provided as a dict"):
         metadata.validate()
 
 
