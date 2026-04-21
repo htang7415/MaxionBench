@@ -182,6 +182,41 @@ def main(argv: list[str] | None = None) -> int:
     execute_run_matrix_parser.add_argument("--poll-interval-s", type=float, default=1.0)
     execute_run_matrix_parser.add_argument("--json", action="store_true")
 
+    submit_portable_parser = subparsers.add_parser(
+        "submit-portable",
+        help="Generate and execute a portable-agentic budget run for a local Mac host",
+    )
+    submit_portable_parser.add_argument("--budget", required=True, choices=["b0", "b1", "b2"])
+    submit_portable_parser.add_argument("--repo-root", default=".")
+    submit_portable_parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
+    submit_portable_parser.add_argument("--engine-config-dir", default="configs/engines_portable")
+    submit_portable_parser.add_argument("--out-dir", default=None)
+    submit_portable_parser.add_argument("--output-root", default=None)
+    submit_portable_parser.add_argument("--lane", default="cpu", choices=["cpu", "gpu", "all"])
+    submit_portable_parser.add_argument("--skip-s6", action="store_true")
+    submit_portable_parser.add_argument("--seed", type=int, default=None)
+    submit_portable_parser.add_argument("--repeats", type=int, default=None)
+    submit_portable_parser.add_argument("--no-retry", action="store_true")
+    submit_portable_parser.add_argument("--no-skip-completed", action="store_true")
+    submit_portable_parser.add_argument("--continue-on-failure", action="store_true")
+    submit_portable_parser.add_argument("--engine-filter", default=None)
+    submit_portable_parser.add_argument("--scenario-filter", default=None)
+    submit_portable_parser.add_argument("--template-filter", default=None)
+    submit_portable_parser.add_argument("--max-runs", type=int, default=None)
+    submit_portable_parser.add_argument("--deadline-hours", type=float, default=24.0)
+    submit_portable_parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
+    submit_portable_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    submit_portable_parser.add_argument("--no-verify-promotion", action="store_true")
+    submit_portable_parser.add_argument("--json", action="store_true")
+
+    portable_workflow_parser = subparsers.add_parser(
+        "portable-workflow",
+        help="Run one high-level portable Mac mini workflow phase",
+    )
+    portable_workflow_parser.add_argument("phase", choices=["setup", "data", "finalize"])
+    portable_workflow_parser.add_argument("--repo-root", default=".")
+    portable_workflow_parser.add_argument("--json", action="store_true")
+
     verify_conformance_configs_parser = subparsers.add_parser(
         "verify-conformance-configs",
         help="Verify conformance config catalog shape and required adapter coverage",
@@ -635,6 +670,63 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             execute_argv.append("--json")
         return execute_run_matrix_main(execute_argv)
+    if args.command == "submit-portable":
+        from maxionbench.tools.submit_portable import main as submit_portable_main
+
+        submit_argv = [
+            "--budget",
+            args.budget,
+            "--repo-root",
+            args.repo_root,
+            "--scenario-config-dir",
+            args.scenario_config_dir,
+            "--engine-config-dir",
+            args.engine_config_dir,
+            "--lane",
+            args.lane,
+            "--deadline-hours",
+            str(args.deadline_hours),
+            "--adapter-timeout-s",
+            str(args.adapter_timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.out_dir:
+            submit_argv.extend(["--out-dir", args.out_dir])
+        if args.output_root:
+            submit_argv.extend(["--output-root", args.output_root])
+        if args.skip_s6:
+            submit_argv.append("--skip-s6")
+        if args.seed is not None:
+            submit_argv.extend(["--seed", str(args.seed)])
+        if args.repeats is not None:
+            submit_argv.extend(["--repeats", str(args.repeats)])
+        if args.no_retry:
+            submit_argv.append("--no-retry")
+        if args.no_skip_completed:
+            submit_argv.append("--no-skip-completed")
+        if args.continue_on_failure:
+            submit_argv.append("--continue-on-failure")
+        if args.engine_filter:
+            submit_argv.extend(["--engine-filter", args.engine_filter])
+        if args.scenario_filter:
+            submit_argv.extend(["--scenario-filter", args.scenario_filter])
+        if args.template_filter:
+            submit_argv.extend(["--template-filter", args.template_filter])
+        if args.max_runs is not None:
+            submit_argv.extend(["--max-runs", str(args.max_runs)])
+        if args.no_verify_promotion:
+            submit_argv.append("--no-verify-promotion")
+        if args.json:
+            submit_argv.append("--json")
+        return submit_portable_main(submit_argv)
+    if args.command == "portable-workflow":
+        from maxionbench.tools.portable_workflow import main as portable_workflow_main
+
+        workflow_argv = [args.phase, "--repo-root", args.repo_root]
+        if args.json:
+            workflow_argv.append("--json")
+        return portable_workflow_main(workflow_argv)
     if args.command == "verify-conformance-configs":
         from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
 
