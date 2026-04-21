@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+import threading
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -38,6 +39,7 @@ class FaissCpuAdapter(BaseAdapter):
         self._dimension = 0
         self._cfg = _FaissCpuConfig(metric="ip")
         self._created_at = time.monotonic()
+        self._lock = threading.RLock()
         self._records: dict[str, StoredPoint] = {}
         self._pending_upserts: dict[str, StoredPoint] = {}
         self._pending_deletes: set[str] = set()
@@ -48,148 +50,164 @@ class FaissCpuAdapter(BaseAdapter):
         self._id_by_pos: list[str] = []
 
     def create(self, collection: str, dimension: int, metric: str = "ip") -> None:
-        self._collection = collection
-        self._dimension = int(dimension)
-        self._cfg = _FaissCpuConfig(metric=normalize_metric(metric))
-        self._records.clear()
-        self._pending_upserts.clear()
-        self._pending_deletes.clear()
-        self._id_by_pos.clear()
-        self._deleted_total = 0
-        self._index = None
-        self._created_at = time.monotonic()
+        with self._lock:
+            self._collection = collection
+            self._dimension = int(dimension)
+            self._cfg = _FaissCpuConfig(metric=normalize_metric(metric))
+            self._records.clear()
+            self._pending_upserts.clear()
+            self._pending_deletes.clear()
+            self._id_by_pos.clear()
+            self._deleted_total = 0
+            self._index = None
+            self._created_at = time.monotonic()
 
     def drop(self, collection: str) -> None:
-        if collection != self._collection:
-            return
-        self._collection = ""
-        self._dimension = 0
-        self._records.clear()
-        self._pending_upserts.clear()
-        self._pending_deletes.clear()
-        self._id_by_pos.clear()
-        self._index = None
-        self._deleted_total = 0
+        with self._lock:
+            if collection != self._collection:
+                return
+            self._collection = ""
+            self._dimension = 0
+            self._records.clear()
+            self._pending_upserts.clear()
+            self._pending_deletes.clear()
+            self._id_by_pos.clear()
+            self._index = None
+            self._deleted_total = 0
 
     def reset(self, collection: str) -> None:
-        dimension = self._dimension or 1
-        metric = self._cfg.metric
-        self.drop(collection)
-        self.create(collection=collection, dimension=dimension, metric=metric)
+        with self._lock:
+            dimension = self._dimension or 1
+            metric = self._cfg.metric
+            self.drop(collection)
+            self.create(collection=collection, dimension=dimension, metric=metric)
 
     def healthcheck(self) -> bool:
-        return bool(self._collection)
+        with self._lock:
+            return bool(self._collection)
 
     def bulk_upsert(self, records: Sequence[UpsertRecord]) -> int:
-        for record in records:
-            point = StoredPoint(vector=self._to_vector(record.vector), payload=dict(record.payload))
-            self._pending_upserts[str(record.id)] = point
-            self._pending_deletes.discard(str(record.id))
-        return len(records)
+        with self._lock:
+            for record in records:
+                point = StoredPoint(vector=self._to_vector(record.vector), payload=dict(record.payload))
+                self._pending_upserts[str(record.id)] = point
+                self._pending_deletes.discard(str(record.id))
+            return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
-        query_vec = self._to_vector(request.vector)
-        if request.filters:
-            return topk_exact(
-                records=self._records,
-                query=query_vec,
-                top_k=request.top_k,
-                metric=self._cfg.metric,
-                filters=request.filters,
-            )
-        if self._index is None:
-            return []
-        k = max(1, int(request.top_k))
-        q = query_vec[None, :]
-        if self._cfg.metric == "cos":
-            q = self._normalize_rows(q)
-        self._apply_search_params(self._index)
-        distances, indices = self._index.search(q.astype(np.float32), k)
-        results: list[QueryResult] = []
-        for dist, pos in zip(distances[0], indices[0]):
-            if int(pos) < 0:
-                continue
-            doc_id = self._id_by_pos[int(pos)]
-            payload = dict(self._records[doc_id].payload)
-            score = float(-dist if self._cfg.metric == "l2" else dist)
-            results.append(QueryResult(id=doc_id, score=score, payload=payload))
-        return results
+        with self._lock:
+            query_vec = self._to_vector(request.vector)
+            if request.filters:
+                return topk_exact(
+                    records=self._records,
+                    query=query_vec,
+                    top_k=request.top_k,
+                    metric=self._cfg.metric,
+                    filters=request.filters,
+                )
+            if self._index is None:
+                return []
+            k = max(1, int(request.top_k))
+            q = query_vec[None, :]
+            if self._cfg.metric == "cos":
+                q = self._normalize_rows(q)
+            self._apply_search_params(self._index)
+            distances, indices = self._index.search(q.astype(np.float32), k)
+            results: list[QueryResult] = []
+            for dist, pos in zip(distances[0], indices[0]):
+                pos_int = int(pos)
+                if pos_int < 0 or pos_int >= len(self._id_by_pos):
+                    continue
+                doc_id = self._id_by_pos[pos_int]
+                payload = dict(self._records[doc_id].payload)
+                score = float(-dist if self._cfg.metric == "l2" else dist)
+                results.append(QueryResult(id=doc_id, score=score, payload=payload))
+            return results
 
     def batch_query(self, requests: Sequence[QueryRequest]) -> list[list[QueryResult]]:
         return [self.query(request) for request in requests]
 
     def insert(self, record: UpsertRecord) -> None:
-        self.bulk_upsert([record])
+        with self._lock:
+            self.bulk_upsert([record])
 
     def update_vectors(self, ids: Sequence[str], vectors: Sequence[Vector]) -> int:
-        if len(ids) != len(vectors):
-            raise ValueError("ids and vectors must have same length")
-        updated = 0
-        for doc_id, vector in zip(ids, vectors):
-            key = str(doc_id)
-            base = self._pending_upserts.get(key) or self._records.get(key)
-            if base is None:
-                continue
-            self._pending_upserts[key] = StoredPoint(vector=self._to_vector(vector), payload=dict(base.payload))
-            self._pending_deletes.discard(key)
-            updated += 1
-        return updated
+        with self._lock:
+            if len(ids) != len(vectors):
+                raise ValueError("ids and vectors must have same length")
+            updated = 0
+            for doc_id, vector in zip(ids, vectors):
+                key = str(doc_id)
+                base = self._pending_upserts.get(key) or self._records.get(key)
+                if base is None:
+                    continue
+                self._pending_upserts[key] = StoredPoint(vector=self._to_vector(vector), payload=dict(base.payload))
+                self._pending_deletes.discard(key)
+                updated += 1
+            return updated
 
     def update_payload(self, ids: Sequence[str], payload: Mapping[str, Any]) -> int:
-        updated = 0
-        for doc_id in ids:
-            key = str(doc_id)
-            base = self._pending_upserts.get(key) or self._records.get(key)
-            if base is None:
-                continue
-            merged = dict(base.payload)
-            merged.update(payload)
-            self._pending_upserts[key] = StoredPoint(vector=base.vector.copy(), payload=merged)
-            self._pending_deletes.discard(key)
-            updated += 1
-        return updated
+        with self._lock:
+            updated = 0
+            for doc_id in ids:
+                key = str(doc_id)
+                base = self._pending_upserts.get(key) or self._records.get(key)
+                if base is None:
+                    continue
+                merged = dict(base.payload)
+                merged.update(payload)
+                self._pending_upserts[key] = StoredPoint(vector=base.vector.copy(), payload=merged)
+                self._pending_deletes.discard(key)
+                updated += 1
+            return updated
 
     def delete(self, ids: Sequence[str]) -> int:
-        for doc_id in ids:
-            key = str(doc_id)
-            self._pending_deletes.add(key)
-            self._pending_upserts.pop(key, None)
-        return len(ids)
+        with self._lock:
+            for doc_id in ids:
+                key = str(doc_id)
+                self._pending_deletes.add(key)
+                self._pending_upserts.pop(key, None)
+            return len(ids)
 
     def flush_or_commit(self) -> None:
-        for doc_id in sorted(self._pending_deletes):
-            if doc_id in self._records:
-                self._deleted_total += 1
-            self._records.pop(doc_id, None)
-        for doc_id in sorted(self._pending_upserts):
-            self._records[doc_id] = self._pending_upserts[doc_id]
-        self._pending_deletes.clear()
-        self._pending_upserts.clear()
-        self._rebuild_index()
+        with self._lock:
+            for doc_id in sorted(self._pending_deletes):
+                if doc_id in self._records:
+                    self._deleted_total += 1
+                self._records.pop(doc_id, None)
+            for doc_id in sorted(self._pending_upserts):
+                self._records[doc_id] = self._pending_upserts[doc_id]
+            self._pending_deletes.clear()
+            self._pending_upserts.clear()
+            self._rebuild_index()
 
     def set_index_params(self, params: Mapping[str, Any]) -> None:
-        self._index_params = dict(params)
-        self._rebuild_index()
+        with self._lock:
+            self._index_params = dict(params)
+            self._rebuild_index()
 
     def set_search_params(self, params: Mapping[str, Any]) -> None:
-        self._search_params = dict(params)
+        with self._lock:
+            self._search_params = dict(params)
 
     def optimize_or_compact(self) -> None:
-        self._rebuild_index()
+        with self._lock:
+            self._rebuild_index()
 
     def stats(self) -> AdapterStats:
-        vector_count = len(self._records)
-        vector_bytes = vector_count * self._dimension * 4
-        payload_bytes = vector_count * 64
-        size = vector_bytes + payload_bytes
-        return AdapterStats(
-            vector_count=vector_count,
-            deleted_count=self._deleted_total,
-            index_size_bytes=size,
-            ram_usage_bytes=size,
-            disk_usage_bytes=size,
-            engine_uptime_s=time.monotonic() - self._created_at,
-        )
+        with self._lock:
+            vector_count = len(self._records)
+            vector_bytes = vector_count * self._dimension * 4
+            payload_bytes = vector_count * 64
+            size = vector_bytes + payload_bytes
+            return AdapterStats(
+                vector_count=vector_count,
+                deleted_count=self._deleted_total,
+                index_size_bytes=size,
+                ram_usage_bytes=size,
+                disk_usage_bytes=size,
+                engine_uptime_s=time.monotonic() - self._created_at,
+            )
 
     def _rebuild_index(self) -> None:
         if not self._records:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from maxionbench.metrics.cost_rhu import RHUReferences, RHUWeights
-from maxionbench.metrics.latency import latency_summary
+from maxionbench.metrics.latency import latency_summary, percentile_ms
 from maxionbench.metrics.resources import profile_from_adapter_stats, rhu_rate_for_profile
 from maxionbench.metrics.quality import mrr_at_k, ndcg_at_10, recall_at_k
 from maxionbench.metrics.robustness import p99_inflation, sla_violation_rate
@@ -24,9 +24,20 @@ def test_latency_summary() -> None:
     assert summary["p99_ms"] >= summary["p95_ms"] >= summary["p50_ms"]
 
 
+def test_percentile_ms_rejects_empty_samples() -> None:
+    with pytest.raises(ValueError, match="samples_ms"):
+        percentile_ms([], 99)
+
+
 def test_robustness_metrics() -> None:
     assert p99_inflation(20.0, 10.0) == 2.0
+    assert p99_inflation(20.0, 0.0) == 0.0
     assert sla_violation_rate(total_requests=100, over_sla=3, errors=2) == 0.05
+
+
+def test_robustness_metrics_reject_negative_baseline() -> None:
+    with pytest.raises(ValueError, match="baseline_p99_ms"):
+        p99_inflation(20.0, -1.0)
 
 
 def test_resource_profile_and_rhu_rate() -> None:
@@ -60,3 +71,38 @@ def test_resource_profile_rejects_negative_client_count() -> None:
     )
     with pytest.raises(ValueError, match="client_count"):
         profile_from_adapter_stats(stats=stats, client_count=-1)
+
+
+def test_resource_profile_rejects_negative_resource_values() -> None:
+    bad_ram = AdapterStats(
+        vector_count=0,
+        deleted_count=0,
+        index_size_bytes=0,
+        ram_usage_bytes=-1,
+        disk_usage_bytes=0,
+        engine_uptime_s=0.0,
+    )
+    with pytest.raises(ValueError, match="ram_usage_bytes"):
+        profile_from_adapter_stats(stats=bad_ram, client_count=1)
+
+    bad_disk = AdapterStats(
+        vector_count=0,
+        deleted_count=0,
+        index_size_bytes=0,
+        ram_usage_bytes=0,
+        disk_usage_bytes=-1,
+        engine_uptime_s=0.0,
+    )
+    with pytest.raises(ValueError, match="disk_usage_bytes"):
+        profile_from_adapter_stats(stats=bad_disk, client_count=1)
+
+    ok_stats = AdapterStats(
+        vector_count=0,
+        deleted_count=0,
+        index_size_bytes=0,
+        ram_usage_bytes=0,
+        disk_usage_bytes=0,
+        engine_uptime_s=0.0,
+    )
+    with pytest.raises(ValueError, match="gpu_count"):
+        profile_from_adapter_stats(stats=ok_stats, client_count=1, gpu_count=-1.0)

@@ -171,8 +171,8 @@ class RunMetadata:
         if self.resource_profile is not None:
             if sorted(self.resource_profile.keys()) != ["cpu_vcpu", "disk_tb", "gpu_count", "ram_gib", "rhu_rate"]:
                 raise ValueError("resource_profile must include cpu_vcpu,gpu_count,ram_gib,disk_tb,rhu_rate")
-        if not isinstance(self.hardware_runtime, Mapping):
-            raise ValueError("hardware_runtime must be provided as a mapping")
+        if type(self.hardware_runtime) is not dict:
+            raise ValueError("hardware_runtime must be provided as a dict")
         missing_hardware_runtime = [name for name in REQUIRED_HARDWARE_RUNTIME_FIELDS if name not in self.hardware_runtime]
         if missing_hardware_runtime:
             raise ValueError(f"hardware_runtime missing keys: {missing_hardware_runtime}")

@@ -33,6 +33,17 @@ def test_filter_correctness(adapter, seed_records) -> None:
     assert {item.id for item in filtered} == {"doc-1", "doc-3"}
 
 
+def test_query_empty_collection_returns_no_results(adapter) -> None:
+    results = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=5))
+    assert results == []
+
+
+def test_empty_bulk_upsert_is_noop(adapter) -> None:
+    assert adapter.bulk_upsert([]) == 0
+    adapter.flush_or_commit()
+    assert adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=5)) == []
+
+
 def test_update_vectors_semantics(adapter, seed_records) -> None:
     adapter.bulk_upsert(seed_records)
     adapter.flush_or_commit()
@@ -65,6 +76,19 @@ def test_delete_semantics(adapter, seed_records) -> None:
 
     adapter.delete(ids=["doc-1"])
     adapter.flush_or_commit()
+    results = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=10))
+    assert "doc-1" not in {item.id for item in results}
+
+
+def test_double_delete_is_stable(adapter, seed_records) -> None:
+    adapter.bulk_upsert(seed_records)
+    adapter.flush_or_commit()
+
+    adapter.delete(ids=["doc-1"])
+    adapter.flush_or_commit()
+    adapter.delete(ids=["doc-1"])
+    adapter.flush_or_commit()
+
     results = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=10))
     assert "doc-1" not in {item.id for item in results}
 
@@ -113,6 +137,15 @@ def test_optimize_or_compact_does_not_break_read_path(adapter, seed_records) -> 
     adapter.optimize_or_compact()
     results = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=1))
     assert results
+
+
+def test_repeated_flush_is_stable(adapter, seed_records) -> None:
+    adapter.bulk_upsert(seed_records)
+    adapter.flush_or_commit()
+    first = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=3))
+    adapter.flush_or_commit()
+    second = adapter.query(QueryRequest(vector=[1.0, 0.0, 0.0, 0.0], top_k=3))
+    assert [item.id for item in first] == [item.id for item in second]
 
 
 def _expect_deferred_visibility() -> bool:
