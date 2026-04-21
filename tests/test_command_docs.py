@@ -15,9 +15,10 @@ def test_command_md_is_portable_agentic_operator_doc() -> None:
     assert "--datasets scifact,fiqa,crag,frames" in text
     assert "maxionbench preprocess-frames-portable" in text
     assert "for ROOT in dataset/processed/D4 dataset/processed/frames_portable; do" in text
-    assert "maxionbench precompute-text-embeddings --input \"$ROOT\" --model-id BAAI/bge-small-en-v1.5" in text
-    assert "maxionbench precompute-text-embeddings --input \"$ROOT\" --model-id BAAI/bge-base-en-v1.5" in text
+    assert "maxionbench precompute-text-embeddings --input \"$ROOT\" --model-id BAAI/bge-small-en-v1.5 --device auto --require-device mps" in text
+    assert "maxionbench precompute-text-embeddings --input \"$ROOT\" --model-id BAAI/bge-base-en-v1.5 --device auto --require-device mps" in text
     assert "for BUDGET in b0 b1 b2; do" in text
+    assert "set -euo pipefail" in text
     assert "`configs/engines_portable` is the saved project engine set" in text
     assert "`run-matrix --budget` writes `budget_level` into generated configs" in text
     assert "maxionbench run-matrix \\" in text
@@ -27,8 +28,10 @@ def test_command_md_is_portable_agentic_operator_doc() -> None:
     assert '--budget "${BUDGET}"' in text
     assert "maxionbench execute-run-matrix \\" in text
     assert '--matrix "artifacts/run_matrix/portable_${BUDGET}/run_matrix.json"' in text
+    assert "--deadline-hours 24" in text
     assert "maxionbench verify-promotion-gate \\" in text
     assert '--portable-results "artifacts/runs/portable/${BUDGET}"' in text
+    assert "--json || true" in text
     assert "configs/scenarios_portable/s1_single_hop.yaml" in text
     assert "configs/scenarios_portable/s2_streaming_memory.yaml" in text
     assert "configs/scenarios_portable/s3_multi_hop.yaml" in text

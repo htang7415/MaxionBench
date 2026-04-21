@@ -246,6 +246,7 @@ def _verify_portable_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str,
         _expect_equal(errors, path, "quality_targets", _normalized_float_list(cfg.quality_targets), [0.25])
         _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, False)
         _expect_equal(errors, path, "d4_beir_subsets", cfg.d4_beir_subsets, ["scifact", "fiqa"])
+        _expect_equal(errors, path, "d4_max_docs", cfg.d4_max_docs, 50000)
         _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 50.0)
         return errors
 
@@ -257,6 +258,7 @@ def _verify_portable_scenario_pins(path: Path, cfg: RunConfig) -> list[dict[str,
         _expect_equal(errors, path, "quality_targets", _normalized_float_list(cfg.quality_targets), [0.25])
         _expect_equal(errors, path, "d4_include_crag", cfg.d4_include_crag, False)
         _expect_equal(errors, path, "d4_beir_subsets", cfg.d4_beir_subsets, ["scifact", "fiqa"])
+        _expect_equal(errors, path, "d4_max_docs", cfg.d4_max_docs, 50000)
         _expect_equal(errors, path, "sla_threshold_ms", cfg.sla_threshold_ms, 120.0)
         return errors
 

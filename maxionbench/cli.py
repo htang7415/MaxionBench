@@ -143,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     precompute_text_embeddings_parser.add_argument("--batch-size", type=int, default=16)
     precompute_text_embeddings_parser.add_argument("--device", default="auto")
     precompute_text_embeddings_parser.add_argument("--max-length", type=int, default=512)
+    precompute_text_embeddings_parser.add_argument("--require-device", default=None)
     precompute_text_embeddings_parser.add_argument("--no-normalize", action="store_true")
     precompute_text_embeddings_parser.add_argument("--force", action="store_true")
     precompute_text_embeddings_parser.add_argument("--json", action="store_true")
@@ -176,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     execute_run_matrix_parser.add_argument("--scenario-filter", default=None)
     execute_run_matrix_parser.add_argument("--template-filter", default=None)
     execute_run_matrix_parser.add_argument("--max-runs", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--deadline-hours", type=float, default=None)
     execute_run_matrix_parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
     execute_run_matrix_parser.add_argument("--poll-interval-s", type=float, default=1.0)
     execute_run_matrix_parser.add_argument("--json", action="store_true")
@@ -320,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     services_parser.add_argument("--timeout-s", type=float, default=120.0)
     services_parser.add_argument("--poll-interval-s", type=float, default=2.0)
     services_parser.add_argument("--compose-file", default=None)
+    services_parser.add_argument("--skip-arch-check", action="store_true")
     services_parser.add_argument("--json", action="store_true")
 
     archive_parser = subparsers.add_parser(
@@ -563,6 +566,8 @@ def main(argv: list[str] | None = None) -> int:
             "--max-length",
             str(args.max_length),
         ]
+        if args.require_device:
+            precompute_argv.extend(["--require-device", args.require_device])
         if args.no_normalize:
             precompute_argv.append("--no-normalize")
         if args.force:
@@ -625,6 +630,8 @@ def main(argv: list[str] | None = None) -> int:
             execute_argv.extend(["--template-filter", args.template_filter])
         if args.max_runs is not None:
             execute_argv.extend(["--max-runs", str(args.max_runs)])
+        if args.deadline_hours is not None:
+            execute_argv.extend(["--deadline-hours", str(args.deadline_hours)])
         if args.json:
             execute_argv.append("--json")
         return execute_run_matrix_main(execute_argv)
@@ -834,6 +841,8 @@ def main(argv: list[str] | None = None) -> int:
             services_argv.append("--volumes")
         services_argv.extend(["--timeout-s", str(args.timeout_s)])
         services_argv.extend(["--poll-interval-s", str(args.poll_interval_s)])
+        if args.skip_arch_check:
+            services_argv.append("--skip-arch-check")
         if args.compose_file:
             services_argv.extend(["--compose-file", args.compose_file])
         if args.json:

@@ -174,7 +174,9 @@ def test_portable_configs_load_with_new_schema_fields() -> None:
     s2_cfg = load_run_config(Path("configs/scenarios_portable/s2_streaming_memory.yaml"))
     s3_cfg = load_run_config(Path("configs/scenarios_portable/s3_multi_hop.yaml"))
     assert s1_cfg.clients_grid == [1, 4, 8]
+    assert s1_cfg.d4_max_docs == 50000
     assert (s2_cfg.clients_read, s2_cfg.clients_write, s2_cfg.clients_grid) == (8, 2, [8])
+    assert s2_cfg.d4_max_docs == 50000
     assert s3_cfg.clients_grid == [1, 4, 8]
     assert s1_cfg.rpc_baseline_requests == 1000
     assert s2_cfg.rpc_baseline_requests == 1000

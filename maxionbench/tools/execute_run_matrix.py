@@ -5,6 +5,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import json
 from pathlib import Path
+import time
 from typing import Any, Iterable
 
 from maxionbench.orchestration.config_schema import load_run_config
@@ -30,9 +31,11 @@ def execute_run_matrix(
     scenario_filter: set[str] | None = None,
     template_filter: set[str] | None = None,
     max_runs: int | None = None,
+    deadline_hours: float | None = None,
     adapter_timeout_s: float = 120.0,
     poll_interval_s: float = 1.0,
 ) -> dict[str, Any]:
+    started = time.perf_counter()
     matrix = load_run_matrix(matrix_path)
     effective_budget = budget if budget is not None else matrix.budget_level
     selected_rows = list(
@@ -53,6 +56,7 @@ def execute_run_matrix(
         "skipped_rows": 0,
         "failed_rows": 0,
         "failures": [],
+        "warnings": [],
     }
     overrides: dict[str, Any] = {}
     if effective_budget is not None:
@@ -81,6 +85,7 @@ def execute_run_matrix(
         try:
             run_from_config(config_path, cli_overrides=overrides or None)
             summary["completed_rows"] = int(summary["completed_rows"]) + 1
+            _append_deadline_warning(summary=summary, started=started, deadline_hours=deadline_hours)
         except Exception as exc:
             failure = {
                 "config_path": str(config_path),
@@ -96,6 +101,41 @@ def execute_run_matrix(
             if not continue_on_failure:
                 raise RuntimeError(json.dumps(summary, sort_keys=True)) from exc
     return summary
+
+
+def _append_deadline_warning(*, summary: dict[str, Any], started: float, deadline_hours: float | None) -> None:
+    if deadline_hours is None or deadline_hours <= 0:
+        return
+    completed = int(summary.get("completed_rows", 0))
+    skipped = int(summary.get("skipped_rows", 0))
+    selected = int(summary.get("selected_rows", 0))
+    observed = completed + skipped
+    if observed < 1 or selected < 1:
+        return
+    elapsed_s = time.perf_counter() - started
+    average_s = elapsed_s / max(observed, 1)
+    projected_s = average_s * selected
+    deadline_s = float(deadline_hours) * 3600.0
+    if projected_s <= deadline_s:
+        return
+    warnings = list(summary.get("warnings", []))
+    if warnings and "projected runtime" in str(warnings[-1].get("message", "")):
+        return
+    warnings.append(
+        {
+            "type": "deadline_projection",
+            "message": (
+                f"projected runtime {projected_s / 3600.0:.2f}h exceeds "
+                f"deadline {float(deadline_hours):.2f}h"
+            ),
+            "elapsed_s": elapsed_s,
+            "projected_s": projected_s,
+            "deadline_s": deadline_s,
+            "observed_rows": observed,
+            "selected_rows": selected,
+        }
+    )
+    summary["warnings"] = warnings
 
 
 def _filter_rows(
@@ -158,6 +198,7 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--scenario-filter", default=None)
     parser.add_argument("--template-filter", default=None)
     parser.add_argument("--max-runs", type=int, default=None)
+    parser.add_argument("--deadline-hours", type=float, default=None)
     parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
     parser.add_argument("--poll-interval-s", type=float, default=1.0)
     parser.add_argument("--json", action="store_true")
@@ -179,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         scenario_filter=_parse_csv_filter(args.scenario_filter),
         template_filter=_parse_csv_filter(args.template_filter),
         max_runs=args.max_runs,
+        deadline_hours=args.deadline_hours,
         adapter_timeout_s=float(args.adapter_timeout_s),
         poll_interval_s=float(args.poll_interval_s),
     )

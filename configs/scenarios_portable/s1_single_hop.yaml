@@ -20,6 +20,7 @@ clients_write: 0
 clients_grid: [1, 4, 8]
 d4_beir_subsets: [scifact, fiqa]
 d4_include_crag: false
+d4_max_docs: 50000
 search_sweep:
   - hnsw_ef: 32
   - hnsw_ef: 64

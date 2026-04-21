@@ -198,3 +198,18 @@ def test_execute_run_matrix_raises_without_continue_on_failure(tmp_path: Path, m
 
     with pytest.raises(RuntimeError, match="failed_rows"):
         execute_mod.execute_run_matrix(matrix_path=matrix_path, lane="cpu", continue_on_failure=False)
+
+
+def test_deadline_warning_projects_over_budget(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    summary = {
+        "selected_rows": 10,
+        "completed_rows": 1,
+        "skipped_rows": 0,
+        "warnings": [],
+    }
+    monkeypatch.setattr(execute_mod.time, "perf_counter", lambda: 3600.0)
+
+    execute_mod._append_deadline_warning(summary=summary, started=0.0, deadline_hours=1.0)
+
+    assert summary["warnings"]
+    assert summary["warnings"][0]["type"] == "deadline_projection"

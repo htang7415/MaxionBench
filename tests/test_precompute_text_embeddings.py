@@ -55,8 +55,8 @@ def test_precompute_text_embeddings_writes_recursive_artifacts(tmp_path: Path, m
         qrels=[("fiqa::q::q1", "fiqa::doc::d1", 1)],
     )
 
-    def _fake_load_text_encoder(*, model_id: str, batch_size: int, device: str, max_length: int, normalize: bool):  # type: ignore[no-untyped-def]
-        del batch_size, device, max_length
+    def _fake_load_text_encoder(*, model_id: str, batch_size: int, device: str, max_length: int, normalize: bool, require_device: str | None = None):  # type: ignore[no-untyped-def]
+        del batch_size, device, max_length, require_device
 
         def _encode(texts: list[str] | tuple[str, ...]) -> np.ndarray:
             rows = []
@@ -109,3 +109,16 @@ def test_precompute_text_embeddings_writes_recursive_artifacts(tmp_path: Path, m
     )
     assert cached["datasets_processed"] == 0
     assert cached["datasets_skipped"] == 2
+
+
+def test_precompute_text_embeddings_required_device_rejects_cpu() -> None:
+    try:
+        precompute_mod._validate_required_device(resolved_device="cpu", require_device="mps")
+    except RuntimeError as exc:
+        assert "expected 'mps'" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected required-device validation to fail")
+
+
+def test_precompute_text_embeddings_required_device_accepts_mps() -> None:
+    precompute_mod._validate_required_device(resolved_device="mps", require_device="mps")
