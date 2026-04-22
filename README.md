@@ -1,6 +1,6 @@
 # MaxionBench
 
-MaxionBench is a reproducible single-node benchmark study for retrieval infrastructure used in agentic applications on a single Apple Silicon Mac mini.
+MaxionBench is a reproducible single-node benchmark study for retrieval infrastructure used in agentic applications.
 
 ## Benchmark study
 
@@ -42,17 +42,15 @@ Each run writes:
 - `config_resolved.yaml`
 - logs
 
-## Host Target
+## Operator Constraints
 
-- Apple Silicon Mac mini is the paper-path host.
-- The benchmark matrix must finish within 24 hours wall clock.
+- The operator machine is an Apple Silicon Mac mini; it is the execution host, not part of the study storyline.
+- The local operator workflow is controlled to fit within one day wall clock.
+- `submit-portable` defaults to a 24-hour benchmark-execution deadline; lower `--deadline-hours` if setup, data, or embedding work consumes part of the day.
 - GPU-required scenarios and distributed topologies are out of scope.
-- One-time FRAMES/KILT preprocessing may happen outside the 24-hour budget.
+- Manual acquisition of FRAMES/KILT source inputs may happen before the one-day controlled workflow.
 
-Figures are written to:
-
-- `artifacts/figures/milestones/Mx/`
-- `artifacts/figures/final/`
+Portable figures are written to `artifacts/figures/final/`.
 
 ## How to run this benchmark study
 
@@ -73,6 +71,5 @@ There are no required repo shell wrappers in the current workflow.
 
 ```bash
 python -m maxionbench.cli validate --input artifacts/runs --strict-schema --json
-python -m maxionbench.cli report --input artifacts/runs --mode milestones --milestone-id M1
-python -m maxionbench.cli report --input artifacts/runs --mode final --out artifacts/figures/final
+python -m maxionbench.cli report --input artifacts/runs/portable --mode portable-agentic --out artifacts/figures/final
 ```

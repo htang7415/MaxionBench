@@ -19,18 +19,11 @@ from maxionbench.datasets.cache_integrity import (
     resolve_expected_sha256_with_source,
     verify_file_sha256,
 )
-from maxionbench.datasets.d3_calibrate import PAPER_MIN_CALIBRATION_VECTORS, paper_calibration_issues
-from maxionbench.datasets.d3_generator import D3Params, SequentialDocIdSequence, params_from_mapping
-from maxionbench.datasets.loaders.d1_ann_hdf5 import D1AnnDataset, load_d1_ann_hdf5
-from maxionbench.datasets.loaders.d2_bigann import D2BigAnnDataset, load_d2_bigann
-from maxionbench.datasets.loaders.d3_vectors import load_d3_vectors
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
 from maxionbench.datasets.loaders.d4_text import load_d4_from_local_bundles
 from maxionbench.datasets.loaders.processed import (
     dataset_dir_sha256,
-    load_processed_ann_dataset,
     load_processed_d4_bundle,
-    load_processed_filtered_ann_dataset,
     load_processed_text_dataset,
 )
 from maxionbench.metrics.cost_rhu import rhu_hours
@@ -39,22 +32,8 @@ from maxionbench.metrics.resources import ResourceProfile, profile_from_adapter_
 from maxionbench.orchestration.config_schema import RunConfig, load_run_config
 from maxionbench.runtime.rpc_baseline import measure_rpc_baseline, minimal_rpc_request_fn
 from maxionbench.runtime.system_info import collect_system_info
-from maxionbench.scenarios.calibrate_d3 import CalibrateD3Config, run as run_calibrate_d3
-from maxionbench.scenarios.matched_quality import MatchedQualityCandidate, select_candidate
-from maxionbench.scenarios.s1_ann_frontier import (
-    S1Config,
-    S1Data,
-    prepare_with_data as prepare_s1_with_data,
-    run_prepared as run_s1_prepared,
-)
-from maxionbench.scenarios.s2_filtered_ann import S2Config, run as run_s2
-from maxionbench.scenarios.s3_churn_smooth import S3Config, run as run_s3
-from maxionbench.scenarios.s3b_churn_bursty import S3bConfig, run as run_s3b
-from maxionbench.scenarios.s4_hybrid import S4Config, run as run_s4
 from maxionbench.scenarios.portable_text_retrieval import PortableTextConfig, evaluate_text_queries, ingest_text_dataset
 from maxionbench.scenarios.s2_streaming_memory import StreamingMemoryConfig, run as run_streaming_memory
-from maxionbench.scenarios.s5_rerank import S5Config, run as run_s5
-from maxionbench.scenarios.s6_fusion import S6Config, run as run_s6
 from maxionbench.schemas.result_schema import (
     PINNED_RTT_BASELINE_REQUEST_PROFILE,
     ResultRow,
@@ -139,6 +118,28 @@ class _RagCandidate:
     rhu_rate: float
 
 
+@dataclass(frozen=True)
+class MatchedQualityCandidate:
+    quality: float
+    p99_ms: float
+    qps: float
+    rhu_h: float
+    payload: Any
+
+
+def select_candidate(
+    candidates: list[MatchedQualityCandidate],
+    *,
+    quality_target: float | None = None,
+    target_quality: float | None = None,
+) -> MatchedQualityCandidate | None:
+    threshold = float(quality_target if quality_target is not None else target_quality if target_quality is not None else 0.0)
+    feasible = [candidate for candidate in candidates if candidate.quality >= threshold]
+    if not feasible:
+        return None
+    return min(feasible, key=lambda candidate: (candidate.rhu_h, candidate.p99_ms, -candidate.qps))
+
+
 _RAG_NDCG_BANDS: list[tuple[str, float, float]] = [
     ("low", 0.00, 0.35),
     ("medium", 0.35, 0.55),
@@ -160,7 +161,6 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--no-retry", action="store_true", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--d3-params", default=None, help="Optional path to d3_params.yaml")
     parser.add_argument("--enforce-readiness", action="store_true")
     parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
     parser.add_argument("--behavior-dir", default="docs/behavior")
@@ -171,12 +171,6 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
 def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = None) -> Path:
     overrides = dict(cli_overrides or {})
     resolved_config_path = config_path.resolve()
-    d3_params_path = overrides.pop("d3_params", None)
-    if d3_params_path:
-        resolved_d3_params_path = _resolve_config_value_path(value=str(d3_params_path), config_path=resolved_config_path)
-        if not resolved_d3_params_path.exists():
-            raise FileNotFoundError(f"d3 params file not found: {resolved_d3_params_path}")
-        d3_params_path = str(resolved_d3_params_path)
     enforce_readiness = bool(overrides.pop("enforce_readiness", False))
     conformance_matrix = Path(str(overrides.pop("conformance_matrix", "artifacts/conformance/conformance_matrix.csv")))
     behavior_dir = Path(str(overrides.pop("behavior_dir", "docs/behavior")))
@@ -205,7 +199,6 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
             cfg=cfg,
             config_path=resolved_config_path,
         )
-        config_payload["d3_params"] = d3_params_path
         config_payload["readiness"] = {
             "enforced": enforce_readiness,
             "conformance_matrix": str(conformance_matrix),
@@ -218,47 +211,7 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         s1_diagnostics_path = output_dir / "logs" / "s1_sweep_diagnostics.jsonl"
         s1_selection_summary_path = output_dir / "logs" / "s1_selection_summary.json"
 
-        if cfg.scenario == "calibrate_d3":
-            rows = _run_calibrate_rows(
-                cfg=cfg,
-                config_fingerprint=config_fingerprint,
-                d3_params_path=d3_params_path,
-                config_path=resolved_config_path,
-            )
-        elif cfg.scenario == "s1_ann_frontier":
-            rows, s1_sweep_diagnostics, s1_selection_summary = _run_s1_rows(
-                cfg=cfg,
-                config_fingerprint=config_fingerprint,
-                config_path=resolved_config_path,
-            )
-        elif cfg.scenario == "s2_filtered_ann":
-            rows = _run_s2_rows(
-                cfg=cfg,
-                config_fingerprint=config_fingerprint,
-                d3_params_path=d3_params_path,
-                config_path=resolved_config_path,
-            )
-        elif cfg.scenario == "s3_churn_smooth":
-            rows = _run_s3_rows(
-                cfg=cfg,
-                config_fingerprint=config_fingerprint,
-                d3_params_path=d3_params_path,
-                config_path=resolved_config_path,
-            )
-        elif cfg.scenario == "s3b_churn_bursty":
-            rows = _run_s3b_rows(
-                cfg=cfg,
-                config_fingerprint=config_fingerprint,
-                d3_params_path=d3_params_path,
-                config_path=resolved_config_path,
-            )
-        elif cfg.scenario == "s4_hybrid":
-            rows = _run_s4_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-        elif cfg.scenario == "s5_rerank":
-            rows = _run_s5_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-        elif cfg.scenario == "s6_fusion":
-            rows = _run_s6_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
-        elif cfg.scenario == "s1_single_hop":
+        if cfg.scenario == "s1_single_hop":
             rows = _run_portable_s1_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
         elif cfg.scenario == "s2_streaming_memory":
             rows = _run_portable_s2_rows(cfg=cfg, config_fingerprint=config_fingerprint, config_path=resolved_config_path)
@@ -272,15 +225,6 @@ def run_from_config(config_path: Path, cli_overrides: dict[str, Any] | None = No
         if s1_selection_summary is not None:
             _write_json(path=s1_selection_summary_path, payload=s1_selection_summary)
         if not rows:
-            if cfg.scenario == "s1_ann_frontier":
-                raise RuntimeError(
-                    _format_s1_no_rows_detail(
-                        cfg=cfg,
-                        selection_summary=s1_selection_summary or [],
-                        sweep_diagnostics=s1_sweep_diagnostics or [],
-                        diagnostics_path=s1_diagnostics_path,
-                    )
-                )
             raise RuntimeError("No rows were produced.")
         output_path = output_dir / "results.parquet"
         log_path = output_dir / "logs" / "runner.log"

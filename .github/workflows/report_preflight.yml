@@ -124,74 +124,6 @@ jobs:
             --strict \
             --json
 
-      - name: Write smoke scenario config
-        run: |
-          cat > ci_s1_smoke.yaml <<'YAML'
-          engine: mock
-          engine_version: "0.1.0"
-          scenario: s1_ann_frontier
-          dataset_bundle: D1
-          dataset_hash: synthetic-d1-v1
-          seed: 17
-          repeats: 1
-          no_retry: true
-          output_dir: artifacts/runs/ci_preflight
-          quality_target: 0.8
-          quality_targets: [0.8]
-          clients_read: 1
-          clients_write: 0
-          clients_grid: [1]
-          search_sweep:
-            - {hnsw_ef: 32}
-          rpc_baseline_requests: 5
-          sla_threshold_ms: 50.0
-          vector_dim: 12
-          num_vectors: 120
-          num_queries: 8
-          top_k: 10
-          warmup_s: 0.02
-          steady_state_s: 0.02
-          phase_timing_mode: strict
-          phase_max_requests_per_phase: 12
-          YAML
-
-      - name: Run pre-run readiness gate
-        run: |
-          maxionbench pre-run-gate --config ci_s1_smoke.yaml --json
-
-      - name: Generate smoke run artifacts
-        run: |
-          maxionbench run \
-            --config ci_s1_smoke.yaml \
-            --seed 17 \
-            --repeats 1 \
-            --no-retry \
-            --output-dir artifacts/runs/ci_preflight
-
-      - name: Validate artifacts preflight
-        run: |
-          maxionbench validate --input artifacts/runs/ci_preflight --strict-schema --json
-
-      - name: Generate report bundle
-        run: |
-          maxionbench report \
-            --input artifacts/runs/ci_preflight \
-            --mode milestones \
-            --out artifacts/figures/ci_preflight
-
-      - name: Inspect report output-policy sidecars
-        run: |
-          maxionbench inspect-report-output-policy \
-            --input artifacts/figures/ci_preflight \
-            --output artifacts/ci/report_output_policy_summary.json \
-            --strict \
-            --json
-
-      - name: Assert report outputs
-        run: |
-          test -f artifacts/figures/ci_preflight/m2_runner_stage_timing.png
-          test -f artifacts/figures/ci_preflight/T1_environment_runtime_pinning.csv
-
       - name: Upload preflight artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -200,9 +132,5 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: |
-            ci_s1_smoke.yaml
             artifacts/ci/required_checks_snapshot.json
-            artifacts/ci/report_output_policy_summary.json
             artifacts/ci/portable_matrix/**
-            artifacts/runs/ci_preflight/**
-            artifacts/figures/ci_preflight/**

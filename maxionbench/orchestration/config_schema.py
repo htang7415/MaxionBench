@@ -26,7 +26,7 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RunConfig:
-    profile: str = "legacy"
+    profile: str = "portable-agentic"
     budget_level: str | None = None
     engine: str = "mock"
     engine_version: str = "0.1.0"
@@ -35,9 +35,9 @@ class RunConfig:
     c_llm_in: float = 0.0
     adapter_options: dict[str, Any] = field(default_factory=dict)
     index_params: dict[str, Any] = field(default_factory=dict)
-    scenario: str = "s1_ann_frontier"
-    dataset_bundle: str = "D1"
-    dataset_hash: str = "synthetic-d1-v1"
+    scenario: str = "s1_single_hop"
+    dataset_bundle: str = "D4"
+    dataset_hash: str = "portable-d4-v1"
     dataset_path: str | None = None
     processed_dataset_path: str | None = None
     processed_dataset_sha256: str | None = None
@@ -120,17 +120,6 @@ class RunConfig:
     rrf_k: int = 60
     s4_dense_candidates: int = 200
     s4_bm25_candidates: int = 200
-    s5_candidate_budgets: list[int] = field(default_factory=lambda: [50, 200, 1000])
-    s5_reranker_model_id: str = "BAAI/bge-reranker-base"
-    s5_reranker_revision_tag: str = "2026-03-04"
-    s5_reranker_max_seq_len: int = 512
-    s5_reranker_precision: str = "fp16"
-    s5_reranker_batch_size: int = 32
-    s5_reranker_truncation: str = "right"
-    s5_require_hf_backend: bool = True
-    s6_dense_a_candidates: int = 200
-    s6_dense_b_candidates: int = 200
-    s6_bm25_candidates: int = 200
 
     @property
     def references(self) -> RHUReferences:
@@ -209,14 +198,6 @@ def _normalize_engine_specific_payload(payload: Mapping[str, Any]) -> dict[str, 
 
 def _validate(cfg: RunConfig) -> None:
     allowed = {
-        "s1_ann_frontier",
-        "s2_filtered_ann",
-        "s3_churn_smooth",
-        "s3b_churn_bursty",
-        "calibrate_d3",
-        "s4_hybrid",
-        "s5_rerank",
-        "s6_fusion",
         "s1_single_hop",
         "s2_streaming_memory",
         "s3_multi_hop",
@@ -269,20 +250,6 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("rrf_k must be >= 1")
     if cfg.s4_dense_candidates < 1 or cfg.s4_bm25_candidates < 1:
         raise ValueError("s4 candidate budgets must be >= 1")
-    if not cfg.s5_candidate_budgets:
-        raise ValueError("s5_candidate_budgets must not be empty")
-    if any(budget < 1 for budget in cfg.s5_candidate_budgets):
-        raise ValueError("s5_candidate_budgets values must be >= 1")
-    if cfg.s5_reranker_max_seq_len < 1:
-        raise ValueError("s5_reranker_max_seq_len must be >= 1")
-    if cfg.s5_reranker_batch_size < 1:
-        raise ValueError("s5_reranker_batch_size must be >= 1")
-    if cfg.s5_reranker_truncation not in {"left", "right"}:
-        raise ValueError("s5_reranker_truncation must be left or right")
-    if not isinstance(cfg.s5_require_hf_backend, bool):
-        raise ValueError("s5_require_hf_backend must be a boolean")
-    if cfg.s6_dense_a_candidates < 1 or cfg.s6_dense_b_candidates < 1 or cfg.s6_bm25_candidates < 1:
-        raise ValueError("s6 candidate budgets must be >= 1")
     if cfg.d4_max_docs < 1 or cfg.d4_max_queries < 1:
         raise ValueError("d4_max_docs and d4_max_queries must be >= 1")
     if cfg.c_llm_in < 0:

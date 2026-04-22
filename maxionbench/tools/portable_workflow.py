@@ -1,12 +1,13 @@
-"""High-level Mac mini workflow commands for the portable lane."""
+"""High-level workflow commands for the portable lane."""
 
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from maxionbench.conformance.matrix import main as conformance_matrix_main
 from maxionbench.reports.portable_exports import generate_portable_report_bundle
@@ -28,6 +29,16 @@ _DEFAULT_FIGURES_DIR = "artifacts/figures/final"
 _EMBEDDING_MODELS = ("BAAI/bge-small-en-v1.5", "BAAI/bge-base-en-v1.5")
 _DEFAULT_BEIR_SUBSETS = ("scifact", "fiqa")
 _DEFAULT_CRAG_SLICE = "dataset/D4/crag/crag_task_1_and_2_dev_v4.first_500.jsonl"
+
+
+@contextmanager
+def _pushd(path: Path) -> Iterator[None]:
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def ensure_lancedb_service_uri(*, repo_root: Path) -> str:
@@ -102,19 +113,20 @@ def _preprocess_portable_d4() -> list[dict[str, str]]:
 def portable_setup(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     lancedb_uri = ensure_lancedb_service_uri(repo_root=resolved_repo_root)
-    services_main(["up", "--profile", "portable", "--wait", "--json"])
-    conformance_matrix_main(
-        [
-            "--config-dir",
-            "configs/conformance",
-            "--out-dir",
-            "artifacts/conformance",
-            "--timeout-s",
-            "30",
-            "--adapters",
-            "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
-        ]
-    )
+    with _pushd(resolved_repo_root):
+        services_main(["up", "--profile", "portable", "--wait", "--json"])
+        conformance_matrix_main(
+            [
+                "--config-dir",
+                "configs/conformance",
+                "--out-dir",
+                "artifacts/conformance",
+                "--timeout-s",
+                "30",
+                "--adapters",
+                "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
+            ]
+        )
     return {
         "mode": "portable-setup",
         "repo_root": str(resolved_repo_root),
@@ -127,48 +139,49 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
 def portable_data(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     ensure_lancedb_service_uri(repo_root=resolved_repo_root)
-    download_datasets_main(
-        [
-            "--root",
-            "dataset",
-            "--cache-dir",
-            ".cache",
-            "--datasets",
-            "scifact,fiqa,crag,frames",
-        ]
-    )
-    d4_jobs = _preprocess_portable_d4()
-    missing_frames_inputs = _missing_frames_inputs(repo_root=resolved_repo_root)
-    frames_portable: dict[str, Any]
-    if missing_frames_inputs:
-        frames_portable = {
-            "status": "manual_required",
-            "output_dir": str((resolved_repo_root / _DEFAULT_FRAMES_PORTABLE_OUT).resolve()),
-            "missing_inputs": missing_frames_inputs,
-        }
-    else:
-        preprocess_frames_portable_main(
+    with _pushd(resolved_repo_root):
+        download_datasets_main(
             [
-                "--frames-root",
-                _DEFAULT_FRAMES_ROOT,
-                "--kilt-root",
-                _DEFAULT_KILT_ROOT,
-                "--out",
-                _DEFAULT_FRAMES_PORTABLE_OUT,
+                "--root",
+                "dataset",
+                "--cache-dir",
+                ".cache",
+                "--datasets",
+                "scifact,fiqa,crag,frames",
             ]
         )
-        frames_portable = {
-            "status": "processed",
-            "output_dir": str((resolved_repo_root / _DEFAULT_FRAMES_PORTABLE_OUT).resolve()),
-        }
-    embedding_jobs: list[dict[str, str]] = []
-    embedding_inputs = [_DEFAULT_D4_INPUT]
-    if frames_portable["status"] == "processed":
-        embedding_inputs.append(_DEFAULT_FRAMES_PORTABLE_OUT)
-    for input_path in embedding_inputs:
-        for model_id in _EMBEDDING_MODELS:
-            precompute_text_embeddings_main(["--input", input_path, "--model-id", model_id])
-            embedding_jobs.append({"input": input_path, "model_id": model_id})
+        d4_jobs = _preprocess_portable_d4()
+        missing_frames_inputs = _missing_frames_inputs(repo_root=resolved_repo_root)
+        frames_portable: dict[str, Any]
+        if missing_frames_inputs:
+            frames_portable = {
+                "status": "manual_required",
+                "output_dir": str((resolved_repo_root / _DEFAULT_FRAMES_PORTABLE_OUT).resolve()),
+                "missing_inputs": missing_frames_inputs,
+            }
+        else:
+            preprocess_frames_portable_main(
+                [
+                    "--frames-root",
+                    _DEFAULT_FRAMES_ROOT,
+                    "--kilt-root",
+                    _DEFAULT_KILT_ROOT,
+                    "--out",
+                    _DEFAULT_FRAMES_PORTABLE_OUT,
+                ]
+            )
+            frames_portable = {
+                "status": "processed",
+                "output_dir": str((resolved_repo_root / _DEFAULT_FRAMES_PORTABLE_OUT).resolve()),
+            }
+        embedding_jobs: list[dict[str, str]] = []
+        embedding_inputs = [_DEFAULT_D4_INPUT]
+        if frames_portable["status"] == "processed":
+            embedding_inputs.append(_DEFAULT_FRAMES_PORTABLE_OUT)
+        for input_path in embedding_inputs:
+            for model_id in _EMBEDDING_MODELS:
+                precompute_text_embeddings_main(["--input", input_path, "--model-id", model_id])
+                embedding_jobs.append({"input": input_path, "model_id": model_id})
     return {
         "mode": "portable-data",
         "repo_root": str(resolved_repo_root),
@@ -186,20 +199,21 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
     ensure_lancedb_service_uri(repo_root=resolved_repo_root)
     runs_dir = (resolved_repo_root / _DEFAULT_RUNS_DIR).resolve()
     figures_dir = (resolved_repo_root / _DEFAULT_FIGURES_DIR).resolve()
-    generate_portable_report_bundle(input_dir=runs_dir, out_dir=figures_dir)
-    archive_main(
-        [
-            "--runs-dir",
-            _DEFAULT_RUNS_DIR,
-            "--figures-dir",
-            _DEFAULT_FIGURES_DIR,
-            "--frames-portable-dir",
-            _DEFAULT_FRAMES_PORTABLE_OUT,
-            "--conformance-dir",
-            "artifacts/conformance",
-        ]
-    )
-    services_main(["down", "--profile", "portable"])
+    with _pushd(resolved_repo_root):
+        generate_portable_report_bundle(input_dir=runs_dir, out_dir=figures_dir)
+        archive_main(
+            [
+                "--runs-dir",
+                _DEFAULT_RUNS_DIR,
+                "--figures-dir",
+                _DEFAULT_FIGURES_DIR,
+                "--frames-portable-dir",
+                _DEFAULT_FRAMES_PORTABLE_OUT,
+                "--conformance-dir",
+                "artifacts/conformance",
+            ]
+        )
+        services_main(["down", "--profile", "portable"])
     return {
         "mode": "portable-finalize",
         "repo_root": str(resolved_repo_root),
@@ -209,7 +223,7 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
 
 
 def parse_args(argv: list[str] | None = None) -> Any:
-    parser = ArgumentParser(description="High-level Mac mini workflow commands for the portable lane.")
+    parser = ArgumentParser(description="High-level workflow commands for the portable lane.")
     parser.add_argument("phase", choices=["setup", "data", "finalize"])
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--json", action="store_true")

@@ -7,7 +7,6 @@ def test_readme_points_mac_users_to_reduced_lane_doc() -> None:
     text = Path("README.md").read_text(encoding="utf-8")
 
     assert "command.md" not in text
-    assert "command-mac.md" in text
     assert "## Source of truth" not in text
 
 

@@ -15,7 +15,6 @@ dependencies = [
   "pyarrow>=15.0",
   "PyYAML>=6.0",
   "requests>=2.31",
-  "h5py>=3.10",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +24,6 @@ dev = [
 datasets = [
   "ansicolors==1.1.8",
   "docker==7.1.0",
-  "h5py==3.10.*",
   "Jinja2==3.1.*",
   "matplotlib==3.10.*",
   "numpy==1.26.*",
@@ -51,12 +49,6 @@ embeddings = [
   "transformers<5; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "transformers>=4.41.0; not (sys_platform == 'darwin' and platform_machine == 'x86_64')",
 ]
-rerank = [
-  "numpy==1.26.*; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-  "transformers<5; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-  "transformers>=4.41.0; not (sys_platform == 'darwin' and platform_machine == 'x86_64')",
-]
-
 [project.scripts]
 maxionbench = "maxionbench.cli:main"
 
