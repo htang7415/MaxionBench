@@ -295,6 +295,22 @@ def prepare_frames_workspace(*, root: Path) -> dict[str, Any]:
     return {"path": str(frames_root), "source": "manual_required"}
 
 
+def prepare_kilt_workspace(*, root: Path) -> dict[str, Any]:
+    kilt_root = (root / "D4" / "kilt").resolve()
+    kilt_root.mkdir(parents=True, exist_ok=True)
+    readme_path = kilt_root / "README.manual.txt"
+    if not readme_path.exists():
+        readme_path.write_text(
+            (
+                "KILT-style page assets are not downloaded automatically.\n"
+                "Place the local KILT export under this directory or pass an alternate\n"
+                "path to `maxionbench preprocess-frames-portable --kilt-root ...`.\n"
+            ),
+            encoding="utf-8",
+        )
+    return {"path": str(kilt_root), "source": "manual_required"}
+
+
 def make_small_crag_slice(*, source_bz2: Path, output_jsonl: Path, max_examples: int, force: bool) -> dict[str, Any]:
     if max_examples < 1:
         raise ValueError("max_examples must be >= 1")
@@ -357,6 +373,7 @@ def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[s
             "crag_source_archive": "crag_task_1_and_2_dev_v4.jsonl.bz2",
             "crag_small_slice": f"crag_task_1_and_2_dev_v4.first_{crag_examples}.jsonl",
             "frames_workspace": "D4/frames/",
+            "kilt_workspace": "D4/kilt/",
         },
     }
     path = (root / "manifest.json").resolve()
@@ -429,6 +446,7 @@ def download_datasets(
             )
         if not selected or want_frames:
             summary["fetched"]["d4_frames"] = prepare_frames_workspace(root=root)
+            summary["fetched"]["d4_kilt"] = prepare_kilt_workspace(root=root)
     manifest_path = write_manifest(root=root, crag_examples=crag_examples, requested_datasets=sorted(selected))
     summary["manifest_path"] = str(manifest_path)
     return summary

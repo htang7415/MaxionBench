@@ -130,6 +130,15 @@ def test_prepare_frames_workspace_creates_manual_placeholder(tmp_path: Path) -> 
     assert (frames_root / "README.manual.txt").exists()
 
 
+def test_prepare_kilt_workspace_creates_manual_placeholder(tmp_path: Path) -> None:
+    summary = download_datasets_mod.prepare_kilt_workspace(root=tmp_path / "dataset")
+    kilt_root = tmp_path / "dataset" / "D4" / "kilt"
+
+    assert summary["source"] == "manual_required"
+    assert kilt_root.exists()
+    assert (kilt_root / "README.manual.txt").exists()
+
+
 def test_download_file_sets_explicit_user_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
@@ -264,7 +273,7 @@ def test_download_datasets_respects_dataset_filter_without_d1d2_or_d3(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: dict[str, int] = {"ann": 0, "d3": 0, "beir": 0, "crag": 0, "frames": 0}
+    calls: dict[str, int] = {"ann": 0, "d3": 0, "beir": 0, "crag": 0, "frames": 0, "kilt": 0}
 
     def _fake_download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool):
         del root, timeout_s, force
@@ -291,11 +300,17 @@ def test_download_datasets_respects_dataset_filter_without_d1d2_or_d3(
         calls["frames"] += 1
         return {"ok": True}
 
+    def _fake_prepare_kilt_workspace(*, root: Path):
+        del root
+        calls["kilt"] += 1
+        return {"ok": True}
+
     monkeypatch.setattr(download_datasets_mod, "download_ann_benchmarks", _fake_download_ann_benchmarks)
     monkeypatch.setattr(download_datasets_mod, "download_bigann_yfcc", _fake_download_bigann_yfcc)
     monkeypatch.setattr(download_datasets_mod, "download_beir_subsets", _fake_download_beir_subsets)
     monkeypatch.setattr(download_datasets_mod, "download_crag", _fake_download_crag)
     monkeypatch.setattr(download_datasets_mod, "prepare_frames_workspace", _fake_prepare_frames_workspace)
+    monkeypatch.setattr(download_datasets_mod, "prepare_kilt_workspace", _fake_prepare_kilt_workspace)
 
     summary = download_datasets_mod.download_datasets(
         root=tmp_path / "dataset",
@@ -304,7 +319,7 @@ def test_download_datasets_respects_dataset_filter_without_d1d2_or_d3(
         datasets=["scifact", "fiqa", "crag", "frames"],
     )
 
-    assert calls == {"ann": 0, "d3": 0, "beir": 1, "crag": 1, "frames": 1}
+    assert calls == {"ann": 0, "d3": 0, "beir": 1, "crag": 1, "frames": 1, "kilt": 1}
     assert summary["requested_datasets"] == ["crag", "fiqa", "frames", "scifact"]
 
 
@@ -379,6 +394,7 @@ def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monke
     monkeypatch.setattr(download_datasets_mod, "download_beir_subsets", lambda **kwargs: {"beir": "ok"})
     monkeypatch.setattr(download_datasets_mod, "download_crag", lambda **kwargs: {"crag": "ok"})
     monkeypatch.setattr(download_datasets_mod, "prepare_frames_workspace", lambda **kwargs: {"frames": "ok"})
+    monkeypatch.setattr(download_datasets_mod, "prepare_kilt_workspace", lambda **kwargs: {"kilt": "ok"})
 
     summary = download_datasets_mod.download_datasets(
         root=root,
@@ -395,11 +411,13 @@ def test_download_datasets_writes_manifest_with_skip_flags(tmp_path: Path, monke
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["D4"]["crag_small_slice"] == "crag_task_1_and_2_dev_v4.first_7.jsonl"
+    assert manifest["D4"]["kilt_workspace"] == "D4/kilt/"
     assert "d1_d2" in summary["fetched"]
     assert "d3" not in summary["fetched"]
     assert "d4_beir" in summary["fetched"]
     assert "d4_crag" in summary["fetched"]
     assert "d4_frames" in summary["fetched"]
+    assert "d4_kilt" in summary["fetched"]
 
 
 def test_download_beir_rejects_invalid_timeout(tmp_path: Path) -> None:

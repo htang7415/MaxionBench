@@ -303,6 +303,10 @@ def _register_doc(
 
 def _discover_frames_file(frames_root: Path) -> Path:
     root = frames_root.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"FRAMES root does not exist: {root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"FRAMES root is not a directory: {root}")
     candidates = [
         root / "questions.jsonl",
         root / "frames.jsonl",
@@ -320,6 +324,10 @@ def _discover_frames_file(frames_root: Path) -> Path:
 
 def _discover_kilt_file(kilt_root: Path) -> Path:
     root = kilt_root.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"KILT root does not exist: {root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"KILT root is not a directory: {root}")
     candidates = [
         root / "pages.jsonl",
         root / "passages.jsonl",
