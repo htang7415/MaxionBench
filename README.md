@@ -64,7 +64,7 @@ Figures are written to:
 
 ## How to run this benchmark study
 
-Use the reduced local workflow in `command-mac.md`.
+Use the reduced local workflow.
 
 It covers:
 
