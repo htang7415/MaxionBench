@@ -62,8 +62,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Verify pinned scenario config values",
     )
     verify_pins_parser.add_argument("--config-dir", default="configs/scenarios_portable")
-    verify_pins_parser.add_argument("--allow-dev-calibrate-d3-scale", action="store_true")
-    verify_pins_parser.add_argument("--strict-d3-scenario-scale", action="store_true")
     verify_pins_parser.add_argument("--json", action="store_true")
 
     verify_dataset_manifests_parser = subparsers.add_parser(
@@ -73,27 +71,14 @@ def main(argv: list[str] | None = None) -> int:
     verify_dataset_manifests_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
     verify_dataset_manifests_parser.add_argument("--json", action="store_true")
 
-    download_d1_parser = subparsers.add_parser(
-        "download-d1",
-        help="Download a D1 ann-benchmarks HDF5 bundle into the local data cache",
-    )
-    download_d1_parser.add_argument("--dataset-name", required=True)
-    download_d1_parser.add_argument("--output", default=None)
-    download_d1_parser.add_argument("--force", action="store_true")
-    download_d1_parser.add_argument("--timeout-s", type=float, default=60.0)
-    download_d1_parser.add_argument("--json", action="store_true")
-
     download_datasets_parser = subparsers.add_parser(
         "download-datasets",
-        help="Download the requested local/community dataset tree under dataset/",
+        help="Download the portable-agentic dataset tree under dataset/",
     )
     download_datasets_parser.add_argument("--root", default="dataset")
     download_datasets_parser.add_argument("--cache-dir", default=".cache")
     download_datasets_parser.add_argument("--datasets", default=None)
     download_datasets_parser.add_argument("--crag-examples", type=int, default=500)
-    download_datasets_parser.add_argument("--skip-d1d2", action="store_true")
-    download_datasets_parser.add_argument("--skip-d3", action="store_true")
-    download_datasets_parser.add_argument("--skip-d4", action="store_true")
     download_datasets_parser.add_argument("--force", action="store_true")
     download_datasets_parser.add_argument("--timeout-s", type=float, default=60.0)
     download_datasets_parser.add_argument("--json", action="store_true")
@@ -102,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         "preprocess-datasets",
         help="Normalize raw datasets into the canonical processed layout",
     )
-    preprocess_datasets_parser.add_argument("mode", choices=["ann-hdf5", "d3-yfcc-raw", "d3-yfcc", "d3-explicit", "beir", "crag"])
+    preprocess_datasets_parser.add_argument("mode", choices=["beir", "crag"])
     preprocess_datasets_parser.add_argument("--input", default=None)
     preprocess_datasets_parser.add_argument("--out", required=True)
     preprocess_datasets_parser.add_argument("--family", default=None)
@@ -158,7 +143,6 @@ def main(argv: list[str] | None = None) -> int:
     run_matrix_parser.add_argument("--output-root", default="artifacts/runs/workstation_matrix")
     run_matrix_parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
     run_matrix_parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
-    run_matrix_parser.add_argument("--skip-s6", action="store_true")
     run_matrix_parser.add_argument("--json", action="store_true")
 
     execute_run_matrix_parser = subparsers.add_parser(
@@ -193,7 +177,6 @@ def main(argv: list[str] | None = None) -> int:
     submit_portable_parser.add_argument("--out-dir", default=None)
     submit_portable_parser.add_argument("--output-root", default=None)
     submit_portable_parser.add_argument("--lane", default="cpu", choices=["cpu", "gpu", "all"])
-    submit_portable_parser.add_argument("--skip-s6", action="store_true")
     submit_portable_parser.add_argument("--seed", type=int, default=None)
     submit_portable_parser.add_argument("--repeats", type=int, default=None)
     submit_portable_parser.add_argument("--no-retry", action="store_true")
@@ -224,15 +207,6 @@ def main(argv: list[str] | None = None) -> int:
     verify_conformance_configs_parser.add_argument("--config-dir", default="configs/conformance")
     verify_conformance_configs_parser.add_argument("--allow-gpu-unavailable", action="store_true")
     verify_conformance_configs_parser.add_argument("--json", action="store_true")
-
-    verify_d3_calibration_parser = subparsers.add_parser(
-        "verify-d3-calibration",
-        help="Verify D3 calibration params file is paper-ready",
-    )
-    verify_d3_calibration_parser.add_argument("--d3-params", default="artifacts/calibration/d3_params.yaml")
-    verify_d3_calibration_parser.add_argument("--min-vectors", type=int, default=10_000_000)
-    verify_d3_calibration_parser.add_argument("--strict", action="store_true")
-    verify_d3_calibration_parser.add_argument("--json", action="store_true")
 
     verify_behavior_cards_parser = subparsers.add_parser(
         "verify-behavior-cards",
@@ -445,10 +419,6 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.verify_pins import main as verify_pins_main
 
         verify_argv: list[str] = ["--config-dir", args.config_dir]
-        if args.allow_dev_calibrate_d3_scale:
-            verify_argv.append("--allow-dev-calibrate-d3-scale")
-        if args.strict_d3_scenario_scale:
-            verify_argv.append("--strict-d3-scenario-scale")
         if args.json:
             verify_argv.append("--json")
         return verify_pins_main(verify_argv)
@@ -459,17 +429,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_dataset_manifests_main(verify_argv)
-    if args.command == "download-d1":
-        from maxionbench.tools.download_d1 import main as download_d1_main
-
-        download_argv = ["--dataset-name", args.dataset_name, "--timeout-s", str(args.timeout_s)]
-        if args.output:
-            download_argv.extend(["--output", args.output])
-        if args.force:
-            download_argv.append("--force")
-        if args.json:
-            download_argv.append("--json")
-        return download_d1_main(download_argv)
     if args.command == "download-datasets":
         from maxionbench.tools.download_datasets import main as download_datasets_main
 
@@ -485,12 +444,6 @@ def main(argv: list[str] | None = None) -> int:
             "--timeout-s",
             str(args.timeout_s),
         ]
-        if args.skip_d1d2:
-            download_argv.append("--skip-d1d2")
-        if args.skip_d3:
-            download_argv.append("--skip-d3")
-        if args.skip_d4:
-            download_argv.append("--skip-d4")
         if args.force:
             download_argv.append("--force")
         if args.json:
@@ -500,24 +453,6 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.preprocess_datasets import main as preprocess_datasets_main
 
         required_by_mode = {
-            "ann-hdf5": {
-                "--input": args.input,
-                "--family": args.family,
-                "--name": args.name,
-                "--metric": args.metric,
-            },
-            "d3-yfcc-raw": {
-                "--input": args.input,
-            },
-            "d3-yfcc": {
-                "--input": args.input,
-            },
-            "d3-explicit": {
-                "--base": args.base,
-                "--queries": args.queries,
-                "--gt": args.gt,
-                "--filters": args.filters,
-            },
             "beir": {
                 "--input": args.input,
                 "--name": args.name,
@@ -627,8 +562,6 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if args.budget is not None:
             matrix_argv.extend(["--budget", args.budget])
-        if args.skip_s6:
-            matrix_argv.append("--skip-s6")
         if args.json:
             matrix_argv.append("--json")
         return run_matrix_main(matrix_argv)
@@ -695,8 +628,6 @@ def main(argv: list[str] | None = None) -> int:
             submit_argv.extend(["--out-dir", args.out_dir])
         if args.output_root:
             submit_argv.extend(["--output-root", args.output_root])
-        if args.skip_s6:
-            submit_argv.append("--skip-s6")
         if args.seed is not None:
             submit_argv.extend(["--seed", str(args.seed)])
         if args.repeats is not None:
@@ -736,15 +667,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_conformance_configs_main(verify_argv)
-    if args.command == "verify-d3-calibration":
-        from maxionbench.tools.verify_d3_calibration import main as verify_d3_calibration_main
-
-        verify_argv = ["--d3-params", args.d3_params, "--min-vectors", str(args.min_vectors)]
-        if args.strict:
-            verify_argv.append("--strict")
-        if args.json:
-            verify_argv.append("--json")
-        return verify_d3_calibration_main(verify_argv)
     if args.command == "verify-behavior-cards":
         from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
 

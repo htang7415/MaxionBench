@@ -1,55 +1,28 @@
-"""Bootstrap a local/community dataset tree under ``dataset/``."""
+"""Bootstrap the portable-agentic dataset tree under ``dataset/``."""
 
 from __future__ import annotations
 
 from argparse import ArgumentParser
 import bz2
-from importlib import metadata as importlib_metadata
 import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tarfile
 import tempfile
 from typing import Any
 from urllib.request import Request, urlopen
 import zipfile
 
-from maxionbench.tools.download_d1 import DEFAULT_HTTP_HEADERS, download_d1_dataset
-
-ANN_HDF5_LAYOUT = {
-    "D1/glove-100-angular.hdf5": "glove-100-angular",
-    "D1/sift-128-euclidean.hdf5": "sift-128-euclidean",
-    "D1/gist-960-euclidean.hdf5": "gist-960-euclidean",
-    "D2/deep-image-96-angular.hdf5": "deep-image-96-angular",
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": "MaxionBench/0.1",
 }
-BEIR_DATASETS = ("scifact", "fiqa", "nfcorpus")
-BIGANN_SNAPSHOT_URL = "https://github.com/harsha-simhadri/big-ann-benchmarks/archive/refs/heads/main.tar.gz"
-BIGANN_SNAPSHOT_ROOT_NAME = "big-ann-benchmarks-main"
+
+BEIR_DATASETS = ("scifact", "fiqa")
 CRAG_TASK12_URL = (
     "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/"
     "data/crag_task_1_and_2_dev_v4.jsonl.bz2?download="
 )
-_YFCC_DIR_CANDIDATES = ("yfcc100M", "yfcc-10M")
-_BIGANN_RUNTIME_DISTRIBUTIONS = (
-    "ansicolors",
-    "docker",
-    "h5py",
-    "jinja2",
-    "matplotlib",
-    "numpy",
-    "pandas",
-    "psutil",
-    "pyyaml",
-    "scikit-learn",
-    "scipy",
-)
-
-
-def run(cmd: list[str], *, cwd: Path | None = None) -> None:
-    subprocess.run(cmd, cwd=str(cwd) if cwd is not None else None, check=True)
 
 
 def _validate_timeout(timeout_s: float) -> None:
@@ -107,134 +80,6 @@ def _extract_tar_archive(*, archive_path: Path, workdir: Path) -> Path:
                 raise ValueError(f"Refusing to extract archive member outside destination: {member.name}")
         archive.extractall(extract_root)
     return extract_root
-
-
-def _locate_bigann_snapshot_root(extracted_root: Path) -> Path | None:
-    direct = extracted_root / BIGANN_SNAPSHOT_ROOT_NAME
-    if direct.is_dir():
-        return direct
-    candidates = sorted(
-        path
-        for path in extracted_root.iterdir()
-        if path.is_dir() and path.name.startswith("big-ann-benchmarks-")
-    )
-    if candidates:
-        return candidates[0]
-    return None
-
-
-def _bigann_snapshot_repo_is_usable(repo_dir: Path) -> bool:
-    return (repo_dir / "create_dataset.py").is_file() and (repo_dir / "benchmark").is_dir()
-
-
-def stage_bigann_snapshot(
-    *,
-    snapshot_url: str,
-    repo_dir: Path,
-    cache_dir: Path,
-    timeout_s: float,
-    force: bool,
-) -> dict[str, str]:
-    _validate_timeout(timeout_s)
-    if repo_dir.exists() and not force:
-        if _bigann_snapshot_repo_is_usable(repo_dir):
-            return {"path": str(repo_dir.resolve()), "source": "cache_hit"}
-        shutil.rmtree(repo_dir)
-
-    archive_path = (cache_dir / f"{BIGANN_SNAPSHOT_ROOT_NAME}.tar.gz").resolve()
-    archive_meta = download_file(url=snapshot_url, dest=archive_path, timeout_s=timeout_s, force=force)
-    with tempfile.TemporaryDirectory(prefix="maxionbench_bigann_snapshot_") as tmpdir_raw:
-        tmpdir = Path(tmpdir_raw)
-        extracted_root = _extract_tar_archive(archive_path=archive_path, workdir=tmpdir)
-        src = _locate_bigann_snapshot_root(extracted_root)
-        if src is None:
-            raise FileNotFoundError(f"Unable to locate big-ann-benchmarks snapshot root in {archive_path}")
-        copytree_replace(src=src, dst=repo_dir)
-    return {"path": str(repo_dir.resolve()), "source": archive_meta["source"]}
-
-
-def download_ann_benchmarks(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
-    _validate_timeout(timeout_s)
-    fetched: dict[str, Any] = {}
-    for rel_path, dataset_name in ANN_HDF5_LAYOUT.items():
-        fetched[rel_path] = download_d1_dataset(
-            dataset_name=dataset_name,
-            output_path=(root / rel_path).resolve(),
-            force=force,
-            timeout_s=timeout_s,
-        )
-    return fetched
-
-
-def _ensure_bigann_runtime_dependencies() -> None:
-    missing: list[str] = []
-    for dist_name in _BIGANN_RUNTIME_DISTRIBUTIONS:
-        try:
-            importlib_metadata.version(dist_name)
-        except importlib_metadata.PackageNotFoundError:
-            missing.append(dist_name)
-    if missing:
-        joined = ", ".join(sorted(missing))
-        raise RuntimeError(
-            "Missing big-ann runtime dependencies: "
-            f"{joined}. Install MaxionBench with the datasets extra "
-            '(`python -m pip install -e ".[datasets]"`) or rebuild the '
-            "MaxionBench container image so D3 preparation runs without job-time pip installs."
-        )
-
-
-def download_bigann_yfcc(
-    *,
-    root: Path,
-    cache_dir: Path,
-    timeout_s: float,
-    force: bool,
-    requirements_file: str | None = None,
-) -> dict[str, Any]:
-    _validate_timeout(timeout_s)
-    dst = (root / "D3" / "yfcc-10M").resolve()
-    if dst.exists() and not force:
-        return {"path": str(dst), "source": "cache_hit"}
-
-    repo_dir = (cache_dir / "big-ann-benchmarks").resolve()
-    if not force:
-        cached_src = _find_existing_yfcc_dir(repo_dir)
-        if cached_src is not None:
-            copytree_replace(src=cached_src, dst=dst)
-            return {"path": str(dst), "source": "copied_from_snapshot_cache"}
-    stage_bigann_snapshot(
-        snapshot_url=BIGANN_SNAPSHOT_URL,
-        repo_dir=repo_dir,
-        cache_dir=cache_dir,
-        timeout_s=timeout_s,
-        force=force,
-    )
-    _ensure_bigann_runtime_dependencies()
-
-    run([sys.executable, "create_dataset.py", "--dataset", "yfcc-10M"], cwd=repo_dir)
-    src = _find_existing_yfcc_dir(repo_dir)
-    if src is None:
-        raise FileNotFoundError(
-            "Could not locate YFCC dataset under big-ann-benchmarks/data "
-            f"(tried {', '.join(_YFCC_DIR_CANDIDATES)})"
-        )
-    copytree_replace(src=src, dst=dst)
-    return {"path": str(dst), "source": "copied_from_bigann_snapshot"}
-
-
-def _find_existing_yfcc_dir(repo_dir: Path) -> Path | None:
-    data_root = repo_dir / "data"
-    if not data_root.exists():
-        return None
-    for name in _YFCC_DIR_CANDIDATES:
-        src = data_root / name
-        if src.exists():
-            return src
-    for name in _YFCC_DIR_CANDIDATES:
-        found = find_dir_by_name(root=data_root, name=name)
-        if found is not None:
-            return found
-    return None
 
 
 def _extract_archive(*, archive_path: Path, workdir: Path) -> Path:
@@ -351,23 +196,12 @@ def download_crag(*, root: Path, timeout_s: float, force: bool, max_examples: in
 
 def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[str] | None = None) -> Path:
     payload = {
-        "profile": "community_bootstrap",
+        "profile": "portable-agentic-bootstrap",
         "note": (
-            "Local/community dataset bootstrap. This tree is convenient for development, "
-            "but it does not replace the pinned paper-lane D2/D3/D4 dataset requirements in prompt.md."
+            "Portable-agentic dataset bootstrap for the Apple Silicon paper path. "
+            "This manifest tracks the local text corpora and one-time manual workspaces required by project.md."
         ),
         "requested_datasets": list(requested_datasets or []),
-        "D1": [
-            "glove-100-angular.hdf5",
-            "sift-128-euclidean.hdf5",
-            "gist-960-euclidean.hdf5",
-        ],
-        "D2": [
-            "deep-image-96-angular.hdf5",
-        ],
-        "D3": [
-            "yfcc-10M/",
-        ],
         "D4": {
             "beir": list(BEIR_DATASETS),
             "crag_source_archive": "crag_task_1_and_2_dev_v4.jsonl.bz2",
@@ -387,9 +221,6 @@ def download_datasets(
     cache_dir: Path,
     crag_examples: int,
     datasets: list[str] | None = None,
-    skip_d1d2: bool = False,
-    skip_d3: bool = False,
-    skip_d4: bool = False,
     force: bool = False,
     timeout_s: float = 60.0,
 ) -> dict[str, Any]:
@@ -400,35 +231,19 @@ def download_datasets(
     selected = {item.strip().lower() for item in (datasets or []) if item.strip()}
     selected_beir = [dataset for dataset in BEIR_DATASETS if dataset in selected]
     want_frames = "frames" in selected
-    if selected:
-        want_d1d2 = bool(selected & {"d1", "d2", "ann", "ann-hdf5"})
-        want_d3 = bool(selected & {"d3", "yfcc", "yfcc-10m"})
-        want_d4 = bool(selected_beir or selected & {"d4", "crag", "frames"})
-    else:
-        want_d1d2 = not skip_d1d2
-        want_d3 = not skip_d3
-        want_d4 = not skip_d4
+    want_d4 = True if not selected else bool(selected_beir or selected & {"d4", "crag", "frames"})
 
     summary: dict[str, Any] = {
         "root": str(root),
         "cache_dir": str(cache_dir),
         "requested_datasets": sorted(selected),
-        "community_bootstrap": True,
+        "portable_agentic_bootstrap": True,
         "warning": (
-            "This downloader populates the requested local/community layout. "
-            "Pinned paper-lane D2/D3/D4 datasets remain the source-of-truth in prompt.md/document.md."
+            "This downloader populates the portable-agentic text datasets and manual workspaces only. "
+            "The source-of-truth scope is project.md."
         ),
         "fetched": {},
     }
-    if want_d1d2:
-        summary["fetched"]["d1_d2"] = download_ann_benchmarks(root=root, timeout_s=timeout_s, force=force)
-    if want_d3:
-        summary["fetched"]["d3"] = download_bigann_yfcc(
-            root=root,
-            cache_dir=cache_dir,
-            timeout_s=timeout_s,
-            force=force,
-        )
     if want_d4:
         if not selected or selected_beir:
             summary["fetched"]["d4_beir"] = download_beir_subsets(
@@ -453,14 +268,11 @@ def download_datasets(
 
 
 def parse_args(argv: list[str] | None = None):
-    parser = ArgumentParser(description="Download the requested local/community dataset tree under dataset/")
+    parser = ArgumentParser(description="Download the portable-agentic dataset tree under dataset/")
     parser.add_argument("--root", type=Path, default=Path("dataset"))
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache"))
     parser.add_argument("--datasets", default="", help="Optional comma-separated dataset selection")
     parser.add_argument("--crag-examples", type=int, default=500)
-    parser.add_argument("--skip-d1d2", action="store_true")
-    parser.add_argument("--skip-d3", action="store_true")
-    parser.add_argument("--skip-d4", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=60.0)
     parser.add_argument("--json", action="store_true")
@@ -474,9 +286,6 @@ def main(argv: list[str] | None = None) -> int:
         cache_dir=args.cache_dir,
         crag_examples=int(args.crag_examples),
         datasets=[item for item in str(args.datasets).split(",") if item.strip()],
-        skip_d1d2=bool(args.skip_d1d2),
-        skip_d3=bool(args.skip_d3),
-        skip_d4=bool(args.skip_d4),
         force=bool(args.force),
         timeout_s=float(args.timeout_s),
     )

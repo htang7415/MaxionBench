@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import sys
+import time
 from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
@@ -33,7 +35,7 @@ class _TextEncoder:
     dim: int
     pooling: str
     normalize: bool
-    encode: Callable[[Sequence[str]], np.ndarray]
+    encode: Callable[[Sequence[str], Callable[[int, int], None] | None], np.ndarray]
 
 
 def precompute_text_embeddings(
@@ -65,8 +67,18 @@ def precompute_text_embeddings(
     )
 
     outputs: list[dict[str, Any]] = []
-    for dataset_dir in dataset_dirs:
+    total_datasets = len(dataset_dirs)
+    for dataset_idx, dataset_dir in enumerate(dataset_dirs, start=1):
         rows = _load_text_dataset_rows(dataset_dir)
+        print(
+            (
+                f"[precompute-text-embeddings] dataset {dataset_idx}/{total_datasets}: "
+                f"{dataset_dir} docs={len(rows.doc_ids)} queries={len(rows.query_ids)}"
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        started_at = time.perf_counter()
         outputs.append(
             _write_embedding_artifacts(
                 dataset_dir=dataset_dir,
@@ -75,7 +87,17 @@ def precompute_text_embeddings(
                 batch_size=batch_size,
                 max_length=max_length,
                 force=force,
+                dataset_idx=dataset_idx,
+                total_datasets=total_datasets,
             )
+        )
+        print(
+            (
+                f"[precompute-text-embeddings] finished dataset {dataset_idx}/{total_datasets}: "
+                f"{dataset_dir} elapsed_s={time.perf_counter() - started_at:.1f}"
+            ),
+            file=sys.stderr,
+            flush=True,
         )
 
     processed = sum(1 for row in outputs if row["status"] == "processed")
@@ -100,9 +122,12 @@ def _write_embedding_artifacts(
     batch_size: int,
     max_length: int,
     force: bool,
+    dataset_idx: int,
+    total_datasets: int,
 ) -> dict[str, Any]:
     embedding_dir = dataset_dir / "embeddings" / embedding_model_slug(encoder.model_id)
     meta_path = embedding_dir / "meta.json"
+    progress_path = embedding_dir / "progress.json"
     doc_vectors_path = embedding_dir / "doc_vectors.npy"
     query_vectors_path = embedding_dir / "query_vectors.npy"
     doc_ids_sha256 = _ordered_ids_sha256(rows.doc_ids)
@@ -125,14 +150,54 @@ def _write_embedding_artifacts(
                 "dim": encoder.dim,
             }
 
-    doc_vectors = encoder.encode(rows.doc_texts)
-    query_vectors = encoder.encode(rows.query_texts)
+    embedding_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_progress(*, stage: str, done: int | None = None, total: int | None = None) -> None:
+        payload: dict[str, Any] = {
+            "schema_version": _EMBEDDING_SCHEMA_VERSION,
+            "precompute_version": _PRECOMPUTE_VERSION,
+            "model_id": encoder.model_id,
+            "dataset_dir": str(dataset_dir.resolve()),
+            "embedding_dir": str(embedding_dir.resolve()),
+            "dataset_index": dataset_idx,
+            "dataset_count": total_datasets,
+            "stage": stage,
+            "doc_count": len(rows.doc_ids),
+            "query_count": len(rows.query_ids),
+            "batch_size": batch_size,
+            "max_length": max_length,
+            "updated_at_utc": _utc_now_iso(),
+        }
+        if done is not None:
+            payload["items_done"] = int(done)
+        if total is not None:
+            payload["items_total"] = int(total)
+        progress_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _progress_callback(stage: str) -> Callable[[int, int], None]:
+        state = {"last_done": 0}
+
+        def _callback(done: int, total: int) -> None:
+            if done < total and (done - state["last_done"]) < max(batch_size * 128, 1):
+                return
+            state["last_done"] = int(done)
+            _write_progress(stage=stage, done=done, total=total)
+
+        return _callback
+
+    try:
+        _write_progress(stage="encoding_docs", done=0, total=len(rows.doc_ids))
+        doc_vectors = encoder.encode(rows.doc_texts, _progress_callback("encoding_docs"))
+        _write_progress(stage="encoding_queries", done=0, total=len(rows.query_ids))
+        query_vectors = encoder.encode(rows.query_texts, _progress_callback("encoding_queries"))
+    except Exception:
+        _write_progress(stage="failed")
+        raise
     if doc_vectors.shape != (len(rows.doc_ids), encoder.dim):
         raise ValueError(f"doc embedding shape mismatch for {dataset_dir}: {doc_vectors.shape}")
     if query_vectors.shape != (len(rows.query_ids), encoder.dim):
         raise ValueError(f"query embedding shape mismatch for {dataset_dir}: {query_vectors.shape}")
 
-    embedding_dir.mkdir(parents=True, exist_ok=True)
     np.save(doc_vectors_path, np.asarray(doc_vectors, dtype=np.float32))
     np.save(query_vectors_path, np.asarray(query_vectors, dtype=np.float32))
     meta = {
@@ -153,6 +218,8 @@ def _write_embedding_artifacts(
         "created_at_utc": _utc_now_iso(),
     }
     meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if progress_path.exists():
+        progress_path.unlink()
     return {
         "dataset_dir": str(dataset_dir.resolve()),
         "embedding_dir": str(embedding_dir.resolve()),
@@ -243,11 +310,12 @@ def _load_text_encoder(
     if dim < 1:
         raise ValueError(f"unable to determine embedding dimension for {model_id}")
 
-    def _encode(texts: Sequence[str]) -> np.ndarray:
+    def _encode(texts: Sequence[str], progress_fn: Callable[[int, int], None] | None = None) -> np.ndarray:
         if not texts:
             return np.zeros((0, dim), dtype=np.float32)
-        rows: list[np.ndarray] = []
-        for start in range(0, len(texts), batch_size):
+        total = len(texts)
+        rows = np.empty((total, dim), dtype=np.float32)
+        for start in range(0, total, batch_size):
             batch = list(texts[start : start + batch_size])
             encoded = tokenizer(
                 batch,
@@ -264,8 +332,11 @@ def _load_text_encoder(
                 pooled = (hidden * attention).sum(dim=1) / attention.sum(dim=1).clamp(min=1)
                 if normalize:
                     pooled = F.normalize(pooled, p=2, dim=1)
-            rows.append(pooled.detach().cpu().numpy().astype(np.float32, copy=False))
-        return np.concatenate(rows, axis=0)
+            batch_rows = pooled.detach().cpu().numpy().astype(np.float32, copy=False)
+            rows[start : start + len(batch)] = batch_rows
+            if progress_fn is not None:
+                progress_fn(start + len(batch), total)
+        return rows
 
     return _TextEncoder(
         model_id=model_id,

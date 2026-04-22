@@ -10,6 +10,5 @@ crag_url: https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag
 beir_subsets:
   - scifact
   - fiqa
-  - nfcorpus
 crag_slice_queries: 500
 crag_slice_docs: 437344

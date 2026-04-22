@@ -1,6 +1,0 @@
-dataset_bundle: D2
-source_version: v0.1
-source_checksum_sha256: 0ca4013e61579e79a67c0be5947a5739ae8f14f76c485cd6b0430561a41218e9
-approx_bytes_dataset: 21474836480
-approx_bytes_engine: 42949672960
-approx_bytes_temp: 8589934592
