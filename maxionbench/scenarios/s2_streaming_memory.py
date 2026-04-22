@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import time
 from typing import Any, Mapping
 
@@ -38,6 +39,12 @@ class StreamingMemoryResult:
     stale_answer_rate_at_5s: float
     p95_visibility_latency_ms: float
     event_count: int
+
+    def __post_init__(self) -> None:
+        if math.isnan(self.freshness_hit_at_5s) and math.isnan(self.stale_answer_rate_at_5s):
+            return
+        if not np.isclose(self.stale_answer_rate_at_5s, 1.0 - self.freshness_hit_at_5s, atol=1e-9):
+            raise ValueError("stale_answer_rate_at_5s must equal 1 - freshness_hit_at_5s")
 
 
 def run(
@@ -103,10 +110,11 @@ def run(
         hit_5s.append(float(probe_hit_5s))
 
     visibility_summary = latency_summary(visibility_latencies_ms)
+    freshness_hit_at_1s = float(np.mean(np.asarray(hit_1s, dtype=np.float64))) if hit_1s else 0.0
     freshness_hit_at_5s = float(np.mean(np.asarray(hit_5s, dtype=np.float64))) if hit_5s else 0.0
     return StreamingMemoryResult(
         static=static,
-        freshness_hit_at_1s=float(np.mean(np.asarray(hit_1s, dtype=np.float64))) if hit_1s else 0.0,
+        freshness_hit_at_1s=freshness_hit_at_1s,
         freshness_hit_at_5s=freshness_hit_at_5s,
         stale_answer_rate_at_5s=1.0 - freshness_hit_at_5s if hit_5s else 0.0,
         p95_visibility_latency_ms=visibility_summary["p95_ms"],

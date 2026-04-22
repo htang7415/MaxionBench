@@ -221,6 +221,9 @@ def test_run_from_config_portable_s1_smoke(tmp_path: Path) -> None:
     assert int(resolved["warmup_s"]) == 10
     assert int(resolved["steady_state_s"]) == 10
     assert sorted(set(frame["clients_read"].astype(int).tolist())) == [1, 4, 8]
+    assert str(frame.iloc[0]["budget_level"]) == "b0"
+    assert str(frame.iloc[0]["embedding_model"]) == "BAAI/bge-small-en-v1.5"
+    assert float(frame.iloc[0]["task_cost_est"]) >= 0.0
 
 
 def test_run_from_config_portable_s2_smoke(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -283,6 +286,10 @@ def test_run_from_config_portable_s2_smoke(tmp_path: Path, monkeypatch) -> None:
     assert payload["stale_answer_rate_at_5s"] >= 0.0
     assert payload["p95_visibility_latency_ms"] >= 0.0
     assert metadata["ground_truth_metric"] == "ndcg_at_10"
+    assert float(frame.iloc[0]["freshness_hit_at_1s"]) >= 0.0
+    assert float(frame.iloc[0]["freshness_hit_at_5s"]) >= 0.0
+    assert float(frame.iloc[0]["stale_answer_rate_at_5s"]) >= 0.0
+    assert float(frame.iloc[0]["p95_visibility_latency_ms"]) >= 0.0
 
 
 def test_run_from_config_portable_s3_smoke(tmp_path: Path) -> None:
@@ -319,6 +326,7 @@ def test_run_from_config_portable_s3_smoke(tmp_path: Path) -> None:
     assert payload["evidence_coverage_at_20"] >= 0.0
     assert payload["task_cost_est"] >= 0.0
     assert metadata["ground_truth_metric"] == "evidence_coverage@10"
+    assert float(frame.iloc[0]["evidence_coverage_at_10"]) >= 0.0
 
 
 def test_preprocess_frames_portable_builds_bounded_processed_dataset(tmp_path: Path) -> None:

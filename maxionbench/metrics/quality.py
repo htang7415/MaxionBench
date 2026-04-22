@@ -9,7 +9,7 @@ from typing import Sequence
 def recall_at_k(retrieved_ids: Sequence[str], ground_truth_ids: Sequence[str], k: int = 10) -> float:
     if k <= 0:
         raise ValueError("k must be positive")
-    gt = set(ground_truth_ids[:k])
+    gt = set(ground_truth_ids)
     if not gt:
         return 0.0
     hits = len(set(retrieved_ids[:k]).intersection(gt))

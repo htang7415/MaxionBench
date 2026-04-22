@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -39,13 +40,17 @@ def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
     working = frame.copy()
     working["__search_payload"] = working.get("search_params_json", pd.Series(dtype=str)).map(_extract_search_payload)
     working["profile"] = working.get("__meta_profile", pd.Series(dtype=str)).astype(str)
-    working["budget_level"] = working["__search_payload"].map(lambda payload: str(payload.get("budget_level") or ""))  # type: ignore[union-attr]
-    fallback_budget = working.get("__meta_budget_level", pd.Series(dtype=str)).astype(str)
+    working["budget_level"] = _coalesced_string_column(working, "budget_level")
+    budget_from_payload = working["__search_payload"].map(lambda payload: str(payload.get("budget_level") or ""))  # type: ignore[union-attr]
+    working.loc[working["budget_level"] == "", "budget_level"] = budget_from_payload[working["budget_level"] == ""]
+    fallback_budget = _normalized_string_series(working.get("__meta_budget_level", pd.Series(dtype=object)))
     working.loc[working["budget_level"] == "", "budget_level"] = fallback_budget[working["budget_level"] == ""]
-    working["embedding_model"] = working["__search_payload"].map(lambda payload: str(payload.get("embedding_model") or ""))  # type: ignore[union-attr]
-    fallback_embedding = working.get("__meta_embedding_model", pd.Series(dtype=str)).astype(str)
+    working["embedding_model"] = _coalesced_string_column(working, "embedding_model")
+    embedding_from_payload = working["__search_payload"].map(lambda payload: str(payload.get("embedding_model") or ""))  # type: ignore[union-attr]
+    working.loc[working["embedding_model"] == "", "embedding_model"] = embedding_from_payload[working["embedding_model"] == ""]
+    fallback_embedding = _normalized_string_series(working.get("__meta_embedding_model", pd.Series(dtype=object)))
     working.loc[working["embedding_model"] == "", "embedding_model"] = fallback_embedding[working["embedding_model"] == ""]
-    working["task_cost_est"] = working["__search_payload"].map(lambda payload: _payload_float(payload, "task_cost_est"))
+    working["task_cost_est"] = _coalesced_float_column(working, "task_cost_est")
     working["primary_quality_metric"] = working["__search_payload"].map(lambda payload: str(payload.get("primary_quality_metric") or ""))  # type: ignore[union-attr]
     working["primary_quality_value"] = working["__search_payload"].map(lambda payload: _payload_float(payload, "primary_quality_value"))
     for key in (
@@ -61,7 +66,7 @@ def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
         "embedding_cost_est",
         "llm_context_cost_est",
     ):
-        working[key] = working["__search_payload"].map(lambda payload, item=key: _payload_float(payload, item))
+        working[key] = _coalesced_float_column(working, key)
 
     mask = working["scenario"].astype(str).isin(_PORTABLE_SCENARIOS) | (working["profile"] == "portable-agentic")
     portable = working.loc[mask].copy()
@@ -209,27 +214,27 @@ def _winner_rows(*, frame: pd.DataFrame) -> pd.DataFrame:
         return frame.copy()
     working = frame.copy()
     working = working.sort_values(
-        ["scenario", "budget_sort", "engine", "embedding_model", "task_cost_est", "p99_ms", "qps"],
-        ascending=[True, True, True, True, True, True, False],
+        ["scenario", "budget_sort", "clients_read", "engine", "embedding_model", "task_cost_est", "p99_ms", "qps"],
+        ascending=[True, True, True, True, True, True, True, False],
         kind="stable",
     )
     grouped = (
-        working.groupby(["scenario", "budget_level", "engine", "embedding_model"], dropna=False, as_index=False)
+        working.groupby(["scenario", "budget_level", "clients_read", "engine", "embedding_model"], dropna=False, as_index=False)
         .first()
         .reset_index(drop=True)
     )
-    grouped["rank_within_budget"] = grouped.groupby(["scenario", "budget_level"], dropna=False)["task_cost_est"].rank(
+    grouped["rank_within_budget"] = grouped.groupby(["scenario", "budget_level", "clients_read"], dropna=False)["task_cost_est"].rank(
         method="dense",
         ascending=True,
     )
-    return grouped.sort_values(["scenario", "budget_sort", "rank_within_budget", "engine"], kind="stable").reset_index(drop=True)
+    return grouped.sort_values(["scenario", "budget_sort", "clients_read", "rank_within_budget", "engine"], kind="stable").reset_index(drop=True)
 
 
 def _stability_table(*, winners: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for scenario, scenario_frame in winners.groupby("scenario", dropna=False):
         scenario_rows = scenario_frame.copy()
-        key_cols = ["engine", "embedding_model"]
+        key_cols = ["clients_read", "engine", "embedding_model"]
         for left_budget, right_budget in _BUDGET_PAIRS:
             left = scenario_rows.loc[scenario_rows["budget_level"] == left_budget, key_cols + ["task_cost_est", "rank_within_budget"]]
             right = scenario_rows.loc[scenario_rows["budget_level"] == right_budget, key_cols + ["task_cost_est", "rank_within_budget"]]
@@ -262,10 +267,11 @@ def _stability_table(*, winners: pd.DataFrame) -> pd.DataFrame:
                     "top1_agreement": float(bool(left_top1 & right_top1)),
                     "top2_agreement": float(bool(left_top2 & right_top2)),
                     "common_engine_embedding_pairs": int(len(merged)),
+                    "clients_read_values": ",".join(sorted({str(value) for value in merged["clients_read"].tolist()})),
                 }
             )
     return pd.DataFrame(rows).sort_values(["scenario", "budget_pair"], kind="stable").reset_index(drop=True) if rows else pd.DataFrame(
-        columns=["scenario", "budget_pair", "spearman_rho", "top1_agreement", "top2_agreement", "common_engine_embedding_pairs"]
+        columns=["scenario", "budget_pair", "spearman_rho", "top1_agreement", "top2_agreement", "common_engine_embedding_pairs", "clients_read_values"]
     )
 
 
@@ -365,7 +371,7 @@ def _payload_float(payload: Mapping[str, Any], key: str) -> float:
 
 def _spearman_rank_correlation(left: list[float], right: list[float]) -> float:
     if len(left) != len(right) or len(left) < 2:
-        return 1.0 if len(left) == len(right) == 1 else float("nan")
+        return float("nan")
     left_arr = np.asarray(left, dtype=np.float64)
     right_arr = np.asarray(right, dtype=np.float64)
     left_centered = left_arr - float(np.mean(left_arr))
@@ -374,6 +380,21 @@ def _spearman_rank_correlation(left: list[float], right: list[float]) -> float:
     if denom <= 0.0:
         return float("nan")
     return float(np.dot(left_centered, right_centered) / denom)
+
+
+def _coalesced_float_column(frame: pd.DataFrame, key: str) -> pd.Series:
+    direct = pd.to_numeric(frame.get(key, pd.Series(dtype=float)), errors="coerce")
+    fallback = frame["__search_payload"].map(lambda payload, item=key: _payload_float(payload, item))
+    return direct.where(~direct.isna(), fallback)
+
+
+def _coalesced_string_column(frame: pd.DataFrame, key: str) -> pd.Series:
+    return _normalized_string_series(frame.get(key, pd.Series(dtype=object)))
+
+
+def _normalized_string_series(series: pd.Series) -> pd.Series:
+    normalized = series.fillna("").astype(str)
+    return normalized.map(lambda value: "" if value.strip().lower() in {"", "none", "nan"} else value)
 
 
 def _set_plot_style() -> None:

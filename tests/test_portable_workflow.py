@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from maxionbench.tools import portable_workflow as workflow_mod
@@ -37,6 +38,18 @@ def test_portable_setup_runs_services_and_conformance(tmp_path: Path, monkeypatc
             ],
         ),
     ]
+
+
+def test_portable_setup_raises_when_services_fail(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI", raising=False)
+    monkeypatch.setattr(workflow_mod, "services_main", lambda argv=None: 1)
+    monkeypatch.setattr(workflow_mod, "conformance_matrix_main", lambda argv=None: 0)
+
+    try:
+        workflow_mod.portable_setup(repo_root=tmp_path)
+        raise AssertionError("expected portable_setup to fail")
+    except RuntimeError as exc:
+        assert str(exc) == "portable services startup failed with exit code 1"
 
 
 def test_portable_data_runs_curated_download_and_embedding_jobs(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -146,3 +159,13 @@ def test_portable_finalize_runs_report_archive_and_shutdown(tmp_path: Path, monk
         ],
     )
     assert calls[2] == ("services", ["down", "--profile", "portable"])
+
+
+def test_portable_workflow_main_emits_single_json_error_on_failure(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(workflow_mod, "portable_setup", lambda repo_root: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    code = workflow_mod.main(["setup", "--repo-root", str(tmp_path), "--json"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"error": "boom"}

@@ -1667,6 +1667,14 @@ def _select_portable_quality_rows(
                 clients_write=cfg.clients_write,
                 quality_target=target,
                 search_params_json=json.dumps(run.search_params, sort_keys=True),
+                budget_level=_portable_row_string(run.search_params, "budget_level"),
+                embedding_model=_portable_row_string(run.search_params, "embedding_model"),
+                task_cost_est=_portable_row_float(run.search_params, "task_cost_est"),
+                freshness_hit_at_1s=_portable_row_float(run.search_params, "freshness_hit_at_1s"),
+                freshness_hit_at_5s=_portable_row_float(run.search_params, "freshness_hit_at_5s"),
+                stale_answer_rate_at_5s=_portable_row_float(run.search_params, "stale_answer_rate_at_5s"),
+                p95_visibility_latency_ms=_portable_row_float(run.search_params, "p95_visibility_latency_ms"),
+                evidence_coverage_at_10=_portable_row_float(run.search_params, "evidence_coverage_at_10"),
                 recall_at_10=run.recall_at_10,
                 ndcg_at_10=run.ndcg_at_10,
                 mrr_at_10=run.mrr_at_10,
@@ -1738,6 +1746,22 @@ def _portable_s2_freshness_floor(budget_level: str | None) -> float:
     if normalized == "b2":
         return 0.8
     return 0.0
+
+
+def _portable_row_string(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _portable_row_float(payload: Mapping[str, Any], key: str) -> float:
+    value = payload.get(key)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _s1_sweep_diagnostics_payload(
