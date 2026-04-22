@@ -5,11 +5,18 @@ artifacts/
 results/
 results_quick_check/
 logs/
+._*
 
 # Python/package build outputs
 build/
 *.egg-info/
 maxionbench.egg-info/
+
+# Generated workflow outputs
+dataset/processed/
+artifacts/lancedb/
+artifacts/run_matrix/
+artifacts/runs/
 
 # Python bytecode/test caches
 __pycache__/

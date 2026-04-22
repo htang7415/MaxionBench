@@ -12,6 +12,8 @@ def test_command_md_is_portable_agentic_operator_doc() -> None:
     assert "Docker is still used only for the service-backed engines in the Mac mini lane: `qdrant` and `pgvector`." in text
     assert "Use this command once:" in text
     assert 'pip install -e ".[dev,engines,reporting,datasets,embeddings]"' in text
+    assert 'pip install -e ".[dev,engines,reporting,datasets,embeddings]" "numpy==1.26.4" "transformers<5"' in text
+    assert "On Intel macOS (`x86_64`), use the compatible embedding stack:" in text
     assert "maxionbench portable-workflow setup --json" in text
     assert "maxionbench portable-workflow data --json" in text
     assert "maxionbench submit-portable --budget b0 --json" in text
