@@ -59,6 +59,11 @@ def _has_jsonish_payload(root: Path) -> bool:
     return any(path.is_file() and path.suffix.lower() in {".json", ".jsonl"} for path in root.iterdir())
 
 
+def _require_success(step: str, exit_code: int | None) -> None:
+    if exit_code not in (None, 0):
+        raise RuntimeError(f"{step} failed with exit code {exit_code}")
+
+
 def _missing_frames_inputs(*, repo_root: Path) -> list[str]:
     frames_root = (repo_root / _DEFAULT_FRAMES_ROOT).resolve()
     kilt_root = (repo_root / _DEFAULT_KILT_ROOT).resolve()
@@ -114,18 +119,24 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     lancedb_uri = ensure_lancedb_service_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
-        services_main(["up", "--profile", "portable", "--wait", "--json"])
-        conformance_matrix_main(
-            [
-                "--config-dir",
-                "configs/conformance",
-                "--out-dir",
-                "artifacts/conformance",
-                "--timeout-s",
-                "30",
-                "--adapters",
-                "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
-            ]
+        _require_success(
+            "portable services startup",
+            services_main(["up", "--profile", "portable", "--wait", "--json"]),
+        )
+        _require_success(
+            "portable conformance matrix",
+            conformance_matrix_main(
+                [
+                    "--config-dir",
+                    "configs/conformance",
+                    "--out-dir",
+                    "artifacts/conformance",
+                    "--timeout-s",
+                    "30",
+                    "--adapters",
+                    "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
+                ]
+            ),
         )
     return {
         "mode": "portable-setup",
@@ -140,15 +151,18 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     ensure_lancedb_service_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
-        download_datasets_main(
-            [
-                "--root",
-                "dataset",
-                "--cache-dir",
-                ".cache",
-                "--datasets",
-                "scifact,fiqa,crag,frames",
-            ]
+        _require_success(
+            "portable dataset download",
+            download_datasets_main(
+                [
+                    "--root",
+                    "dataset",
+                    "--cache-dir",
+                    ".cache",
+                    "--datasets",
+                    "scifact,fiqa,crag,frames",
+                ]
+            ),
         )
         d4_jobs = _preprocess_portable_d4()
         missing_frames_inputs = _missing_frames_inputs(repo_root=resolved_repo_root)
@@ -160,15 +174,18 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
                 "missing_inputs": missing_frames_inputs,
             }
         else:
-            preprocess_frames_portable_main(
-                [
-                    "--frames-root",
-                    _DEFAULT_FRAMES_ROOT,
-                    "--kilt-root",
-                    _DEFAULT_KILT_ROOT,
-                    "--out",
-                    _DEFAULT_FRAMES_PORTABLE_OUT,
-                ]
+            _require_success(
+                "portable FRAMES preprocessing",
+                preprocess_frames_portable_main(
+                    [
+                        "--frames-root",
+                        _DEFAULT_FRAMES_ROOT,
+                        "--kilt-root",
+                        _DEFAULT_KILT_ROOT,
+                        "--out",
+                        _DEFAULT_FRAMES_PORTABLE_OUT,
+                    ]
+                ),
             )
             frames_portable = {
                 "status": "processed",
@@ -180,7 +197,10 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
             embedding_inputs.append(_DEFAULT_FRAMES_PORTABLE_OUT)
         for input_path in embedding_inputs:
             for model_id in _EMBEDDING_MODELS:
-                precompute_text_embeddings_main(["--input", input_path, "--model-id", model_id])
+                _require_success(
+                    f"portable embedding precompute for {input_path} with {model_id}",
+                    precompute_text_embeddings_main(["--input", input_path, "--model-id", model_id]),
+                )
                 embedding_jobs.append({"input": input_path, "model_id": model_id})
     return {
         "mode": "portable-data",
@@ -201,19 +221,25 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
     figures_dir = (resolved_repo_root / _DEFAULT_FIGURES_DIR).resolve()
     with _pushd(resolved_repo_root):
         generate_portable_report_bundle(input_dir=runs_dir, out_dir=figures_dir)
-        archive_main(
-            [
-                "--runs-dir",
-                _DEFAULT_RUNS_DIR,
-                "--figures-dir",
-                _DEFAULT_FIGURES_DIR,
-                "--frames-portable-dir",
-                _DEFAULT_FRAMES_PORTABLE_OUT,
-                "--conformance-dir",
-                "artifacts/conformance",
-            ]
+        _require_success(
+            "portable archive build",
+            archive_main(
+                [
+                    "--runs-dir",
+                    _DEFAULT_RUNS_DIR,
+                    "--figures-dir",
+                    _DEFAULT_FIGURES_DIR,
+                    "--frames-portable-dir",
+                    _DEFAULT_FRAMES_PORTABLE_OUT,
+                    "--conformance-dir",
+                    "artifacts/conformance",
+                ]
+            ),
         )
-        services_main(["down", "--profile", "portable"])
+        _require_success(
+            "portable services shutdown",
+            services_main(["down", "--profile", "portable"]),
+        )
     return {
         "mode": "portable-finalize",
         "repo_root": str(resolved_repo_root),
@@ -233,12 +259,19 @@ def parse_args(argv: list[str] | None = None) -> Any:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo_root = Path(args.repo_root)
-    if args.phase == "setup":
-        summary = portable_setup(repo_root=repo_root)
-    elif args.phase == "data":
-        summary = portable_data(repo_root=repo_root)
-    else:
-        summary = portable_finalize(repo_root=repo_root)
+    try:
+        if args.phase == "setup":
+            summary = portable_setup(repo_root=repo_root)
+        elif args.phase == "data":
+            summary = portable_data(repo_root=repo_root)
+        else:
+            summary = portable_finalize(repo_root=repo_root)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        if args.json:
+            print(json.dumps({"error": str(exc)}, indent=2))
+        else:
+            print(f"error: {exc}")
+        return 1
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

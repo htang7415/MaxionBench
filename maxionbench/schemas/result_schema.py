@@ -39,6 +39,9 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_HARDWARE_RUNTIME_FIELDS = (
     "hostname",
     "platform",
+    "apple_silicon_model",
+    "macos_version",
+    "docker_version",
     "python_version",
     "cpu_count_logical",
     "slurm_job_id",
@@ -82,6 +85,14 @@ class ResultRow:
     errors: int
     rtt_baseline_ms_p50: float
     rtt_baseline_ms_p99: float
+    budget_level: str | None = None
+    embedding_model: str | None = None
+    task_cost_est: float = float("nan")
+    freshness_hit_at_1s: float = float("nan")
+    freshness_hit_at_5s: float = float("nan")
+    stale_answer_rate_at_5s: float = float("nan")
+    p95_visibility_latency_ms: float = float("nan")
+    evidence_coverage_at_10: float = float("nan")
     setup_elapsed_s: float = 0.0
     warmup_target_s: float = 0.0
     warmup_elapsed_s: float = 0.0
@@ -147,6 +158,8 @@ class RunMetadata:
             raise ValueError("c_llm_in must be >= 0")
         if self.clients_read < 0 or self.clients_write < 0:
             raise ValueError("client counts must be non-negative")
+        if self.budget_level is not None and self.budget_level not in {"b0", "b1", "b2"}:
+            raise ValueError("budget_level must be one of b0,b1,b2 when provided")
         missing = [name for name in REQUIRED_METADATA_FIELDS if getattr(self, name, None) is None]
         if missing:
             raise ValueError(f"missing required metadata fields: {missing}")

@@ -39,6 +39,9 @@ def test_run_metadata_validate_accepts_valid_hardware_runtime_mapping() -> None:
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -70,6 +73,9 @@ def test_run_metadata_validate_requires_hardware_runtime_keys() -> None:
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -86,6 +92,9 @@ def test_run_metadata_validate_rejects_blank_gpu_omission_reason_when_omitted() 
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -104,6 +113,9 @@ def test_run_metadata_validate_rejects_unknown_rtt_baseline_request_profile() ->
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -127,6 +139,9 @@ def test_run_metadata_validate_accepts_dataset_cache_checksum_provenance() -> No
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -158,6 +173,9 @@ def test_run_metadata_validate_rejects_invalid_dataset_cache_checksum_provenance
     payload = {
         "hostname": "test-host",
         "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
         "python_version": "3.11.0",
         "cpu_count_logical": 8,
         "slurm_job_id": None,
@@ -182,4 +200,24 @@ def test_run_metadata_validate_rejects_invalid_dataset_cache_checksum_provenance
         }
     )
     with pytest.raises(ValueError, match="expected_sha256 must equal actual_sha256"):
+        metadata.validate()
+
+
+def test_run_metadata_validate_rejects_unknown_budget_level() -> None:
+    payload = {
+        "hostname": "test-host",
+        "platform": "linux",
+        "apple_silicon_model": None,
+        "macos_version": None,
+        "docker_version": None,
+        "python_version": "3.11.0",
+        "cpu_count_logical": 8,
+        "slurm_job_id": None,
+        "slurm_array_task_id": None,
+        "container_runtime_hint": "docker",
+        "total_memory_bytes": 1024,
+        "gpu_count": 0,
+    }
+    metadata = RunMetadata(**{**_base_metadata(hardware_runtime=payload).__dict__, "budget_level": "b3"})
+    with pytest.raises(ValueError, match="budget_level must be one of b0,b1,b2 when provided"):
         metadata.validate()

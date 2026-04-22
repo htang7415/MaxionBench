@@ -8,6 +8,9 @@ def test_collect_system_info_has_expected_keys() -> None:
     required = {
         "hostname",
         "platform",
+        "apple_silicon_model",
+        "macos_version",
+        "docker_version",
         "python_version",
         "cpu_count_logical",
         "slurm_job_id",

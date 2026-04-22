@@ -11,6 +11,7 @@ import yaml
 from maxionbench.cli import main as cli_main
 from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
+from maxionbench.reports.portable_exports import _extract_portable_frame, _spearman_rank_correlation, _winner_rows
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
 
 
@@ -239,3 +240,72 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert task_cost_meta["mode"] == "portable-agentic"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns
+
+
+def test_winner_rows_keeps_clients_read_dimension() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b1",
+                "budget_sort": 1,
+                "clients_read": 1,
+                "engine": "engine-a",
+                "embedding_model": "emb",
+                "task_cost_est": 3.0,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b1",
+                "budget_sort": 1,
+                "clients_read": 8,
+                "engine": "engine-a",
+                "embedding_model": "emb",
+                "task_cost_est": 1.0,
+                "p99_ms": 12.0,
+                "qps": 90.0,
+            },
+        ]
+    )
+
+    winners = _winner_rows(frame=frame)
+
+    assert sorted(winners["clients_read"].astype(int).tolist()) == [1, 8]
+
+
+def test_spearman_rank_correlation_is_nan_for_single_observation() -> None:
+    assert np.isnan(_spearman_rank_correlation([1.0], [1.0]))
+
+
+def test_extract_portable_frame_falls_back_when_string_columns_are_none() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "run_id": "run-1",
+                "scenario": "s1_single_hop",
+                "engine": "mock",
+                "repeat_idx": 0,
+                "quality_target": 0.0,
+                "search_params_json": json.dumps(
+                    {
+                        "budget_level": "b1",
+                        "embedding_model": "BAAI/bge-small-en-v1.5",
+                        "task_cost_est": 1.25,
+                    },
+                    sort_keys=True,
+                ),
+                "budget_level": None,
+                "embedding_model": None,
+                "__meta_profile": "portable-agentic",
+                "__meta_budget_level": "b0",
+                "__meta_embedding_model": "fallback-embedding",
+            }
+        ]
+    )
+
+    portable = _extract_portable_frame(frame=frame)
+
+    assert portable.iloc[0]["budget_level"] == "b1"
+    assert portable.iloc[0]["embedding_model"] == "BAAI/bge-small-en-v1.5"

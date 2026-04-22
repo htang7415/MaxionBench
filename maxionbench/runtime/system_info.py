@@ -13,6 +13,9 @@ def collect_system_info() -> dict[str, Any]:
     info = {
         "hostname": socket.gethostname(),
         "platform": platform.platform(),
+        "apple_silicon_model": _apple_silicon_model(),
+        "macos_version": _macos_version(),
+        "docker_version": _docker_version(),
         "python_version": platform.python_version(),
         "cpu_count_logical": os.cpu_count() or 0,
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -74,3 +77,41 @@ def _path_exists(path: str) -> bool:
         return os.path.exists(path)
     except Exception:
         return False
+
+
+def _apple_silicon_model() -> str | None:
+    if platform.system() != "Darwin":
+        return None
+    model = _run_command(["sysctl", "-n", "machdep.cpu.brand_string"])
+    if model:
+        return model
+    processor = str(platform.processor()).strip()
+    return processor or None
+
+
+def _macos_version() -> str | None:
+    if platform.system() != "Darwin":
+        return None
+    version = str(platform.mac_ver()[0]).strip()
+    return version or None
+
+
+def _docker_version() -> str | None:
+    return _run_command(["docker", "--version"])
+
+
+def _run_command(argv: list[str]) -> str | None:
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    output = str(proc.stdout or "").strip()
+    return output or None
