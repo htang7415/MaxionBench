@@ -1,6 +1,6 @@
 # MaxionBench
 
-MaxionBench is a reproducible single-node benchmark study for vector databases and retrieval infrastructure used in RAG systems.
+MaxionBench is a reproducible single-node benchmark study for retrieval infrastructure used in agentic applications on a single Apple Silicon Mac mini.
 
 ## Benchmark study
 
@@ -8,38 +8,30 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 
 ## Engines
 
-| Engine | Category | Primary role in study | Notes |
+| Engine | Category | Role in portable study | Notes |
 | --- | --- | --- | --- |
-| Qdrant | vector-first server | ANN, filtered ANN, churn | networked engine |
-| Milvus | vector-first server | ANN, filtered ANN, churn, GPU-index track if available | networked engine |
-| Weaviate | hybrid/search-first | ANN and retrieval workflows | networked engine |
-| OpenSearch k-NN | hybrid/search-first | ANN and hybrid retrieval workflows | networked engine |
-| PostgreSQL + pgvector | DB-first | ANN baseline in relational setting | networked engine |
-| LanceDB-service | service wrapper | comparable service-mode LanceDB result | primary LanceDB comparison mode |
-| LanceDB-inproc | embedded/local | upper-bound local LanceDB result | secondary reference mode |
-| FAISS CPU | baseline | exact/strong ANN baseline | also used for exact ground truth where needed |
-| FAISS GPU | baseline | GPU ANN baseline | only when GPU is available |
+| FAISS CPU | local baseline | exact/strong local baseline | paper matrix engine |
+| LanceDB-inproc | embedded/local | upper-bound local reference | paper matrix engine |
+| LanceDB-service | service wrapper | primary comparable LanceDB mode | paper matrix engine |
+| PostgreSQL + pgvector | DB-first | service-backed portable engine | paper matrix engine |
+| Qdrant | vector-first server | service-backed portable engine | paper matrix engine |
 
 ## Datasets
 
-| Bundle | Source | Contents | Default scale | Study role | Notes |
-| --- | --- | --- | --- | --- | --- |
-| D1 | ann-benchmarks HDF5 | `glove-100-angular`, `sift-128-euclidean`, `gist-960-euclidean` | benchmark-native | ANN microbench set | uses benchmark-provided or exact FAISS Flat ground truth |
-| D2 | ann-benchmarks HDF5 | `deep-image-96-angular` | 10M | large ANN anchor | pinned large-scale ANN dataset for v0.1 |
-| D3 | `big-ann-benchmarks` | `yfcc-10M` | 10M | filtered ANN and churn robustness | preserves official filtered-query semantics and is normalized under `dataset/D3/yfcc-10M/`; 50M is optional only if scratch preflight passes |
-| D4 | BEIR + CRAG | BEIR: `scifact`, `fiqa`, `nfcorpus`; CRAG: `data/crag_task_1_and_2_dev_v4.jsonl.bz2` with local slice `crag_task_1_and_2_dev_v4.first_500.jsonl` | pinned local bundle | retrieval and RAG utility | BEIR uses official qrels; CRAG slice is treated as weak-label / pipeline-realism data |
+| Dataset | Source | Role in portable study | Notes |
+| --- | --- | --- | --- |
+| `scifact` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
+| `fiqa` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
+| `CRAG-500` | CRAG task 1/2 dev slice | S2 online event stream | one inserted supporting passage per event |
+| `FRAMES-portable` | frozen local FRAMES + KILT preprocessing | S3 multi-hop evidence retrieval | one-time offline preprocessing artifact |
 
 ## Scenarios
 
 | Scenario | Dataset | Goal | Concurrency pin | Pinned details |
 | --- | --- | --- | --- | --- |
-| S1 | D1, D2 | ANN frontier | clients `{1, 8, 32, 64}` | matched-quality Pareto frontier, build/load time, footprint |
-| S2 | D3 | filtered ANN selectivity sweep | clients `32` | selectivity `0.1% / 1% / 10% / 50%`, p99 inflation vs unfiltered anchor |
-| S3 | D3 | dynamic churn, smooth | read/write `32 / 8` | open-loop `1000 req/s`: read `800`, insert `100`, update `50`, delete `50`; maintenance every `60s` |
-| S3b | D3 | dynamic churn, bursty | read/write `32 / 8` | ON `30s`, OFF `90s`; ON writes `8x`, OFF writes `0.25x`; maintenance every `60s` |
-| S4 | D4 | hybrid retrieval | clients `16` | dense vs BM25+dense, RRF `k=60`, candidate budget `200/200` |
-| S5 | D4 | candidate generation + rerank | clients `16` | candidate budgets `{50, 200, 1000}`; reranker `BAAI/bge-reranker-base`, `max_seq_len=512`, `fp16`, `batch_size=32` |
-| S6 | D4 | multi-index fusion | clients `16` | fusion budget `200/200`, RRF `k=60`; first deferrable scenario if schedule risk appears |
+| S1 | `scifact`, `fiqa` | single-hop corpus retrieval | clients `{1, 4, 8}` | primary quality `nDCG@10` |
+| S2 | `scifact` + `fiqa` background with `CRAG-500` events | streaming memory | read/write `8 / 2` | freshness probes at `T+1s` and `T+5s` |
+| S3 | `FRAMES-portable` | multi-hop evidence retrieval | clients `{1, 4, 8}` | primary quality `evidence_coverage@10` |
 
 ## Run artifacts
 
@@ -50,12 +42,12 @@ Each run writes:
 - `config_resolved.yaml`
 - logs
 
-## Workstation targets
+## Host Target
 
-- Linux x86_64 workstation is the primary full-run host.
-- Mac is the reduced local/dev host.
-- Default full-run lane is CPU-only; GPU scenarios are explicit opt-in because the A100 may be shared.
-- The Mac lane does not claim support for full D2/D3 paper-scale runs or the CUDA-enforced S5 / GPU tracks.
+- Apple Silicon Mac mini is the paper-path host.
+- The benchmark matrix must finish within 24 hours wall clock.
+- GPU-required scenarios and distributed topologies are out of scope.
+- One-time FRAMES/KILT preprocessing may happen outside the 24-hour budget.
 
 Figures are written to:
 

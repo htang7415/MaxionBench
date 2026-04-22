@@ -12,9 +12,6 @@ import yaml
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _EXPECTED_MANIFESTS = {
-    "D1": "d1.yaml",
-    "D2": "d2.yaml",
-    "D3": "d3.yaml",
     "D4": "d4.yaml",
 }
 _REQUIRED_SIZE_KEYS = (
@@ -23,13 +20,9 @@ _REQUIRED_SIZE_KEYS = (
     "approx_bytes_temp",
 )
 _OPTIONAL_CACHE_CHECKSUM_KEYS = (
-    "cache_sha256_dataset_path",
-    "cache_sha256_d2_base_fvecs_path",
-    "cache_sha256_d2_query_fvecs_path",
-    "cache_sha256_d2_gt_ivecs_path",
     "cache_sha256_d4_crag_path",
 )
-_PINNED_D4_BEIR_SUBSETS = ["scifact", "fiqa", "nfcorpus"]
+_PINNED_D4_BEIR_SUBSETS = ["scifact", "fiqa"]
 _PINNED_D4_CRAG_SLICE_QUERIES = 500
 
 
