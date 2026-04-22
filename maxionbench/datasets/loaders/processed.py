@@ -12,13 +12,26 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from maxionbench.datasets.d3_generator import SequentialDocIdSequence
-
 from .d4_synthetic import D4RetrievalDataset, compute_idf, tokenize_text
 
 
 PROCESSED_SCHEMA_VERSION = "maxionbench-processed-v1"
 _LOG = logging.getLogger(__name__)
+
+
+class SequentialDocIdSequence(Sequence[str]):
+    def __init__(self, count: int):
+        self._count = int(count)
+
+    def __len__(self) -> int:
+        return self._count
+
+    def __getitem__(self, idx: int) -> str:
+        if idx < 0:
+            idx += self._count
+        if idx < 0 or idx >= self._count:
+            raise IndexError(idx)
+        return str(idx)
 
 
 @dataclass(frozen=True)

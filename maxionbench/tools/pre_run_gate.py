@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -11,7 +10,6 @@ from typing import Any
 
 from maxionbench.conformance.provenance import conformance_provenance_path
 from maxionbench.orchestration.config_schema import load_run_config
-from maxionbench.runtime.system_info import collect_system_info
 from maxionbench.tools.verify_engine_readiness import verify_engine_readiness
 
 
@@ -35,19 +33,6 @@ def evaluate_pre_run_gate(
         "allow_mock": bool(allow_mock),
         "skipped": False,
     }
-
-    s5_runtime = _evaluate_s5_runtime_requirements(cfg)
-    if s5_runtime is not None:
-        summary["s5_reranker_runtime"] = s5_runtime
-        if not bool(s5_runtime["pass"]):
-            summary.update(
-                {
-                    "pass": False,
-                    "skipped": False,
-                    "reason": "s5 reranker runtime requirements not satisfied",
-                }
-            )
-            return summary
 
     if allow_mock and cfg.engine == "mock":
         summary.update(
@@ -83,57 +68,6 @@ def evaluate_pre_run_gate(
     if not bool(readiness["pass"]):
         summary["reason"] = "engine readiness verification failed"
     return summary
-
-
-def _evaluate_s5_runtime_requirements(cfg) -> dict[str, Any] | None:  # type: ignore[no-untyped-def]
-    if str(getattr(cfg, "scenario", "")) != "s5_rerank":
-        return None
-    require_hf = bool(getattr(cfg, "s5_require_hf_backend", False))
-    if not require_hf:
-        return {
-            "required": False,
-            "pass": True,
-            "errors": [],
-        }
-
-    env_enabled = _env_flag_true("MAXIONBENCH_ENABLE_HF_RERANKER")
-    torch_installed = importlib.util.find_spec("torch") is not None
-    transformers_installed = importlib.util.find_spec("transformers") is not None
-    gpu_count = _detect_gpu_count()
-    errors: list[str] = []
-    if not env_enabled:
-        errors.append("MAXIONBENCH_ENABLE_HF_RERANKER must be set to 1/true/on/yes for S5")
-    if not torch_installed:
-        errors.append("python package `torch` is required for S5 hf reranker backend")
-    if not transformers_installed:
-        errors.append("python package `transformers` is required for S5 hf reranker backend")
-    if gpu_count < 1:
-        errors.append("at least one NVIDIA GPU must be visible for S5 hf reranker backend")
-    return {
-        "required": True,
-        "pass": len(errors) == 0,
-        "env_enabled": env_enabled,
-        "torch_installed": torch_installed,
-        "transformers_installed": transformers_installed,
-        "gpu_count": gpu_count,
-        "errors": errors,
-    }
-
-
-def _env_flag_true(name: str) -> bool:
-    raw = os.environ.get(name, "")
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _detect_gpu_count() -> int:
-    try:
-        payload = collect_system_info()
-    except Exception:
-        return 0
-    try:
-        return int(payload.get("gpu_count", 0) or 0)
-    except Exception:
-        return 0
 
 
 def _evaluate_conformance_provenance(conformance_matrix_path: Path) -> dict[str, Any] | None:

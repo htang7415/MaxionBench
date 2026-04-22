@@ -12,27 +12,11 @@ import yaml
 
 
 _DATASET_ROOT_TOKEN = "${MAXIONBENCH_DATASET_ROOT:-dataset}"
-_DEFAULT_OUTPUT_ROOT = "artifacts/runs/workstation_matrix"
+_DEFAULT_OUTPUT_ROOT = "artifacts/runs/portable_matrix"
 _SCENARIO_ORDER = {
-    "s1_ann_frontier": 0,
     "s1_single_hop": 0,
-    "s1_ann_frontier_d3": 1,
-    "s2_filtered_ann": 2,
-    "s2_streaming_memory": 2,
-    "s3_churn_smooth": 3,
-    "s3_multi_hop": 3,
-    "s3b_churn_bursty": 4,
-    "s4_hybrid": 5,
-    "s5_rerank": 6,
-    "s6_fusion": 7,
-}
-_S1_TEMPLATE_ORDER = {
-    "s1_ann_frontier": 0,
-    "s1_ann_frontier_d1_glove": 0,
-    "s1_ann_frontier_d1_sift": 1,
-    "s1_ann_frontier_d1_gist": 2,
-    "s1_ann_frontier_d2": 3,
-    "s1_ann_frontier_d3": 4,
+    "s2_streaming_memory": 1,
+    "s3_multi_hop": 2,
 }
 _PORTABLE_EMBEDDING_VARIANTS = (
     ("bge-small-en-v1-5", "BAAI/bge-small-en-v1.5", 384),
@@ -215,12 +199,9 @@ def _resolve_dir(*, path: Path, repo_root: Path) -> Path:
 
 
 def _load_templates(root: Path, *, skip_s6: bool) -> list[tuple[str, dict[str, Any]]]:
+    del skip_s6
     templates: list[tuple[str, dict[str, Any]]] = []
     for path in sorted(root.glob("*.yaml")):
-        if path.name == "calibrate_d3.yaml":
-            continue
-        if skip_s6 and path.stem == "s6_fusion":
-            continue
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(payload, dict):
             raise ValueError(f"scenario template must be a mapping: {path}")
@@ -278,39 +259,15 @@ def _compose_config(
 
 
 def _normalize_pipeline_dataset_refs(*, payload: dict[str, Any], template_name: str) -> None:
+    del template_name
     bundle = str(payload.get("dataset_bundle", "")).upper()
-    scenario = str(payload.get("scenario", "")).strip().lower()
     if bundle == "D4":
         payload["processed_dataset_path"] = f"{_DATASET_ROOT_TOKEN}/processed/D4"
-        return
-    if bundle != "D3":
-        return
-
-    processed_d3_root = f"{_DATASET_ROOT_TOKEN}/processed/D3/yfcc-10M"
-    if scenario == "calibrate_d3":
-        payload["processed_dataset_path"] = processed_d3_root
-        payload.pop("dataset_path", None)
-        payload.pop("dataset_path_sha256", None)
-        return
-    if scenario in {"s3_churn_smooth", "s3b_churn_bursty"}:
-        payload["processed_dataset_path"] = processed_d3_root
-        payload.pop("dataset_path", None)
-        payload.pop("dataset_path_sha256", None)
-        return
-    if Path(template_name).stem == "s1_ann_frontier_d3":
-        payload["processed_dataset_path"] = processed_d3_root
-        payload.pop("dataset_path", None)
-        payload.pop("dataset_path_sha256", None)
-        return
-    payload["dataset_path"] = f"{processed_d3_root}/base.npy"
-    payload.pop("dataset_path_sha256", None)
 
 
 def _task_group_for_payload(*, merged: dict[str, Any], template_name: str) -> str:
-    scenario = str(merged.get("scenario", "")).strip().lower()
+    del merged
     template = Path(template_name).stem.lower()
-    if scenario == "s5_rerank":
-        return "gpu"
     if "track_b" in template or "track_c" in template:
         return "gpu"
     return "cpu"
@@ -334,10 +291,9 @@ def _template_sort_key(
 ) -> tuple[int, int, str]:
     stem = Path(template_name).stem
     resolved_scenario = str((payload or {}).get("scenario", scenario or "")).strip().lower()
-    resolved_bundle = str((payload or {}).get("dataset_bundle", dataset_bundle or "")).strip().upper()
+    del dataset_bundle
     scenario_order = _SCENARIO_ORDER.get(stem, _SCENARIO_ORDER.get(resolved_scenario, 999))
-    s1_order = _S1_TEMPLATE_ORDER.get(stem, _S1_TEMPLATE_ORDER.get(resolved_bundle.lower(), 999))
-    return (scenario_order, s1_order, stem)
+    return (scenario_order, 0, stem)
 
 
 def _slug(value: str) -> str:
@@ -345,14 +301,14 @@ def _slug(value: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description="Build a local workstation run matrix from scenario and engine configs")
+    parser = ArgumentParser(description="Build a portable-agentic run matrix from scenario and engine configs")
     parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
     parser.add_argument("--engine-config-dir", default="configs/engines_portable")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--output-root", default=_DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
     parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
-    parser.add_argument("--skip-s6", action="store_true")
+    parser.add_argument("--skip-s6", action="store_true", help="Deprecated no-op retained for old scripts")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 

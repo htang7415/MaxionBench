@@ -63,9 +63,9 @@ def test_wait_adapter_main_loads_config(monkeypatch: pytest.MonkeyPatch, tmp_pat
             {
                 "engine": "qdrant",
                 "engine_version": "server",
-                "scenario": "s1_ann_frontier",
-                "dataset_bundle": "D1",
-                "dataset_hash": "synthetic-d1-v1",
+                "scenario": "s1_single_hop",
+                "dataset_bundle": "D4",
+                "dataset_hash": "portable-d4-v1",
                 "no_retry": True,
                 "adapter_options": {
                     "host": "${MAXIONBENCH_QDRANT_HOST:-127.0.0.1}",

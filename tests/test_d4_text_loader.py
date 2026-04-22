@@ -152,21 +152,22 @@ def test_load_d4_from_local_bundles_enforces_crag_sha256(tmp_path: Path) -> None
         )
 
 
-def test_runner_s4_with_real_d4_bundle(tmp_path: Path) -> None:
+def test_runner_s1_with_real_d4_bundle(tmp_path: Path) -> None:
     beir_root = tmp_path / "beir"
     _make_beir_subset(beir_root, "fiqa")
 
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
-        "scenario": "s4_hybrid",
+        "scenario": "s1_single_hop",
         "dataset_bundle": "D4",
         "dataset_hash": "local-beir",
         "seed": 4,
         "repeats": 1,
         "no_retry": True,
         "output_dir": str(tmp_path / "s4-real"),
-        "quality_target": 0.35,
+        "quality_target": 0.0,
+        "quality_targets": [0.0],
         "clients_read": 2,
         "clients_write": 0,
         "clients_grid": [2],
@@ -196,10 +197,10 @@ def test_runner_s4_with_real_d4_bundle(tmp_path: Path) -> None:
     frame = pd.read_parquet(out_dir / "results.parquet")
     assert len(frame) >= 1
     payload = json.loads(frame.iloc[0]["search_params_json"])
-    assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
+    assert payload["primary_quality_metric"] == "ndcg_at_10"
 
 
-def test_runner_s4_enforces_crag_sha256_for_real_bundle(tmp_path: Path) -> None:
+def test_runner_s1_enforces_crag_sha256_for_real_bundle(tmp_path: Path) -> None:
     beir_root = tmp_path / "beir"
     _make_beir_subset(beir_root, "fiqa")
     crag_path = _make_crag_file(tmp_path / "crag.jsonl.bz2")
@@ -207,14 +208,15 @@ def test_runner_s4_enforces_crag_sha256_for_real_bundle(tmp_path: Path) -> None:
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
-        "scenario": "s4_hybrid",
+        "scenario": "s1_single_hop",
         "dataset_bundle": "D4",
         "dataset_hash": "local-beir-crag",
         "seed": 4,
         "repeats": 1,
         "no_retry": True,
         "output_dir": str(tmp_path / "s4-real-crag"),
-        "quality_target": 0.35,
+        "quality_target": 0.0,
+        "quality_targets": [0.0],
         "clients_read": 2,
         "clients_write": 0,
         "clients_grid": [2],
@@ -246,7 +248,7 @@ def test_runner_s4_enforces_crag_sha256_for_real_bundle(tmp_path: Path) -> None:
         run_from_config(cfg_path, cli_overrides=None)
 
 
-def test_runner_s4_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
+def test_runner_s1_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     beir_root = data_root / "beir"
     _make_beir_subset(beir_root, "fiqa")
@@ -254,14 +256,15 @@ def test_runner_s4_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
     cfg = {
         "engine": "mock",
         "engine_version": "0.1.0",
-        "scenario": "s4_hybrid",
+        "scenario": "s1_single_hop",
         "dataset_bundle": "D4",
         "dataset_hash": "local-beir-relative",
         "seed": 4,
         "repeats": 1,
         "no_retry": True,
         "output_dir": str(tmp_path / "s4-real-relative"),
-        "quality_target": 0.35,
+        "quality_target": 0.0,
+        "quality_targets": [0.0],
         "clients_read": 2,
         "clients_write": 0,
         "clients_grid": [2],
@@ -291,4 +294,4 @@ def test_runner_s4_with_real_d4_bundle_relative_paths(tmp_path: Path) -> None:
     frame = pd.read_parquet(out_dir / "results.parquet")
     assert len(frame) >= 1
     payload = json.loads(frame.iloc[0]["search_params_json"])
-    assert payload["rag_ndcg_band"] in {"low", "medium", "high"}
+    assert payload["primary_quality_metric"] == "ndcg_at_10"

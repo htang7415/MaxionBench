@@ -22,7 +22,6 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--repeats", type=int, default=None)
     run_parser.add_argument("--no-retry", action="store_true")
     run_parser.add_argument("--output-dir", default=None)
-    run_parser.add_argument("--d3-params", default=None)
     run_parser.add_argument("--enforce-readiness", action="store_true")
     run_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
     run_parser.add_argument("--behavior-dir", default="docs/behavior")
@@ -140,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     run_matrix_parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
     run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines_portable")
     run_matrix_parser.add_argument("--out-dir", required=True)
-    run_matrix_parser.add_argument("--output-root", default="artifacts/runs/workstation_matrix")
+    run_matrix_parser.add_argument("--output-root", default="artifacts/runs/portable_matrix")
     run_matrix_parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
     run_matrix_parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
     run_matrix_parser.add_argument("--json", action="store_true")
@@ -194,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
     portable_workflow_parser = subparsers.add_parser(
         "portable-workflow",
-        help="Run one high-level portable Mac mini workflow phase",
+        help="Run one high-level portable workflow phase",
     )
     portable_workflow_parser.add_argument("phase", choices=["setup", "data", "finalize"])
     portable_workflow_parser.add_argument("--repo-root", default=".")
@@ -263,18 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     snapshot_checks_parser.add_argument("--strict", action="store_true")
     snapshot_checks_parser.add_argument("--json", action="store_true")
 
-    inspect_report_policy_parser = subparsers.add_parser(
-        "inspect-report-output-policy",
-        help="Inspect report metadata output-policy sidecars",
-    )
-    inspect_report_policy_parser.add_argument("--input", required=True)
-    inspect_report_policy_parser.add_argument("--output", default=None)
-    inspect_report_policy_parser.add_argument("--strict", action="store_true")
-    inspect_report_policy_parser.add_argument("--json", action="store_true")
-
     report_parser = subparsers.add_parser("report", help="Generate report artifacts")
     report_parser.add_argument("--input", required=True)
-    report_parser.add_argument("--mode", required=True, choices=["milestones", "final", "portable-agentic"])
+    report_parser.add_argument("--mode", required=True, choices=["portable-agentic"])
     report_parser.add_argument("--out", required=False)
     report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
 
@@ -368,8 +358,6 @@ def main(argv: list[str] | None = None) -> int:
             run_argv.append("--no-retry")
         if args.output_dir:
             run_argv.extend(["--output-dir", args.output_dir])
-        if args.d3_params:
-            run_argv.extend(["--d3-params", args.d3_params])
         if args.enforce_readiness:
             run_argv.append("--enforce-readiness")
         if args.conformance_matrix:
@@ -390,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.json:
             print(json.dumps(summary, indent=2, sort_keys=True))
-        return 0
+        return 0 if bool(summary.get("pass", False)) else 1
     if args.command == "migrate-stage-timing":
         from maxionbench.tools.migrate_stage_timing import backfill_path
         import json
@@ -747,17 +735,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             snapshot_argv.append("--json")
         return snapshot_required_checks_main(snapshot_argv)
-    if args.command == "inspect-report-output-policy":
-        from maxionbench.tools.report_output_policy import main as inspect_report_output_policy_main
-
-        inspect_argv: list[str] = ["--input", args.input]
-        if args.output:
-            inspect_argv.extend(["--output", args.output])
-        if args.strict:
-            inspect_argv.append("--strict")
-        if args.json:
-            inspect_argv.append("--json")
-        return inspect_report_output_policy_main(inspect_argv)
     if args.command == "report":
         if args.mode == "portable-agentic":
             from maxionbench.reports.portable_exports import generate_portable_report_bundle
@@ -772,32 +749,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
-        from maxionbench.reports.paper_exports import generate_report_bundle
-
-        if args.mode == "final":
-            if args.milestone_id:
-                raise ValueError("--milestone-id is only valid when --mode milestones")
-            if not args.out:
-                raise ValueError("--out is required when --mode final")
-            resolved_out = Path(args.out).resolve()
-        else:
-            if args.out and args.milestone_id:
-                raise ValueError("Provide either --out or --milestone-id for milestone reports, not both")
-            if args.milestone_id:
-                if not _MILESTONE_ID_RE.fullmatch(str(args.milestone_id)):
-                    raise ValueError("--milestone-id must match `M<integer>` (for example M2)")
-                resolved_out = (Path("artifacts/figures/milestones") / str(args.milestone_id)).resolve()
-            elif args.out:
-                resolved_out = Path(args.out).resolve()
-            else:
-                raise ValueError("Milestone reports require either --out or --milestone-id")
-
-        generate_report_bundle(
-            input_dir=Path(args.input).resolve(),
-            out_dir=resolved_out,
-            mode=args.mode,
-        )
-        return 0
+        raise ValueError(f"Unsupported report mode: {args.mode}")
     if args.command == "conformance":
         conformance_argv = [
             "--adapter",

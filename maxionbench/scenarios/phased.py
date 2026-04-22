@@ -28,11 +28,6 @@ def run_query_phases(
     strict_timing: bool = False,
     max_requests_per_phase: int | None = None,
 ) -> tuple[list[tuple[int, T]], PhaseStats, PhaseStats]:
-    """Run warmup phase first, then measurement phase using a deterministic query stream.
-
-    Each phase is time-bounded but also capped to one pass of available queries, which keeps
-    synthetic smoke runs fast while preserving phase ordering semantics.
-    """
     if total_queries < 1:
         raise ValueError("total_queries must be >= 1")
     workers = max(1, clients_read)
