@@ -12,3 +12,4 @@ def test_env_docker_example_matches_portable_service_defaults() -> None:
 
     assert "${MAXIONBENCH_QDRANT_IMAGE:-qdrant/qdrant:v1.17.1}" in compose_text
     assert "${MAXIONBENCH_PGVECTOR_IMAGE:-pgvector/pgvector:0.8.2-pg16-trixie}" in compose_text
+    assert '"5432:5432"' in compose_text
