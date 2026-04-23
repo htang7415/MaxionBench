@@ -201,7 +201,7 @@ def _resolve_dir(*, path: Path, repo_root: Path) -> Path:
 def _load_templates(root: Path, *, skip_s6: bool) -> list[tuple[str, dict[str, Any]]]:
     del skip_s6
     templates: list[tuple[str, dict[str, Any]]] = []
-    for path in sorted(root.glob("*.yaml")):
+    for path in _yaml_config_paths(root):
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(payload, dict):
             raise ValueError(f"scenario template must be a mapping: {path}")
@@ -226,7 +226,7 @@ def _expand_template_variants(*, template_name: str, payload: dict[str, Any]) ->
 
 def _load_engine_payloads(root: Path) -> list[tuple[str, dict[str, Any]]]:
     payloads: list[tuple[str, dict[str, Any]]] = []
-    for path in sorted(root.glob("*.yaml")):
+    for path in _yaml_config_paths(root):
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(payload, dict):
             raise ValueError(f"engine config must be a mapping: {path}")
@@ -235,6 +235,10 @@ def _load_engine_payloads(root: Path) -> list[tuple[str, dict[str, Any]]]:
             raise ValueError(f"engine config must define `engine`: {path}")
         payloads.append((engine_name, dict(payload)))
     return payloads
+
+
+def _yaml_config_paths(root: Path) -> list[Path]:
+    return [path for path in sorted(root.glob("*.yaml")) if not path.name.startswith("._")]
 
 
 def _compose_config(

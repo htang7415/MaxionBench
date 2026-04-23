@@ -6,11 +6,39 @@ from argparse import ArgumentParser
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from maxionbench.orchestration.run_matrix import RunMatrix, build_run_matrix
+from maxionbench.tools.service_lifecycle import services_up
 from maxionbench.tools.execute_run_matrix import execute_run_matrix
 from maxionbench.tools.verify_promotion_gate import verify_portable_promotion_gate
+
+_PORTABLE_SERVICE_ENGINES = frozenset({"qdrant", "pgvector"})
+
+
+def _default_lancedb_local_uri(*, repo_root: Path, lane: str) -> str:
+    scratch_root = Path(tempfile.gettempdir()).resolve()
+    return str((scratch_root / "maxionbench" / repo_root.name / "lancedb" / lane).resolve())
+
+
+def _ensure_portable_services(
+    *,
+    repo_root: Path,
+    selected_engines: list[str],
+    adapter_timeout_s: float,
+    poll_interval_s: float,
+) -> None:
+    required = sorted({engine for engine in selected_engines if engine in _PORTABLE_SERVICE_ENGINES})
+    if not required:
+        return
+    services_up(
+        compose_file=(repo_root / "docker-compose.yml").resolve(),
+        services=required,
+        wait=True,
+        timeout_s=adapter_timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
 
 
 def submit_portable(
@@ -42,9 +70,15 @@ def submit_portable(
         raise ValueError(f"budget must be one of b0/b1/b2, got {budget!r}")
 
     resolved_repo_root = repo_root.expanduser().resolve()
+    if not str(os.environ.get("MAXIONBENCH_LANCEDB_INPROC_URI") or "").strip():
+        os.environ["MAXIONBENCH_LANCEDB_INPROC_URI"] = _default_lancedb_local_uri(
+            repo_root=resolved_repo_root,
+            lane="inproc",
+        )
     if not str(os.environ.get("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI") or "").strip():
-        os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] = str(
-            (resolved_repo_root / "artifacts/lancedb/service").resolve()
+        os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] = _default_lancedb_local_uri(
+            repo_root=resolved_repo_root,
+            lane="service",
         )
     resolved_out_dir = (
         out_dir.expanduser().resolve()
@@ -66,6 +100,12 @@ def submit_portable(
         budget_level=normalized_budget,
         lane=lane,
         skip_s6=skip_s6,
+    )
+    _ensure_portable_services(
+        repo_root=resolved_repo_root,
+        selected_engines=list(matrix.selected_engines),
+        adapter_timeout_s=adapter_timeout_s,
+        poll_interval_s=poll_interval_s,
     )
     matrix_path = resolved_out_dir / "run_matrix.json"
     execution = execute_run_matrix(

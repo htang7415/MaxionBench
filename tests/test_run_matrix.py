@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from maxionbench.orchestration.config_schema import load_run_config
 import yaml
 
 from maxionbench.orchestration.run_matrix import build_run_matrix
@@ -46,3 +47,19 @@ def test_build_run_matrix_default_paths_are_portable(tmp_path: Path, monkeypatch
     )
 
     assert {row.scenario for row in matrix.cpu_rows} == {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}
+
+
+def test_build_run_matrix_lancedb_inproc_config_expands_env_uri(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("MAXIONBENCH_LANCEDB_INPROC_URI", str((tmp_path / "scratch" / "lancedb").resolve()))
+    matrix = build_run_matrix(
+        repo_root=Path("."),
+        scenario_config_dir=Path("configs/scenarios_portable"),
+        engine_config_dir=Path("configs/engines_portable"),
+        out_dir=tmp_path / "portable_matrix",
+        lane="cpu",
+    )
+
+    row = next(item for item in matrix.cpu_rows if item.engine == "lancedb-inproc")
+    cfg = load_run_config(Path(row.config_path))
+
+    assert cfg.adapter_options["uri"] == str((tmp_path / "scratch" / "lancedb").resolve())
