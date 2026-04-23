@@ -90,3 +90,44 @@ def test_verify_service_image_platforms_accepts_host_arch(
             "supported": True,
         }
     ]
+
+
+def test_verify_service_image_platforms_falls_back_to_local_image_inspect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+
+    def _fake_run(cmd: list[str], capture_output: bool, text: bool):  # type: ignore[no-untyped-def]
+        del capture_output, text
+        if cmd[-3:] == ["config", "--format", "json"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"services": {"pgvector": {"image": "pgvector/pgvector:test"}}}),
+                stderr="",
+            )
+        if cmd[:3] == ["docker", "manifest", "inspect"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="dns failed")
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps([{"Os": "linux", "Architecture": "arm64"}]),
+                stderr="",
+            )
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(service_mod.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(service_mod.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(service_mod.subprocess, "run", _fake_run)
+
+    summary = service_mod.verify_service_image_platforms(compose_file=compose, services=["pgvector"])
+    assert summary == [
+        {
+            "service": "pgvector",
+            "image": "pgvector/pgvector:test",
+            "target_platform": "linux/arm64",
+            "platforms": ["linux/arm64"],
+            "supported": True,
+        }
+    ]

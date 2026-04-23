@@ -106,6 +106,39 @@ def test_submit_portable_skips_promotion_for_b2(tmp_path: Path, monkeypatch) -> 
     assert calls[1][0] == "execute"
 
 
+def test_submit_portable_respects_engine_filter_when_starting_services(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    fake_matrix = submit_mod.RunMatrix(
+        repo_root=str(tmp_path),
+        generated_config_dir=str((tmp_path / "artifacts" / "run_matrix" / "portable_b0" / "generated_configs").resolve()),
+        output_root=str((tmp_path / "artifacts" / "runs" / "portable" / "b0").resolve()),
+        budget_level="b0",
+        cpu_rows=[],
+        gpu_rows=[],
+        selected_engines=["qdrant", "pgvector"],
+        selected_templates=[],
+        lane="cpu",
+    )
+
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(submit_mod, "services_up", lambda **kwargs: calls.append(("services", dict(kwargs))) or {"healthy": True})
+    monkeypatch.setattr(submit_mod, "build_run_matrix", lambda **kwargs: fake_matrix)
+    monkeypatch.setattr(submit_mod, "execute_run_matrix", lambda **kwargs: calls.append(("execute", dict(kwargs))) or {"completed_rows": 1, "failed_rows": 0})
+
+    submit_mod.submit_portable(
+        budget="b0",
+        repo_root=tmp_path,
+        scenario_config_dir=Path("configs/scenarios_portable"),
+        engine_config_dir=Path("configs/engines_portable"),
+        engine_filter={"qdrant"},
+        verify_promotion=False,
+    )
+
+    assert calls[0][0] == "services"
+    assert calls[0][1]["services"] == ["qdrant"]
+    assert calls[1][0] == "execute"
+
+
 def test_submit_portable_sets_local_lancedb_scratch_envs_when_unset(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
     fake_matrix = submit_mod.RunMatrix(

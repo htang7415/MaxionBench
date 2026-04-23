@@ -6,6 +6,7 @@ This adapter works against an already running Qdrant service.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import time
 from typing import Any, Mapping, Sequence
 import uuid
@@ -36,6 +37,8 @@ class _QdrantConfig:
 
 class QdrantAdapter(BaseAdapter):
     """Qdrant adapter with required MaxionBench contract methods."""
+
+    _HTTP_UPSERT_MAX_PAYLOAD_BYTES = 24 * 1024 * 1024
 
     def __init__(
         self,
@@ -93,7 +96,14 @@ class QdrantAdapter(BaseAdapter):
         }
         if self._index_params:
             body.update(self._index_params)
-        self._request("PUT", f"/collections/{collection}", json=body)
+        try:
+            self._request("PUT", f"/collections/{collection}", json=body)
+        except RuntimeError as exc:
+            if "already exists" not in str(exc).lower():
+                raise
+            self.drop(collection)
+            self._collection = collection
+            self._request("PUT", f"/collections/{collection}", json=body)
         self._created_at = time.monotonic()
 
     def drop(self, collection: str) -> None:
@@ -123,6 +133,8 @@ class QdrantAdapter(BaseAdapter):
             return False
 
     def bulk_upsert(self, records: Sequence[UpsertRecord]) -> int:
+        if not records:
+            return 0
         if self._local_client is not None:
             points = [
                 self._qm.PointStruct(
@@ -142,8 +154,8 @@ class QdrantAdapter(BaseAdapter):
             }
             for record in records
         ]
-        body = {"points": points}
-        self._request("PUT", f"/collections/{self._collection}/points?wait=true", json=body)
+        for chunk in self._iter_http_upsert_batches(points):
+            self._request("PUT", f"/collections/{self._collection}/points?wait=true", json={"points": chunk})
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
@@ -337,6 +349,25 @@ class QdrantAdapter(BaseAdapter):
     def _to_filter(filters: Mapping[str, Any]) -> dict[str, Any]:
         must = [{"key": key, "match": {"value": value}} for key, value in filters.items()]
         return {"must": must}
+
+    @classmethod
+    def _iter_http_upsert_batches(cls, points: Sequence[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+        batches: list[list[dict[str, Any]]] = []
+        current: list[dict[str, Any]] = []
+        current_bytes = len('{"points":[]}'.encode("utf-8"))
+        for point in points:
+            point_bytes = len(json.dumps(point).encode("utf-8"))
+            separator_bytes = 1 if current else 0
+            if current and current_bytes + separator_bytes + point_bytes > cls._HTTP_UPSERT_MAX_PAYLOAD_BYTES:
+                batches.append(current)
+                current = []
+                current_bytes = len('{"points":[]}'.encode("utf-8"))
+                separator_bytes = 0
+            current.append(point)
+            current_bytes += separator_bytes + point_bytes
+        if current:
+            batches.append(current)
+        return batches
 
     def _init_local_client(self) -> None:
         try:

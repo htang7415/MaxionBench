@@ -41,6 +41,13 @@ def _ensure_portable_services(
     )
 
 
+def _execution_engines(*, selected_engines: list[str], engine_filter: set[str] | None) -> list[str]:
+    if not engine_filter:
+        return list(selected_engines)
+    allowed = {engine.strip() for engine in engine_filter if engine.strip()}
+    return [engine for engine in selected_engines if engine in allowed]
+
+
 def submit_portable(
     *,
     budget: str,
@@ -103,7 +110,10 @@ def submit_portable(
     )
     _ensure_portable_services(
         repo_root=resolved_repo_root,
-        selected_engines=list(matrix.selected_engines),
+        selected_engines=_execution_engines(
+            selected_engines=list(matrix.selected_engines),
+            engine_filter=engine_filter,
+        ),
         adapter_timeout_s=adapter_timeout_s,
         poll_interval_s=poll_interval_s,
     )

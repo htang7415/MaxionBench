@@ -189,6 +189,9 @@ def _compose_service_images(*, compose_file: Path, services: list[str]) -> dict[
 def _inspect_image_platforms(image: str) -> set[str]:
     result = subprocess.run(["docker", "manifest", "inspect", image], capture_output=True, text=True)
     if result.returncode != 0:
+        local_platforms = _inspect_local_image_platforms(image)
+        if local_platforms:
+            return local_platforms
         raise RuntimeError(f"docker manifest inspect failed for {image!r} (exit {result.returncode}):\n{result.stderr.strip()}")
     try:
         payload = json.loads(result.stdout)
@@ -210,6 +213,27 @@ def _inspect_image_platforms(image: str) -> set[str]:
     else:
         os_name = str(payload.get("os") or "").strip()
         arch = str(payload.get("architecture") or "").strip()
+        if os_name and arch:
+            platforms.add(f"{os_name}/{_docker_arch(arch)}")
+    return platforms
+
+
+def _inspect_local_image_platforms(image: str) -> set[str]:
+    result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True)
+    if result.returncode != 0:
+        return set()
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(payload, list):
+        return set()
+    platforms: set[str] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        os_name = str(item.get("Os") or "").strip()
+        arch = str(item.get("Architecture") or "").strip()
         if os_name and arch:
             platforms.add(f"{os_name}/{_docker_arch(arch)}")
     return platforms
