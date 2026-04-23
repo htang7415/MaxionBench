@@ -112,6 +112,58 @@ def test_qdrant_http_bulk_upsert_encodes_string_ids_and_preserves_original_id(
     assert point["payload"] == {"tenant": "a", "__maxionbench_id": "doc-1"}
 
 
+def test_qdrant_http_bulk_upsert_splits_large_payloads(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_request(method, path, *, json=None, allow_404=False):  # type: ignore[no-untyped-def]
+        calls.append({"method": method, "path": path, "json": json, "allow_404": allow_404})
+        return {}
+
+    adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter, "_request", _fake_request)
+    monkeypatch.setattr(QdrantAdapter, "_HTTP_UPSERT_MAX_PAYLOAD_BYTES", 200)
+
+    records = [
+        UpsertRecord(id=f"doc-{idx}", vector=[1.0, 2.0], payload={"text": "x" * 120})
+        for idx in range(3)
+    ]
+
+    written = adapter.bulk_upsert(records)
+
+    assert written == 3
+    assert len(calls) == 3
+    for call in calls:
+        assert call["method"] == "PUT"
+        assert call["path"] == "/collections//points?wait=true"
+        body = call["json"]
+        assert isinstance(body, dict)
+        assert len(body["points"]) == 1
+
+
+def test_qdrant_create_drops_stale_collection_on_already_exists(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    calls: list[tuple[str, str, object]] = []
+
+    def _fake_request(method, path, *, json=None, allow_404=False):  # type: ignore[no-untyped-def]
+        calls.append((method, path, json))
+        if method == "PUT" and path == "/collections/maxionbench" and len([c for c in calls if c[0] == "PUT"]) == 1:
+            raise RuntimeError("Qdrant PUT /collections/maxionbench failed with HTTP 409: already exists")
+        return {}
+
+    adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter, "_request", _fake_request)
+
+    adapter.create(collection="maxionbench", dimension=2, metric="ip")
+
+    assert calls[0][0:2] == ("PUT", "/collections/maxionbench")
+    assert calls[1][0:2] == ("DELETE", "/collections/maxionbench")
+    assert calls[2][0:2] == ("PUT", "/collections/maxionbench")
+    assert adapter._collection == "maxionbench"
+
+
 def test_qdrant_http_query_decodes_original_id_and_hides_internal_payload(
     monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
