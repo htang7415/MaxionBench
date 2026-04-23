@@ -5,7 +5,6 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import bz2
 import json
-import os
 from pathlib import Path
 import shutil
 import tarfile
@@ -19,6 +18,7 @@ DEFAULT_HTTP_HEADERS = {
 }
 
 BEIR_DATASETS = ("scifact", "fiqa")
+HOTPOTQA_DEV_DISTRACTOR_URL = "http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json"
 CRAG_TASK12_URL = (
     "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/"
     "data/crag_task_1_and_2_dev_v4.jsonl.bz2?download="
@@ -124,38 +124,6 @@ def download_beir_subsets(
     return fetched
 
 
-def prepare_frames_workspace(*, root: Path) -> dict[str, Any]:
-    frames_root = (root / "D4" / "frames").resolve()
-    frames_root.mkdir(parents=True, exist_ok=True)
-    readme_path = frames_root / "README.manual.txt"
-    if not readme_path.exists():
-        readme_path.write_text(
-            (
-                "FRAMES raw assets are not downloaded automatically.\n"
-                "Place the local FRAMES export under this directory or pass an alternate\n"
-                "path to `maxionbench preprocess-frames-portable --frames-root ...`.\n"
-            ),
-            encoding="utf-8",
-        )
-    return {"path": str(frames_root), "source": "manual_required"}
-
-
-def prepare_kilt_workspace(*, root: Path) -> dict[str, Any]:
-    kilt_root = (root / "D4" / "kilt").resolve()
-    kilt_root.mkdir(parents=True, exist_ok=True)
-    readme_path = kilt_root / "README.manual.txt"
-    if not readme_path.exists():
-        readme_path.write_text(
-            (
-                "KILT-style page assets are not downloaded automatically.\n"
-                "Place the local KILT export under this directory or pass an alternate\n"
-                "path to `maxionbench preprocess-frames-portable --kilt-root ...`.\n"
-            ),
-            encoding="utf-8",
-        )
-    return {"path": str(kilt_root), "source": "manual_required"}
-
-
 def make_small_crag_slice(*, source_bz2: Path, output_jsonl: Path, max_examples: int, force: bool) -> dict[str, Any]:
     if max_examples < 1:
         raise ValueError("max_examples must be >= 1")
@@ -194,6 +162,19 @@ def download_crag(*, root: Path, timeout_s: float, force: bool, max_examples: in
     return {"archive": full_meta, "slice": slice_meta}
 
 
+def download_hotpotqa(*, root: Path, timeout_s: float, force: bool) -> dict[str, Any]:
+    _validate_timeout(timeout_s)
+    hotpot_root = (root / "D4" / "hotpotqa").resolve()
+    hotpot_root.mkdir(parents=True, exist_ok=True)
+    dest = hotpot_root / "hotpot_dev_distractor_v1.json"
+    return download_file(
+        url=HOTPOTQA_DEV_DISTRACTOR_URL,
+        dest=dest,
+        timeout_s=timeout_s,
+        force=force,
+    )
+
+
 def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[str] | None = None) -> Path:
     payload = {
         "profile": "portable-agentic-bootstrap",
@@ -206,8 +187,7 @@ def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[s
             "beir": list(BEIR_DATASETS),
             "crag_source_archive": "crag_task_1_and_2_dev_v4.jsonl.bz2",
             "crag_small_slice": f"crag_task_1_and_2_dev_v4.first_{crag_examples}.jsonl",
-            "frames_workspace": "D4/frames/",
-            "kilt_workspace": "D4/kilt/",
+            "hotpotqa_dev_distractor": "D4/hotpotqa/hotpot_dev_distractor_v1.json",
         },
     }
     path = (root / "manifest.json").resolve()
@@ -230,8 +210,8 @@ def download_datasets(
     cache_dir.mkdir(parents=True, exist_ok=True)
     selected = {item.strip().lower() for item in (datasets or []) if item.strip()}
     selected_beir = [dataset for dataset in BEIR_DATASETS if dataset in selected]
-    want_frames = "frames" in selected
-    want_d4 = True if not selected else bool(selected_beir or selected & {"d4", "crag", "frames"})
+    want_hotpotqa = "hotpotqa" in selected
+    want_d4 = True if not selected else bool(selected_beir or selected & {"d4", "crag", "hotpotqa"})
 
     summary: dict[str, Any] = {
         "root": str(root),
@@ -239,7 +219,7 @@ def download_datasets(
         "requested_datasets": sorted(selected),
         "portable_agentic_bootstrap": True,
         "warning": (
-            "This downloader populates the portable-agentic text datasets and manual workspaces only. "
+            "This downloader populates the portable-agentic text datasets and portable S3 source files only. "
             "The source-of-truth scope is project.md."
         ),
         "fetched": {},
@@ -259,9 +239,12 @@ def download_datasets(
                 force=force,
                 max_examples=crag_examples,
             )
-        if not selected or want_frames:
-            summary["fetched"]["d4_frames"] = prepare_frames_workspace(root=root)
-            summary["fetched"]["d4_kilt"] = prepare_kilt_workspace(root=root)
+        if not selected or want_hotpotqa:
+            summary["fetched"]["d4_hotpotqa"] = download_hotpotqa(
+                root=root,
+                timeout_s=timeout_s,
+                force=force,
+            )
     manifest_path = write_manifest(root=root, crag_examples=crag_examples, requested_datasets=sorted(selected))
     summary["manifest_path"] = str(manifest_path)
     return summary

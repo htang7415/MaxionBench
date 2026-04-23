@@ -69,7 +69,7 @@ def _portable_row(
         "scenario": scenario,
         "engine": engine,
         "engine_version": "test",
-        "dataset_bundle": "FRAMES_PORTABLE" if scenario == "s3_multi_hop" else "D4",
+        "dataset_bundle": "HOTPOT_PORTABLE" if scenario == "s3_multi_hop" else "D4",
         "dataset_hash": "fixture",
         "seed": 42,
         "repeat_idx": 0,

@@ -1909,10 +1909,10 @@ def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:
         }
     if scenario == "s3_multi_hop":
         return {
-            "source": "frames_portable_gold_evidence",
+            "source": "hotpot_portable_supporting_facts",
             "metric": "evidence_coverage@10",
             "k": 10,
-            "engine": "frames_portable_qrels",
+            "engine": "hotpot_portable_qrels",
         }
     if scenario == "calibrate_d3":
         return {
@@ -2404,7 +2404,7 @@ def _load_portable_s3_dataset(cfg: RunConfig, *, config_path: Path) -> D4Retriev
         config_path=config_path,
     )
     if processed_dataset_path is None:
-        raise FileNotFoundError("portable S3 requires processed_dataset_path pointing at the FRAMES-portable dataset")
+        raise FileNotFoundError("portable S3 requires processed_dataset_path pointing at the HotpotQA-portable dataset")
     return load_processed_text_dataset(
         processed_dataset_path,
         vector_dim=cfg.vector_dim,

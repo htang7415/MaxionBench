@@ -4,6 +4,10 @@ import os
 from pathlib import Path
 import tempfile
 
+import pytest
+import yaml
+
+from maxionbench.orchestration.run_matrix import RunMatrixRow
 from maxionbench.tools import submit_portable as submit_mod
 
 
@@ -170,3 +174,56 @@ def test_submit_portable_sets_local_lancedb_scratch_envs_when_unset(tmp_path: Pa
     scratch_root = Path(tempfile.gettempdir()).resolve() / "maxionbench" / tmp_path.name / "lancedb"
     assert os.environ["MAXIONBENCH_LANCEDB_INPROC_URI"] == str((scratch_root / "inproc").resolve())
     assert os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] == str((scratch_root / "service").resolve())
+
+
+def test_submit_portable_fails_early_when_hotpot_portable_dataset_is_missing(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    config_path = tmp_path / "artifacts" / "run_matrix" / "portable_b0" / "generated_configs" / "cpu" / "s3.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "engine": "faiss-cpu",
+                "scenario": "s3_multi_hop",
+                "dataset_bundle": "HOTPOT_PORTABLE",
+                "processed_dataset_path": "dataset/processed/hotpot_portable",
+                "output_dir": str((tmp_path / "artifacts" / "runs" / "portable" / "b0" / "s3").resolve()),
+                "no_retry": True,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    fake_matrix = submit_mod.RunMatrix(
+        repo_root=str(tmp_path),
+        generated_config_dir=str(config_path.parent.resolve()),
+        output_root=str((tmp_path / "artifacts" / "runs" / "portable" / "b0").resolve()),
+        budget_level="b0",
+        cpu_rows=[
+            RunMatrixRow(
+                group="cpu",
+                config_path=str(config_path.resolve()),
+                engine="faiss-cpu",
+                scenario="s3_multi_hop",
+                dataset_bundle="HOTPOT_PORTABLE",
+                template_name="s3_multi_hop__bge-base-en-v1-5.yaml",
+            )
+        ],
+        gpu_rows=[],
+        selected_engines=["faiss-cpu"],
+        selected_templates=["s3_multi_hop__bge-base-en-v1-5.yaml"],
+        lane="cpu",
+    )
+
+    monkeypatch.setattr(submit_mod, "build_run_matrix", lambda **kwargs: fake_matrix)
+    monkeypatch.setattr(submit_mod, "services_up", lambda **kwargs: (_ for _ in ()).throw(AssertionError("services should not start")))
+    monkeypatch.setattr(submit_mod, "execute_run_matrix", lambda **kwargs: (_ for _ in ()).throw(AssertionError("execution should not start")))
+
+    with pytest.raises(FileNotFoundError, match="portable HotpotQA dataset missing"):
+        submit_mod.submit_portable(
+            budget="b0",
+            repo_root=tmp_path,
+            scenario_config_dir=Path("configs/scenarios_portable"),
+            engine_config_dir=Path("configs/engines_portable"),
+            verify_promotion=False,
+        )

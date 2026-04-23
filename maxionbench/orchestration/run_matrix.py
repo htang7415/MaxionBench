@@ -267,6 +267,8 @@ def _normalize_pipeline_dataset_refs(*, payload: dict[str, Any], template_name: 
     bundle = str(payload.get("dataset_bundle", "")).upper()
     if bundle == "D4":
         payload["processed_dataset_path"] = f"{_DATASET_ROOT_TOKEN}/processed/D4"
+    if bundle == "HOTPOT_PORTABLE":
+        payload["processed_dataset_path"] = f"{_DATASET_ROOT_TOKEN}/processed/hotpot_portable"
 
 
 def _task_group_for_payload(*, merged: dict[str, Any], template_name: str) -> str:

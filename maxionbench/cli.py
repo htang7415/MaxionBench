@@ -106,17 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     preprocess_datasets_parser.add_argument("--overlap", type=int, default=None)
     preprocess_datasets_parser.add_argument("--json", action="store_true")
 
-    preprocess_frames_portable_parser = subparsers.add_parser(
-        "preprocess-frames-portable",
-        help="Build the bounded FRAMES-portable corpus from local FRAMES and KILT-style inputs",
+    preprocess_hotpot_portable_parser = subparsers.add_parser(
+        "preprocess-hotpot-portable",
+        help="Build the bounded HotpotQA-portable corpus from the official dev distractor set",
     )
-    preprocess_frames_portable_parser.add_argument("--frames-root", required=True)
-    preprocess_frames_portable_parser.add_argument("--kilt-root", required=True)
-    preprocess_frames_portable_parser.add_argument("--out", required=True)
-    preprocess_frames_portable_parser.add_argument("--same-page-negatives", type=int, default=6)
-    preprocess_frames_portable_parser.add_argument("--cross-question-negatives", type=int, default=6)
-    preprocess_frames_portable_parser.add_argument("--seed", type=int, default=42)
-    preprocess_frames_portable_parser.add_argument("--json", action="store_true")
+    preprocess_hotpot_portable_parser.add_argument("--input", required=True)
+    preprocess_hotpot_portable_parser.add_argument("--out", required=True)
+    preprocess_hotpot_portable_parser.add_argument("--json", action="store_true")
 
     precompute_text_embeddings_parser = subparsers.add_parser(
         "precompute-text-embeddings",
@@ -267,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--mode", required=True, choices=["portable-agentic"])
     report_parser.add_argument("--out", required=False)
     report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
+    report_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    report_parser.add_argument("--behavior-dir", default="docs/behavior")
 
     conformance_parser = subparsers.add_parser("conformance", help="Run adapter conformance tests")
     conformance_parser.add_argument("--adapter", default="mock")
@@ -336,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     archive_parser.add_argument("--results-dir", default="results")
     archive_parser.add_argument("--runs-dir", default=None)
     archive_parser.add_argument("--figures-dir", default=None)
-    archive_parser.add_argument("--frames-portable-dir", default=None)
+    archive_parser.add_argument("--hotpot-portable-dir", default=None)
     archive_parser.add_argument("--conformance-dir", default=None)
     archive_parser.add_argument("--docs", default=None)
     archive_parser.add_argument("--no-tar", action="store_true")
@@ -489,26 +487,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             preprocess_argv.append("--json")
         return preprocess_datasets_main(preprocess_argv)
-    if args.command == "preprocess-frames-portable":
-        from maxionbench.tools.preprocess_frames_portable import main as preprocess_frames_portable_main
+    if args.command == "preprocess-hotpot-portable":
+        from maxionbench.tools.preprocess_hotpot_portable import main as preprocess_hotpot_portable_main
 
         preprocess_argv: list[str] = [
-            "--frames-root",
-            args.frames_root,
-            "--kilt-root",
-            args.kilt_root,
+            "--input",
+            args.input,
             "--out",
             args.out,
-            "--same-page-negatives",
-            str(args.same_page_negatives),
-            "--cross-question-negatives",
-            str(args.cross_question_negatives),
-            "--seed",
-            str(args.seed),
         ]
         if args.json:
             preprocess_argv.append("--json")
-        return preprocess_frames_portable_main(preprocess_argv)
+        return preprocess_hotpot_portable_main(preprocess_argv)
     if args.command == "precompute-text-embeddings":
         from maxionbench.tools.precompute_text_embeddings import main as precompute_text_embeddings_main
 
@@ -746,6 +736,8 @@ def main(argv: list[str] | None = None) -> int:
             generate_portable_report_bundle(
                 input_dir=Path(args.input).resolve(),
                 out_dir=Path(args.out).resolve(),
+                conformance_matrix_path=Path(args.conformance_matrix).resolve(),
+                behavior_dir=Path(args.behavior_dir).resolve(),
             )
             return 0
 
@@ -824,8 +816,8 @@ def main(argv: list[str] | None = None) -> int:
             archive_argv.extend(["--runs-dir", args.runs_dir])
         if args.figures_dir:
             archive_argv.extend(["--figures-dir", args.figures_dir])
-        if args.frames_portable_dir:
-            archive_argv.extend(["--frames-portable-dir", args.frames_portable_dir])
+        if args.hotpot_portable_dir:
+            archive_argv.extend(["--hotpot-portable-dir", args.hotpot_portable_dir])
         if args.conformance_dir:
             archive_argv.extend(["--conformance-dir", args.conformance_dir])
         if args.docs:
