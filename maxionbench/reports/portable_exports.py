@@ -311,7 +311,15 @@ def _minimum_viable_deployment_table(*, winners: pd.DataFrame) -> pd.DataFrame:
         if preferred.empty:
             preferred = scenario_frame.sort_values(["budget_sort", "rank_within_budget"], kind="stable").tail(1)
         best = preferred.sort_values(["task_cost_est", "p99_ms", "qps"], ascending=[True, True, False], kind="stable").iloc[0]
-        reason = f"{best['primary_quality_metric']}={float(best['primary_quality_value']):.3f}, p99={float(best['p99_ms']):.1f}ms, task_cost={float(best['task_cost_est']):.6f}"
+        reason_parts = [
+            f"{best['primary_quality_metric']}={float(best['primary_quality_value']):.3f}",
+        ]
+        freshness_hit_at_5s = pd.to_numeric(pd.Series([best.get("freshness_hit_at_5s")]), errors="coerce").iloc[0]
+        if not math.isnan(freshness_hit_at_5s):
+            reason_parts.append(f"freshness_hit@5s={float(freshness_hit_at_5s):.3f}")
+        reason_parts.append(f"p99={float(best['p99_ms']):.1f}ms")
+        reason_parts.append(f"task_cost={float(best['task_cost_est']):.6f}")
+        reason = ", ".join(reason_parts)
         rows.append(
             {
                 "workload_type": str(scenario),

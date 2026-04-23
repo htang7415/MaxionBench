@@ -12,7 +12,12 @@ import yaml
 from maxionbench.cli import main as cli_main
 from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
-from maxionbench.reports.portable_exports import _extract_portable_frame, _spearman_rank_correlation, _winner_rows
+from maxionbench.reports.portable_exports import (
+    _extract_portable_frame,
+    _minimum_viable_deployment_table,
+    _spearman_rank_correlation,
+    _winner_rows,
+)
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
 from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS
 
@@ -330,3 +335,28 @@ def test_extract_portable_frame_falls_back_when_string_columns_are_none() -> Non
 
     assert portable.iloc[0]["budget_level"] == "b1"
     assert portable.iloc[0]["embedding_model"] == "BAAI/bge-small-en-v1.5"
+
+
+def test_minimum_viable_deployment_table_includes_freshness_for_s2_rows() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 1,
+                "engine": "engine-s2",
+                "embedding_model": "emb-s2",
+                "primary_quality_metric": "answer_f1",
+                "primary_quality_value": 0.812,
+                "freshness_hit_at_5s": 0.975,
+                "p99_ms": 84.5,
+                "qps": 12.0,
+                "task_cost_est": 0.456789,
+            }
+        ]
+    )
+
+    deployment = _minimum_viable_deployment_table(winners=winners)
+
+    assert deployment.iloc[0]["why"] == "answer_f1=0.812, freshness_hit@5s=0.975, p99=84.5ms, task_cost=0.456789"
