@@ -23,7 +23,7 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 | `scifact` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
 | `fiqa` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
 | `CRAG-500` | CRAG task 1/2 dev slice | S2 online event stream | one inserted supporting passage per event |
-| `FRAMES-portable` | frozen local FRAMES + KILT preprocessing | S3 multi-hop evidence retrieval | one-time offline preprocessing artifact |
+| `HotpotQA-portable` | frozen local HotpotQA dev distractor preprocessing | S3 multi-hop evidence retrieval | one-time offline preprocessing artifact |
 
 ## Scenarios
 
@@ -31,7 +31,7 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 | --- | --- | --- | --- | --- |
 | S1 | `scifact`, `fiqa` | single-hop corpus retrieval | clients `{1, 4, 8}` | primary quality `nDCG@10` |
 | S2 | `scifact` + `fiqa` background with `CRAG-500` events | streaming memory | read/write `8 / 2` | freshness probes at `T+1s` and `T+5s` |
-| S3 | `FRAMES-portable` | multi-hop evidence retrieval | clients `{1, 4, 8}` | primary quality `evidence_coverage@10` |
+| S3 | `HotpotQA-portable` | multi-hop evidence retrieval | clients `{1, 4, 8}` | primary quality `evidence_coverage@10` |
 
 ## Run artifacts
 
@@ -48,7 +48,7 @@ Each run writes:
 - The local operator workflow is controlled to fit within one day wall clock.
 - `submit-portable` defaults to a 24-hour benchmark-execution deadline; lower `--deadline-hours` if setup, data, or embedding work consumes part of the day.
 - GPU-required scenarios and distributed topologies are out of scope.
-- Manual acquisition of FRAMES/KILT source inputs may happen before the one-day controlled workflow.
+- The primary S3 paper path is `HotpotQA-portable`, prepared from the official HotpotQA dev distractor release before timed execution.
 
 Portable figures are written to `artifacts/figures/final/`.
 
@@ -66,6 +66,13 @@ It covers:
 - reporting and archive commands
 
 There are no required repo shell wrappers in the current workflow.
+
+Primary paper-path commands:
+
+```bash
+python -m maxionbench.cli portable-workflow data --json
+python -m maxionbench.cli submit-portable --budget b0 --json
+```
 
 ## Validate and generate figures
 

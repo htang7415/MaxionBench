@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+from maxionbench.orchestration.config_schema import load_run_config
 from maxionbench.orchestration.run_matrix import RunMatrix, build_run_matrix
 from maxionbench.tools.service_lifecycle import services_up
 from maxionbench.tools.execute_run_matrix import execute_run_matrix
@@ -46,6 +47,58 @@ def _execution_engines(*, selected_engines: list[str], engine_filter: set[str] |
         return list(selected_engines)
     allowed = {engine.strip() for engine in engine_filter if engine.strip()}
     return [engine for engine in selected_engines if engine in allowed]
+
+
+def _selected_matrix_rows(
+    *,
+    matrix: RunMatrix,
+    lane: str,
+    engine_filter: set[str] | None,
+    scenario_filter: set[str] | None,
+    template_filter: set[str] | None,
+    max_runs: int | None,
+) -> list[Any]:
+    rows = list(matrix.iter_rows(lane=lane))
+    filtered: list[Any] = []
+    for row in rows:
+        if engine_filter and str(row.engine) not in engine_filter:
+            continue
+        if scenario_filter and str(row.scenario) not in scenario_filter:
+            continue
+        template_name = str(row.template_name)
+        if template_filter and Path(template_name).stem not in template_filter and template_name not in template_filter:
+            continue
+        filtered.append(row)
+        if max_runs is not None and len(filtered) >= max_runs:
+            break
+    return filtered
+
+
+def _resolve_repo_relative_path(*, value: str, repo_root: Path) -> Path:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (repo_root / candidate).resolve()
+
+
+def _preflight_processed_datasets(*, repo_root: Path, rows: list[Any]) -> None:
+    for row in rows:
+        config_path = Path(row.config_path).expanduser().resolve()
+        cfg = load_run_config(config_path)
+        if not cfg.processed_dataset_path:
+            continue
+        resolved = _resolve_repo_relative_path(value=str(cfg.processed_dataset_path), repo_root=repo_root)
+        if resolved.exists():
+            continue
+        bundle = str(cfg.dataset_bundle).strip().upper()
+        if bundle == "HOTPOT_PORTABLE":
+            hotpot_root = (repo_root / "dataset" / "D4" / "hotpotqa" / "hotpot_dev_distractor_v1.json").resolve()
+            raise FileNotFoundError(
+                "portable HotpotQA dataset missing: "
+                f"{resolved}. `s3_multi_hop` requires the official HotpotQA dev distractor source at {hotpot_root}, "
+                "then rerun `maxionbench portable-workflow data --json`."
+            )
+        raise FileNotFoundError(f"processed dataset path not found: {resolved}")
 
 
 def submit_portable(
@@ -107,6 +160,18 @@ def submit_portable(
         budget_level=normalized_budget,
         lane=lane,
         skip_s6=skip_s6,
+    )
+    selected_rows = _selected_matrix_rows(
+        matrix=matrix,
+        lane=lane,
+        engine_filter=engine_filter,
+        scenario_filter=scenario_filter,
+        template_filter=template_filter,
+        max_runs=max_runs,
+    )
+    _preflight_processed_datasets(
+        repo_root=resolved_repo_root,
+        rows=selected_rows,
     )
     _ensure_portable_services(
         repo_root=resolved_repo_root,

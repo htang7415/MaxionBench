@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.portable_exports import _extract_portable_frame, _spearman_rank_correlation, _winner_rows
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
+from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -180,9 +182,9 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
         queries=[{"query_id": "crag::q::q1", "text": "sports score update"}],
         qrels=[("crag::q::q1", "crag::doc::e1", 1)],
     )
-    frames_root = tmp_path / "frames_portable"
+    hotpot_root = tmp_path / "hotpot_portable"
     _write_processed_text_dataset(
-        frames_root,
+        hotpot_root,
         docs=[
             {"doc_id": "frames::doc::d1", "text": "alpha was written by ada"},
             {"doc_id": "frames::doc::d2", "text": "alpha was published in journal b"},
@@ -200,7 +202,16 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     run_from_config(_portable_cfg(tmp_path, name="s1_b0", scenario="s1_single_hop", processed_dataset_path=d4_root, dataset_bundle="D4", budget_level="b0"))
     run_from_config(_portable_cfg(tmp_path, name="s1_b1", scenario="s1_single_hop", processed_dataset_path=d4_root, dataset_bundle="D4", budget_level="b1"))
     run_from_config(_portable_cfg(tmp_path, name="s2_b1", scenario="s2_streaming_memory", processed_dataset_path=d4_root, dataset_bundle="D4", budget_level="b1"))
-    run_from_config(_portable_cfg(tmp_path, name="s3_b2", scenario="s3_multi_hop", processed_dataset_path=frames_root, dataset_bundle="FRAMES_PORTABLE", budget_level="b2"))
+    run_from_config(_portable_cfg(tmp_path, name="s3_b2", scenario="s3_multi_hop", processed_dataset_path=hotpot_root, dataset_bundle="HOTPOT_PORTABLE", budget_level="b2"))
+
+    conformance_dir = tmp_path / "artifacts" / "conformance"
+    conformance_dir.mkdir(parents=True)
+    pd.DataFrame([{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]).to_csv(
+        conformance_dir / "conformance_matrix.csv",
+        index=False,
+    )
+    behavior_dir = tmp_path / "docs" / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
 
     out_dir = tmp_path / "portable_report"
     code = cli_main(
@@ -212,6 +223,10 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
             "portable-agentic",
             "--out",
             str(out_dir),
+            "--conformance-matrix",
+            str(conformance_dir / "conformance_matrix.csv"),
+            "--behavior-dir",
+            str(behavior_dir),
         ]
     )
     assert code == 0
@@ -220,6 +235,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_winners.csv").exists()
     assert (out_dir / "portable_stability.csv").exists()
     assert (out_dir / "minimum_viable_deployment.csv").exists()
+    assert (out_dir / "portable_support_table.csv").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
     assert (out_dir / "portable_task_cost_by_budget.png").exists()
     assert (out_dir / "portable_task_cost_by_budget.meta.json").exists()
@@ -231,12 +247,17 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     winners = pd.read_csv(out_dir / "portable_winners.csv")
     deployment = pd.read_csv(out_dir / "minimum_viable_deployment.csv")
     stability = pd.read_csv(out_dir / "portable_stability.csv")
+    support = pd.read_csv(out_dir / "portable_support_table.csv")
     task_cost_meta = json.loads((out_dir / "portable_task_cost_by_budget.meta.json").read_text(encoding="utf-8"))
 
     assert not winners.empty
     assert {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"} <= set(winners["scenario"].astype(str))
     assert not deployment.empty
     assert "workload_type" in deployment.columns
+    assert not support.empty
+    assert set(REQUIRED_ADAPTERS) <= set(support["engine"].astype(str))
+    assert "reportable" in support.columns
+    assert "included_in_report" in support.columns
     assert task_cost_meta["mode"] == "portable-agentic"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns

@@ -17,7 +17,7 @@ _DEFAULT_DOCS: list[str] = ["command.md", "project.md", "prompt.md", "document.m
 _DEFAULT_ARTIFACT_DIRS: dict[str, str] = {
     "runs": "artifacts/runs/portable",
     "figures": "artifacts/figures/final",
-    "frames_portable": "dataset/processed/frames_portable",
+    "hotpot_portable": "dataset/processed/hotpot_portable",
     "conformance": "artifacts/conformance",
 }
 
@@ -160,9 +160,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Override source for figures (default: artifacts/figures/final)",
     )
     parser.add_argument(
-        "--frames-portable-dir",
+        "--hotpot-portable-dir",
         default=None,
-        help="Override source for FRAMES-portable processed data",
+        help="Override source for HotpotQA-portable processed data",
     )
     parser.add_argument(
         "--conformance-dir",
@@ -186,8 +186,8 @@ def main(argv: list[str] | None = None) -> int:
         artifact_dirs["runs"] = args.runs_dir
     if args.figures_dir:
         artifact_dirs["figures"] = args.figures_dir
-    if args.frames_portable_dir:
-        artifact_dirs["frames_portable"] = args.frames_portable_dir
+    if args.hotpot_portable_dir:
+        artifact_dirs["hotpot_portable"] = args.hotpot_portable_dir
     if args.conformance_dir:
         artifact_dirs["conformance"] = args.conformance_dir
 

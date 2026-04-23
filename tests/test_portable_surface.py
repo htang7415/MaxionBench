@@ -12,7 +12,7 @@ from maxionbench.datasets.loaders.processed import PROCESSED_SCHEMA_VERSION, emb
 from maxionbench.orchestration.config_schema import load_run_config
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
-from maxionbench.tools.preprocess_frames_portable import preprocess_frames_portable
+from maxionbench.tools.preprocess_hotpot_portable import preprocess_hotpot_portable
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -293,25 +293,25 @@ def test_run_from_config_portable_s2_smoke(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_run_from_config_portable_s3_smoke(tmp_path: Path) -> None:
-    root = tmp_path / "frames_portable"
+    root = tmp_path / "hotpot_portable"
     _write_processed_text_dataset(
         root,
         docs=[
-            {"doc_id": "frames::doc::d1", "text": "alpha was written by ada"},
-            {"doc_id": "frames::doc::d2", "text": "alpha was published in journal b"},
-            {"doc_id": "frames::doc::d3", "text": "beta is a protein"},
+            {"doc_id": "hotpot::doc::d1", "text": "alpha was written by ada"},
+            {"doc_id": "hotpot::doc::d2", "text": "alpha was published in journal b"},
+            {"doc_id": "hotpot::doc::d3", "text": "beta is a protein"},
         ],
         queries=[
-            {"query_id": "frames::q::q1", "text": "who wrote alpha and where published"},
-            {"query_id": "frames::q::q2", "text": "what is beta"},
+            {"query_id": "hotpot::q::q1", "text": "who wrote alpha and where published"},
+            {"query_id": "hotpot::q::q2", "text": "what is beta"},
         ],
         qrels=[
-            ("frames::q::q1", "frames::doc::d1", 1),
-            ("frames::q::q1", "frames::doc::d2", 1),
-            ("frames::q::q2", "frames::doc::d3", 1),
+            ("hotpot::q::q1", "hotpot::doc::d1", 1),
+            ("hotpot::q::q1", "hotpot::doc::d2", 1),
+            ("hotpot::q::q2", "hotpot::doc::d3", 1),
         ],
     )
-    cfg_path = _portable_cfg(tmp_path, scenario="s3_multi_hop", processed_dataset_path=root, dataset_bundle="FRAMES_PORTABLE", clients_read=2)
+    cfg_path = _portable_cfg(tmp_path, scenario="s3_multi_hop", processed_dataset_path=root, dataset_bundle="HOTPOT_PORTABLE", clients_read=2)
 
     out_dir = run_from_config(cfg_path)
 
@@ -329,69 +329,31 @@ def test_run_from_config_portable_s3_smoke(tmp_path: Path) -> None:
     assert float(frame.iloc[0]["evidence_coverage_at_10"]) >= 0.0
 
 
-def test_preprocess_frames_portable_builds_bounded_processed_dataset(tmp_path: Path) -> None:
-    frames_root = tmp_path / "frames"
-    kilt_root = tmp_path / "kilt"
-    out_dir = tmp_path / "processed" / "frames_portable"
-
-    _write_jsonl(
-        frames_root / "questions.jsonl",
-        [
-            {
-                "question_id": "q1",
-                "question": "Who wrote Alpha and where was it published?",
-                "gold_evidence": [
-                    {"page_id": "PageA", "text": "Alpha was written by Ada.", "url": "https://example.org/PageA#a"},
-                    {"page_id": "PageB", "text": "Alpha was published in Journal B.", "url": "https://example.org/PageB#b"},
-                ],
-            },
-            {
-                "question_id": "q2",
-                "question": "What is Beta and who studies it?",
-                "gold_evidence": [
-                    {"page_id": "PageC", "text": "Beta is a protein.", "url": "https://example.org/PageC#a"},
-                ],
-            },
-        ],
-    )
-    _write_jsonl(
-        kilt_root / "pages.jsonl",
-        [
-            {
-                "page_id": "PageA",
-                "chunks": [
-                    {"text": "Alpha was written by Ada.", "url": "https://example.org/PageA#a"},
-                    {"text": "PageA extra negative one.", "url": "https://example.org/PageA#n1"},
-                    {"text": "PageA extra negative two.", "url": "https://example.org/PageA#n2"},
-                ],
-            },
-            {
-                "page_id": "PageB",
-                "chunks": [
-                    {"text": "Alpha was published in Journal B.", "url": "https://example.org/PageB#b"},
-                    {"text": "PageB extra negative one.", "url": "https://example.org/PageB#n1"},
-                ],
-            },
-            {
-                "page_id": "PageC",
-                "chunks": [
-                    {"text": "Beta is a protein.", "url": "https://example.org/PageC#a"},
-                    {"text": "PageC extra negative one.", "url": "https://example.org/PageC#n1"},
-                ],
-            },
-        ],
+def test_preprocess_hotpot_portable_builds_processed_dataset(tmp_path: Path) -> None:
+    input_path = tmp_path / "hotpot_dev_distractor_v1.json"
+    out_dir = tmp_path / "processed" / "hotpot_portable"
+    input_path.write_text(
+        json.dumps(
+            [
+                {
+                    "_id": "q1",
+                    "question": "Who wrote Alpha and where was it published?",
+                    "answer": "Ada",
+                    "supporting_facts": [["PageA", 0], ["PageB", 0]],
+                    "context": [
+                        ["PageA", ["Alpha was written by Ada.", "Extra sentence."]],
+                        ["PageB", ["Alpha was published in Journal B."]],
+                        ["PageC", ["Distractor text."]],
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
     )
 
-    summary = preprocess_frames_portable(
-        frames_root=frames_root,
-        kilt_root=kilt_root,
-        out_dir=out_dir,
-        same_page_negatives=1,
-        cross_question_negatives=1,
-        seed=7,
-    )
+    summary = preprocess_hotpot_portable(input_path=input_path, out_dir=out_dir)
 
-    assert summary["dataset_name"] == "frames-portable"
+    assert summary["dataset_name"] == "hotpotqa-portable"
     assert (out_dir / "meta.json").exists()
     assert (out_dir / "corpus.jsonl").exists()
     assert (out_dir / "queries.jsonl").exists()
@@ -399,14 +361,3 @@ def test_preprocess_frames_portable_builds_bounded_processed_dataset(tmp_path: P
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "checksums.json").exists()
 
-    corpus_lines = [json.loads(line) for line in (out_dir / "corpus.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
-    query_lines = [json.loads(line) for line in (out_dir / "queries.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
-    qrels = (out_dir / "qrels.tsv").read_text(encoding="utf-8")
-    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-
-    assert len(query_lines) == 2
-    assert len(corpus_lines) >= 3
-    assert "q1" in qrels and "q2" in qrels
-    assert meta["task_type"] == "text_retrieval_strict"
-    assert meta["same_page_negatives"] == 1
-    assert meta["cross_question_negatives"] == 1

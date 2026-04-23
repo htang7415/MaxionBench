@@ -21,7 +21,7 @@ def verify_scenario_config_dir(config_dir: Path) -> dict[str, Any]:
     root = config_dir.resolve()
     if not root.exists():
         raise FileNotFoundError(f"Config directory does not exist: {root}")
-    files = sorted(root.glob("*.yaml"))
+    files = [path for path in sorted(root.glob("*.yaml")) if not path.name.startswith("._")]
     if not files:
         raise FileNotFoundError(f"No .yaml files found under: {root}")
 
@@ -44,7 +44,7 @@ def _verify_common(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     _expect_equal(errors, path, "profile", cfg.profile, "portable-agentic")
     if cfg.scenario == "s3_multi_hop":
-        _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "FRAMES_PORTABLE")
+        _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "HOTPOT_PORTABLE")
     else:
         _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "D4")
     _expect_equal(errors, path, "no_retry", cfg.no_retry, True)

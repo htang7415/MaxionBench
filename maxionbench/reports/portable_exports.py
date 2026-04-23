@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .plots import DPI, FIGURE_FACE_COLOR, FONT_SIZE, PANEL_PX, STYLE_VERSION, TEXT_COLOR, GRID_COLOR, ENGINE_PALETTE, load_results
+from maxionbench.tools.verify_engine_readiness import BEHAVIOR_CARD_BY_ADAPTER, REQUIRED_ADAPTERS
 
 import matplotlib.pyplot as plt
 
@@ -21,7 +22,13 @@ _BUDGET_ORDER = {"b0": 0, "b1": 1, "b2": 2}
 _BUDGET_PAIRS = [("b0", "b1"), ("b1", "b2"), ("b0", "b2")]
 
 
-def generate_portable_report_bundle(*, input_dir: Path, out_dir: Path) -> dict[str, list[Path]]:
+def generate_portable_report_bundle(
+    *,
+    input_dir: Path,
+    out_dir: Path,
+    conformance_matrix_path: Path | None = None,
+    behavior_dir: Path | None = None,
+) -> dict[str, list[Path]]:
     frame = load_results(input_dir)
     portable = _extract_portable_frame(frame=frame)
     if portable.empty:
@@ -29,7 +36,12 @@ def generate_portable_report_bundle(*, input_dir: Path, out_dir: Path) -> dict[s
             f"no portable-agentic results found under {input_dir}; expected scenarios {sorted(_PORTABLE_SCENARIOS)}"
         )
     out_dir.mkdir(parents=True, exist_ok=True)
-    tables = _export_portable_tables(frame=portable, out_dir=out_dir)
+    tables = _export_portable_tables(
+        frame=portable,
+        out_dir=out_dir,
+        conformance_matrix_path=conformance_matrix_path,
+        behavior_dir=behavior_dir,
+    )
     figures = _export_portable_figures(frame=portable, out_dir=out_dir)
     return {"figures": figures, "tables": tables}
 
@@ -80,7 +92,13 @@ def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
     return portable
 
 
-def _export_portable_tables(*, frame: pd.DataFrame, out_dir: Path) -> list[Path]:
+def _export_portable_tables(
+    *,
+    frame: pd.DataFrame,
+    out_dir: Path,
+    conformance_matrix_path: Path | None,
+    behavior_dir: Path | None,
+) -> list[Path]:
     tables: list[Path] = []
     summary = frame[
         [
@@ -119,6 +137,16 @@ def _export_portable_tables(*, frame: pd.DataFrame, out_dir: Path) -> list[Path]
     deployment.to_csv(deployment_path, index=False)
     tables.append(deployment_path)
 
+    support = _support_table(
+        frame=frame,
+        winners=winners,
+        conformance_matrix_path=conformance_matrix_path,
+        behavior_dir=behavior_dir,
+    )
+    support_path = out_dir / "portable_support_table.csv"
+    support.to_csv(support_path, index=False)
+    tables.append(support_path)
+
     meta_path = out_dir / "portable_summary.meta.json"
     meta_payload = {
         "mode": "portable-agentic",
@@ -129,6 +157,7 @@ def _export_portable_tables(*, frame: pd.DataFrame, out_dir: Path) -> list[Path]
         "budgets": sorted({str(value) for value in frame["budget_level"].tolist() if str(value)}),
         "scenarios": sorted({str(value) for value in frame["scenario"].tolist() if str(value)}),
         "engines": sorted({str(value) for value in frame["engine"].tolist() if str(value)}),
+        "support_table_rows": int(len(support)),
     }
     meta_path.write_text(json.dumps(meta_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tables.append(meta_path)
@@ -292,6 +321,78 @@ def _minimum_viable_deployment_table(*, winners: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows).sort_values("workload_type", kind="stable").reset_index(drop=True)
+
+
+def _support_table(
+    *,
+    frame: pd.DataFrame,
+    winners: pd.DataFrame,
+    conformance_matrix_path: Path | None,
+    behavior_dir: Path | None,
+) -> pd.DataFrame:
+    conformance_status_by_adapter = _load_conformance_statuses(conformance_matrix_path)
+    behavior_root = behavior_dir.resolve() if behavior_dir is not None else None
+    reported_engines = {str(value).strip() for value in winners.get("engine", pd.Series(dtype=object)).tolist() if str(value).strip()}
+    observed_engines = {str(value).strip() for value in frame.get("engine", pd.Series(dtype=object)).tolist() if str(value).strip()}
+
+    rows: list[dict[str, Any]] = []
+    for adapter in REQUIRED_ADAPTERS:
+        behavior_card = str(BEHAVIOR_CARD_BY_ADAPTER.get(adapter, ""))
+        behavior_card_present = bool(behavior_root and behavior_card and (behavior_root / behavior_card).exists())
+        statuses = conformance_status_by_adapter.get(adapter, [])
+        has_pass = "pass" in statuses
+        reportable = bool(has_pass and behavior_card_present)
+        included_in_report = adapter in reported_engines
+        observed_in_runs = adapter in observed_engines
+
+        exclusion_reason = ""
+        if included_in_report:
+            exclusion_reason = ""
+        elif not statuses:
+            exclusion_reason = "missing conformance row"
+        elif not has_pass:
+            exclusion_reason = f"conformance status {','.join(statuses)}"
+        elif not behavior_card_present:
+            exclusion_reason = f"missing behavior card {behavior_card}"
+        elif observed_in_runs and adapter not in reported_engines:
+            exclusion_reason = "observed in runs but filtered from reportable winners"
+        else:
+            exclusion_reason = "not present in reported results"
+
+        rows.append(
+            {
+                "engine": adapter,
+                "behavior_card": behavior_card,
+                "behavior_card_present": behavior_card_present,
+                "conformance_statuses": ",".join(statuses),
+                "reportable": reportable,
+                "included_in_report": included_in_report,
+                "exclusion_reason": exclusion_reason,
+            }
+        )
+    return pd.DataFrame(rows).sort_values("engine", kind="stable").reset_index(drop=True)
+
+
+def _load_conformance_statuses(conformance_matrix_path: Path | None) -> dict[str, list[str]]:
+    if conformance_matrix_path is None:
+        return {}
+    path = conformance_matrix_path.resolve()
+    if not path.exists():
+        return {}
+    frame = pd.read_csv(path)
+    if not {"adapter", "status"}.issubset(frame.columns):
+        return {}
+    normalized = frame.copy()
+    normalized["adapter"] = normalized["adapter"].fillna("").astype(str).str.strip()
+    normalized["status"] = normalized["status"].fillna("").astype(str).str.strip().str.lower()
+    rows: dict[str, list[str]] = {}
+    for adapter, group in normalized.groupby("adapter", dropna=False):
+        key = str(adapter).strip()
+        if not key:
+            continue
+        statuses = sorted({str(value).strip() for value in group["status"].tolist() if str(value).strip()})
+        rows[key] = statuses
+    return rows
 
 
 def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:

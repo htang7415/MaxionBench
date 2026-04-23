@@ -47,6 +47,9 @@ def test_build_run_matrix_default_paths_are_portable(tmp_path: Path, monkeypatch
     )
 
     assert {row.scenario for row in matrix.cpu_rows} == {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}
+    s3_row = next(row for row in matrix.cpu_rows if row.scenario == "s3_multi_hop")
+    s3_payload = yaml.safe_load(Path(s3_row.config_path).read_text(encoding="utf-8"))
+    assert s3_payload["processed_dataset_path"] == "${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/hotpot_portable"
 
 
 def test_build_run_matrix_lancedb_inproc_config_expands_env_uri(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
