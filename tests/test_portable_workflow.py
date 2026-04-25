@@ -9,7 +9,7 @@ from maxionbench.tools import portable_workflow as workflow_mod
 def test_ensure_lancedb_inproc_uri_sets_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("MAXIONBENCH_LANCEDB_INPROC_URI", raising=False)
     uri = workflow_mod.ensure_lancedb_inproc_uri(repo_root=tmp_path)
-    assert uri == str((tmp_path / "artifacts/lancedb/inproc").resolve())
+    assert uri == "/tmp/maxionbench/lancedb/inproc"
 
 
 def test_portable_setup_runs_services_and_conformance(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

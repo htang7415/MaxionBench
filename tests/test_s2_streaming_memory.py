@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from maxionbench.datasets.loaders.d4_synthetic import D4RetrievalDataset
+from maxionbench.orchestration.config_schema import RunConfig
+from maxionbench.orchestration.runner import _load_portable_s2_datasets
 from maxionbench.scenarios.portable_text_retrieval import PortableTextResult
 from maxionbench.scenarios.s2_streaming_memory import StreamingMemoryConfig, StreamingMemoryResult, run
 from maxionbench.schemas.adapter_contract import QueryRequest, QueryResult
@@ -160,3 +163,59 @@ def test_streaming_memory_skips_overlapping_background_evidence(monkeypatch: pyt
     assert adapter.inserted_ids == ["fresh-doc"]
     assert result.event_count == 1
     assert result.overlap_skipped_event_count == 1
+
+
+def test_load_portable_s2_datasets_prioritizes_event_qrel_docs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    background = D4RetrievalDataset(
+        doc_ids=["bg"],
+        doc_vectors=np.asarray([[1.0]], dtype=np.float32),
+        doc_texts=["bg"],
+        doc_token_sets=[{"bg"}],
+        query_ids=["bgq"],
+        query_vectors=np.asarray([[1.0]], dtype=np.float32),
+        query_texts=["bgq"],
+        query_token_sets=[{"bgq"}],
+        qrels={"bgq": {"bg": 1}},
+        idf={"bg": 1.0},
+    )
+    events = D4RetrievalDataset(
+        doc_ids=["ev"],
+        doc_vectors=np.asarray([[1.0]], dtype=np.float32),
+        doc_texts=["ev"],
+        doc_token_sets=[{"ev"}],
+        query_ids=["evq"],
+        query_vectors=np.asarray([[1.0]], dtype=np.float32),
+        query_texts=["evq"],
+        query_token_sets=[{"evq"}],
+        qrels={"evq": {"ev": 1}},
+        idf={"ev": 1.0},
+    )
+
+    monkeypatch.setattr(
+        "maxionbench.orchestration.runner.load_processed_d4_bundle",
+        lambda *args, **kwargs: calls.append(("background", dict(kwargs))) or background,
+    )
+    monkeypatch.setattr(
+        "maxionbench.orchestration.runner.load_processed_text_dataset",
+        lambda *args, **kwargs: calls.append(("events", dict(kwargs))) or events,
+    )
+
+    cfg = RunConfig(
+        scenario="s2_streaming_memory",
+        dataset_bundle="D4",
+        processed_dataset_path=str(tmp_path / "processed"),
+        d4_max_docs=50_000,
+        d4_max_queries=5_000,
+        vector_dim=384,
+        embedding_model="BAAI/bge-small-en-v1.5",
+        embedding_dim=384,
+    )
+
+    loaded_background, loaded_events = _load_portable_s2_datasets(cfg, config_path=tmp_path / "cfg.yaml")
+
+    assert loaded_background is background
+    assert loaded_events is events
+    assert calls[1][0] == "events"
+    assert calls[1][1]["prioritize_qrel_docs"] is True
+    assert calls[1][1]["min_query_retention_ratio"] == 0.9

@@ -236,6 +236,8 @@ def load_processed_text_dataset(
     require_precomputed_embeddings: bool = False,
     max_docs: int = 200_000,
     max_queries: int = 5_000,
+    prioritize_qrel_docs: bool = False,
+    min_query_retention_ratio: float | None = None,
 ) -> D4RetrievalDataset:
     dataset_root = _resolve_processed_root(root)
     bundle = _load_processed_text_bundle(
@@ -244,7 +246,21 @@ def load_processed_text_dataset(
         embedding_dim=embedding_dim,
         require_precomputed_embeddings=require_precomputed_embeddings,
     )
-    merged = _merge_text_bundles(bundles=[bundle], max_docs=max_docs, max_queries=max_queries)
+    merged = _merge_text_bundles(
+        bundles=[bundle],
+        max_docs=max_docs,
+        max_queries=max_queries,
+        prioritize_qrel_docs=prioritize_qrel_docs,
+    )
+    if min_query_retention_ratio is not None:
+        if not 0.0 <= float(min_query_retention_ratio) <= 1.0:
+            raise ValueError("min_query_retention_ratio must be within [0, 1]")
+        raw_query_count = len(bundle.query_ids)
+        if raw_query_count > 0 and len(merged.query_ids) < float(min_query_retention_ratio) * float(raw_query_count):
+            raise RuntimeError(
+                "processed text dataset became too sparse after filtering "
+                f"({len(merged.query_ids)}/{raw_query_count} usable queries retained)"
+            )
     return _build_retrieval_dataset(bundle=merged, vector_dim=vector_dim, seed=seed)
 
 
@@ -516,6 +532,7 @@ def _merge_text_bundles(
     bundles: Sequence[_ProcessedTextBundle],
     max_docs: int,
     max_queries: int,
+    prioritize_qrel_docs: bool = False,
 ) -> _ProcessedTextBundle:
     has_precomputed = [bundle.doc_vectors is not None or bundle.query_vectors is not None for bundle in bundles]
     if any(has_precomputed) and not all(has_precomputed):
@@ -548,15 +565,30 @@ def _merge_text_bundles(
                         "processed text bundle merge encountered mismatched precomputed embeddings: "
                         f"{existing_key} vs {current_key}"
                     )
-        for doc_index, (doc_id, doc_text) in enumerate(zip(bundle.doc_ids, bundle.doc_texts)):
+        priority_doc_ids = _priority_qrel_doc_ids(bundle) if prioritize_qrel_docs else set()
+        priority_indices: list[int] = []
+        filler_indices: list[int] = []
+        for doc_index, doc_id in enumerate(bundle.doc_ids):
             if doc_id in docs:
                 continue
-            if len(docs) >= max_docs:
-                doc_limit_drops += len(bundle.doc_ids) - doc_index
-                break
-            docs[doc_id] = doc_text
-            if bundle.doc_vectors is not None:
-                doc_vectors[doc_id] = np.asarray(bundle.doc_vectors[doc_index], dtype=np.float32)
+            if doc_id in priority_doc_ids:
+                priority_indices.append(doc_index)
+            else:
+                filler_indices.append(doc_index)
+        doc_limit_drops += _merge_bundle_doc_indices(
+            bundle=bundle,
+            indices=priority_indices,
+            docs=docs,
+            doc_vectors=doc_vectors,
+            max_docs=max_docs,
+        )
+        doc_limit_drops += _merge_bundle_doc_indices(
+            bundle=bundle,
+            indices=filler_indices,
+            docs=docs,
+            doc_vectors=doc_vectors,
+            max_docs=max_docs,
+        )
         for query_index, (qid, qtext) in enumerate(zip(bundle.query_ids, bundle.query_texts)):
             if len(query_ids) >= max_queries:
                 query_limit_drops += len(bundle.query_ids) - query_index
@@ -597,6 +629,33 @@ def _merge_text_bundles(
         query_vectors=np.asarray(query_vectors, dtype=np.float32) if query_vectors else None,
         embedding_meta=embedding_meta,
     )
+
+
+def _priority_qrel_doc_ids(bundle: _ProcessedTextBundle) -> set[str]:
+    return {
+        str(doc_id)
+        for rels in bundle.qrels.values()
+        for doc_id, rel in rels.items()
+        if int(rel) > 0
+    }
+
+
+def _merge_bundle_doc_indices(
+    *,
+    bundle: _ProcessedTextBundle,
+    indices: Sequence[int],
+    docs: dict[str, str],
+    doc_vectors: dict[str, np.ndarray],
+    max_docs: int,
+) -> int:
+    for offset, doc_index in enumerate(indices):
+        if len(docs) >= max_docs:
+            return len(indices) - offset
+        doc_id = bundle.doc_ids[doc_index]
+        docs[doc_id] = bundle.doc_texts[doc_index]
+        if bundle.doc_vectors is not None:
+            doc_vectors[doc_id] = np.asarray(bundle.doc_vectors[doc_index], dtype=np.float32)
+    return 0
 
 
 def _build_retrieval_dataset(*, bundle: _ProcessedTextBundle, vector_dim: int, seed: int) -> D4RetrievalDataset:
