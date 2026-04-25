@@ -39,6 +39,8 @@ class QdrantAdapter(BaseAdapter):
     """Qdrant adapter with required MaxionBench contract methods."""
 
     _HTTP_UPSERT_MAX_PAYLOAD_BYTES = 24 * 1024 * 1024
+    _HTTP_UPSERT_MAX_ATTEMPTS = 3
+    _HTTP_UPSERT_RETRY_BACKOFF_S = 0.5
 
     def __init__(
         self,
@@ -155,7 +157,7 @@ class QdrantAdapter(BaseAdapter):
             for record in records
         ]
         for chunk in self._iter_http_upsert_batches(points):
-            self._request("PUT", f"/collections/{self._collection}/points?wait=true", json={"points": chunk})
+            self._upsert_http_chunk(chunk)
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
@@ -333,6 +335,23 @@ class QdrantAdapter(BaseAdapter):
         if status not in (None, "ok"):
             raise RuntimeError(f"Qdrant returned non-ok status: {status}")
         return body
+
+    def _upsert_http_chunk(self, chunk: Sequence[dict[str, Any]]) -> None:
+        path = f"/collections/{self._collection}/points?wait=true"
+        body = {"points": list(chunk)}
+        last_error: requests.RequestException | None = None
+        for attempt in range(1, self._HTTP_UPSERT_MAX_ATTEMPTS + 1):
+            try:
+                self._request("PUT", path, json=body)
+                return
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_error = exc
+                if attempt >= self._HTTP_UPSERT_MAX_ATTEMPTS:
+                    break
+                time.sleep(self._HTTP_UPSERT_RETRY_BACKOFF_S * attempt)
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Qdrant upsert failed without a captured transport error")
 
     @staticmethod
     def _distance_name(metric: str) -> str:

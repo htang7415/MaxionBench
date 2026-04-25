@@ -187,7 +187,7 @@ class LanceDbInprocAdapter(BaseAdapter):
             }
             for doc_id, point in sorted(self._records.items(), key=lambda item: item[0])
         ]
-        self._table = self._db.create_table(self._collection, data=rows, mode="overwrite")
+        self._table = self._db.create_table(self._collection, data=rows)
 
     def _drop_table_if_exists(self) -> None:
         if not self._collection:
