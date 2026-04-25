@@ -2393,8 +2393,11 @@ def _load_portable_s2_datasets(cfg: RunConfig, *, config_path: Path) -> tuple[D4
         embedding_model=cfg.embedding_model,
         embedding_dim=cfg.embedding_dim,
         require_precomputed_embeddings=bool(cfg.embedding_model),
+        # Preserve all event evidence docs before filling remaining capacity.
         max_docs=cfg.d4_max_docs,
         max_queries=cfg.d4_max_queries,
+        prioritize_qrel_docs=True,
+        min_query_retention_ratio=0.9,
     )
     return background, events
 

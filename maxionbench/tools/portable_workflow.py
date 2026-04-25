@@ -19,7 +19,7 @@ from maxionbench.tools.preprocess_hotpot_portable import main as preprocess_hotp
 from maxionbench.tools.service_lifecycle import main as services_main
 
 
-_DEFAULT_LANCEDB_INPROC_URI = "artifacts/lancedb/inproc"
+_DEFAULT_LANCEDB_INPROC_URI = "/tmp/maxionbench/lancedb/inproc"
 _DEFAULT_HOTPOTQA_INPUT = "dataset/D4/hotpotqa/hotpot_dev_distractor_v1.json"
 _DEFAULT_HOTPOT_PORTABLE_OUT = "dataset/processed/hotpot_portable"
 _DEFAULT_D4_INPUT = "dataset/processed/D4"
@@ -44,7 +44,9 @@ def ensure_lancedb_inproc_uri(*, repo_root: Path) -> str:
     current = str(os.environ.get("MAXIONBENCH_LANCEDB_INPROC_URI") or "").strip()
     if current:
         return current
-    default_uri = str((repo_root / _DEFAULT_LANCEDB_INPROC_URI).resolve())
+    # Default to /tmp so LanceDB gets a local filesystem that supports atomic rename.
+    # External volumes (e.g. AFP/SMB/APFS on /Volumes/) return ENOTSUP for rename().
+    default_uri = _DEFAULT_LANCEDB_INPROC_URI
     os.environ["MAXIONBENCH_LANCEDB_INPROC_URI"] = default_uri
     return default_uri
 
