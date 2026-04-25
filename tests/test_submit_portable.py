@@ -158,7 +158,6 @@ def test_submit_portable_sets_local_lancedb_scratch_envs_when_unset(tmp_path: Pa
     )
 
     monkeypatch.delenv("MAXIONBENCH_LANCEDB_INPROC_URI", raising=False)
-    monkeypatch.delenv("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI", raising=False)
     monkeypatch.setattr(submit_mod, "services_up", lambda **kwargs: {"healthy": True})
     monkeypatch.setattr(submit_mod, "build_run_matrix", lambda **kwargs: fake_matrix)
     monkeypatch.setattr(submit_mod, "execute_run_matrix", lambda **kwargs: {"completed_rows": 1, "failed_rows": 0})
@@ -173,7 +172,41 @@ def test_submit_portable_sets_local_lancedb_scratch_envs_when_unset(tmp_path: Pa
 
     scratch_root = Path(tempfile.gettempdir()).resolve() / "maxionbench" / tmp_path.name / "lancedb"
     assert os.environ["MAXIONBENCH_LANCEDB_INPROC_URI"] == str((scratch_root / "inproc").resolve())
-    assert os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] == str((scratch_root / "service").resolve())
+
+
+def test_submit_portable_excludes_lancedb_service_from_default_execution(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    fake_matrix = submit_mod.RunMatrix(
+        repo_root=str(tmp_path),
+        generated_config_dir=str((tmp_path / "artifacts" / "run_matrix" / "portable_b0" / "generated_configs").resolve()),
+        output_root=str((tmp_path / "artifacts" / "runs" / "portable" / "b0").resolve()),
+        budget_level="b0",
+        cpu_rows=[],
+        gpu_rows=[],
+        selected_engines=["faiss-cpu", "lancedb-service", "qdrant"],
+        selected_templates=[],
+        lane="cpu",
+    )
+
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(submit_mod, "services_up", lambda **kwargs: calls.append(("services", dict(kwargs))) or {"healthy": True})
+    monkeypatch.setattr(submit_mod, "build_run_matrix", lambda **kwargs: fake_matrix)
+    monkeypatch.setattr(submit_mod, "execute_run_matrix", lambda **kwargs: calls.append(("execute", dict(kwargs))) or {"completed_rows": 1, "failed_rows": 0})
+
+    summary = submit_mod.submit_portable(
+        budget="b0",
+        repo_root=tmp_path,
+        scenario_config_dir=Path("configs/scenarios_portable"),
+        engine_config_dir=Path("configs/engines_portable"),
+        verify_promotion=False,
+    )
+
+    assert summary["selected_engines"] == ["faiss-cpu", "qdrant"]
+    assert summary["excluded_engines"] == ["lancedb-service"]
+    assert calls[0][0] == "services"
+    assert calls[0][1]["services"] == ["qdrant"]
+    assert calls[1][0] == "execute"
+    assert calls[1][1]["engine_filter"] == {"faiss-cpu", "qdrant"}
 
 
 def test_submit_portable_fails_early_when_hotpot_portable_dataset_is_missing(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

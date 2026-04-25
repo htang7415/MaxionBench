@@ -19,7 +19,7 @@ from maxionbench.tools.preprocess_hotpot_portable import main as preprocess_hotp
 from maxionbench.tools.service_lifecycle import main as services_main
 
 
-_DEFAULT_LANCEDB_SERVICE_URI = "artifacts/lancedb/service"
+_DEFAULT_LANCEDB_INPROC_URI = "artifacts/lancedb/inproc"
 _DEFAULT_HOTPOTQA_INPUT = "dataset/D4/hotpotqa/hotpot_dev_distractor_v1.json"
 _DEFAULT_HOTPOT_PORTABLE_OUT = "dataset/processed/hotpot_portable"
 _DEFAULT_D4_INPUT = "dataset/processed/D4"
@@ -40,15 +40,12 @@ def _pushd(path: Path) -> Iterator[None]:
         os.chdir(previous)
 
 
-def ensure_lancedb_service_uri(*, repo_root: Path) -> str:
-    current = str(os.environ.get("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI") or "").strip()
+def ensure_lancedb_inproc_uri(*, repo_root: Path) -> str:
+    current = str(os.environ.get("MAXIONBENCH_LANCEDB_INPROC_URI") or "").strip()
     if current:
-        # This helper intentionally respects an existing process-level override.
-        # The portable workflow commands run as single CLI invocations, so later
-        # calls in the same process should reuse the first resolved value.
         return current
-    default_uri = str((repo_root / _DEFAULT_LANCEDB_SERVICE_URI).resolve())
-    os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] = default_uri
+    default_uri = str((repo_root / _DEFAULT_LANCEDB_INPROC_URI).resolve())
+    os.environ["MAXIONBENCH_LANCEDB_INPROC_URI"] = default_uri
     return default_uri
 
 
@@ -95,7 +92,7 @@ def _preprocess_portable_d4() -> list[dict[str, str]]:
 
 def portable_setup(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
-    lancedb_uri = ensure_lancedb_service_uri(repo_root=resolved_repo_root)
+    lancedb_uri = ensure_lancedb_inproc_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
         _require_success(
             "portable services startup",
@@ -112,14 +109,14 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
                     "--timeout-s",
                     "30",
                     "--adapters",
-                    "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
+                    "mock,faiss-cpu,lancedb-inproc,qdrant,pgvector",
                 ]
             ),
         )
     return {
         "mode": "portable-setup",
         "repo_root": str(resolved_repo_root),
-        "lancedb_service_inproc_uri": lancedb_uri,
+        "lancedb_inproc_uri": lancedb_uri,
         "services_profile": "portable",
         "conformance_out_dir": str((resolved_repo_root / "artifacts/conformance").resolve()),
     }
@@ -127,7 +124,7 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
 
 def portable_data(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
-    ensure_lancedb_service_uri(repo_root=resolved_repo_root)
+    ensure_lancedb_inproc_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
         _require_success(
             "portable dataset download",
@@ -188,7 +185,7 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
 
 def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
-    ensure_lancedb_service_uri(repo_root=resolved_repo_root)
+    ensure_lancedb_inproc_uri(repo_root=resolved_repo_root)
     runs_dir = (resolved_repo_root / _DEFAULT_RUNS_DIR).resolve()
     figures_dir = (resolved_repo_root / _DEFAULT_FIGURES_DIR).resolve()
     with _pushd(resolved_repo_root):

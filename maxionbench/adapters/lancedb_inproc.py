@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 import time
 from typing import Any, Mapping, Sequence
 
@@ -16,21 +17,23 @@ from maxionbench.schemas.adapter_contract import (
     Vector,
 )
 
-from ._exact import StoredPoint, normalize_metric, topk_exact
+from ._exact import StoredPoint, matches_filter, normalize_metric
 from .base import BaseAdapter
 
 
 class LanceDbInprocAdapter(BaseAdapter):
     """LanceDB in-process adapter with explicit flush semantics."""
 
-    def __init__(self, uri: str = "artifacts/lancedb/inproc") -> None:
+    def __init__(self, uri: str | None = None) -> None:
         try:
             import lancedb  # type: ignore
         except ImportError as exc:
             raise ImportError("lancedb is required for LanceDbInprocAdapter. Install with `pip install lancedb`.") from exc
         self._lancedb = lancedb
-        self._uri = str(Path(uri).resolve())
+        resolved_uri = uri or str((Path(tempfile.gettempdir()) / "maxionbench" / "lancedb" / "inproc").resolve())
+        self._uri = str(Path(resolved_uri).resolve())
         Path(self._uri).mkdir(parents=True, exist_ok=True)
+        _check_filesystem_supports_rename(self._uri)
         self._db = self._lancedb.connect(self._uri)
         self._collection = ""
         self._dimension = 0
@@ -89,15 +92,31 @@ class LanceDbInprocAdapter(BaseAdapter):
         return len(records)
 
     def query(self, request: QueryRequest) -> list[QueryResult]:
+        if self._table is None:
+            if not self._records:
+                return []
+            raise RuntimeError("LanceDB table unavailable for committed records; flush_or_commit did not materialize the table")
         query_vec = self._to_vector(request.vector)
-        # Deterministic exact fallback across all metrics and filter shapes.
-        return topk_exact(
-            records=self._records,
-            query=query_vec,
-            top_k=request.top_k,
-            metric=self._metric,
-            filters=request.filters,
-        )
+        search_limit = request.top_k if not request.filters else max(request.top_k, len(self._records))
+        search = self._table.search(query_vec.tolist()).limit(int(max(search_limit, 1)))
+        frame = search.to_pandas()
+        results: list[QueryResult] = []
+        for rank, row in enumerate(frame.to_dict(orient="records")):
+            doc_id = str(row.get("id") or "")
+            payload_raw = row.get("payload")
+            payload = dict(payload_raw) if isinstance(payload_raw, Mapping) else {}
+            if not matches_filter(payload, request.filters):
+                continue
+            results.append(
+                QueryResult(
+                    id=doc_id,
+                    score=_lance_row_score(row=row, rank=rank),
+                    payload=payload,
+                )
+            )
+            if len(results) >= request.top_k:
+                break
+        return results
 
     def batch_query(self, requests: Sequence[QueryRequest]) -> list[list[QueryResult]]:
         return [self.query(request) for request in requests]
@@ -210,3 +229,45 @@ class LanceDbInprocAdapter(BaseAdapter):
         if not root.exists():
             return 0
         return int(sum(path.stat().st_size for path in root.rglob("*") if path.is_file()))
+
+
+def _check_filesystem_supports_rename(uri: str) -> None:
+    """Raise RuntimeError early if the filesystem at uri does not support atomic rename.
+
+    LanceDB requires rename() for commit atomicity.  Some external or network-mounted
+    filesystems (e.g. AFP/SMB volumes on macOS) return ENOTSUP (errno 45), which causes
+    a cryptic deep failure inside Lance.  Better to catch it at adapter construction time.
+    """
+    import os
+
+    probe_dir = Path(uri)
+    src = probe_dir / ".maxionbench_rename_probe"
+    dst = probe_dir / ".maxionbench_rename_probe_dst"
+    try:
+        src.write_bytes(b"")
+        os.rename(src, dst)
+        dst.unlink(missing_ok=True)
+    except OSError as exc:
+        src.unlink(missing_ok=True)
+        dst.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"LanceDB storage path {uri!r} is on a filesystem that does not support "
+            f"atomic rename (errno {exc.errno}: {exc.strerror}). "
+            "Move MAXIONBENCH_LANCEDB_INPROC_URI to a local filesystem (e.g. /tmp)."
+        ) from exc
+
+
+def _lance_row_score(*, row: Mapping[str, Any], rank: int) -> float:
+    for key in ("_score", "score"):
+        value = row.get(key)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    for key in ("_distance", "distance"):
+        value = row.get(key)
+        try:
+            return -float(value)
+        except (TypeError, ValueError):
+            continue
+    return float(-rank)

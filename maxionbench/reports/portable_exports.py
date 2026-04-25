@@ -35,14 +35,31 @@ def generate_portable_report_bundle(
         raise RuntimeError(
             f"no portable-agentic results found under {input_dir}; expected scenarios {sorted(_PORTABLE_SCENARIOS)}"
         )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tables = _export_portable_tables(
-        frame=portable,
-        out_dir=out_dir,
+    resolved_conformance_matrix_path, resolved_behavior_dir = _resolve_reportability_inputs(
         conformance_matrix_path=conformance_matrix_path,
         behavior_dir=behavior_dir,
     )
-    figures = _export_portable_figures(frame=portable, out_dir=out_dir)
+    reportability = _reportability_by_adapter(
+        conformance_matrix_path=resolved_conformance_matrix_path,
+        behavior_dir=resolved_behavior_dir,
+    )
+    reportable_engines = {
+        engine
+        for engine, payload in reportability.items()
+        if bool(payload.get("reportable"))
+    }
+    portable_reportable = portable.loc[portable["engine"].astype(str).isin(reportable_engines)].copy()
+    if portable_reportable.empty:
+        raise RuntimeError("portable report bundle requires at least one reportable engine after conformance filtering")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tables = _export_portable_tables(
+        frame=portable_reportable,
+        observed_frame=portable,
+        out_dir=out_dir,
+        conformance_matrix_path=resolved_conformance_matrix_path,
+        behavior_dir=resolved_behavior_dir,
+    )
+    figures = _export_portable_figures(frame=portable_reportable, out_dir=out_dir)
     return {"figures": figures, "tables": tables}
 
 
@@ -95,6 +112,7 @@ def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
 def _export_portable_tables(
     *,
     frame: pd.DataFrame,
+    observed_frame: pd.DataFrame,
     out_dir: Path,
     conformance_matrix_path: Path | None,
     behavior_dir: Path | None,
@@ -138,7 +156,7 @@ def _export_portable_tables(
     tables.append(deployment_path)
 
     support = _support_table(
-        frame=frame,
+        frame=observed_frame,
         winners=winners,
         conformance_matrix_path=conformance_matrix_path,
         behavior_dir=behavior_dir,
@@ -152,6 +170,7 @@ def _export_portable_tables(
         "mode": "portable-agentic",
         "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
         "rows_total": int(len(frame)),
+        "observed_rows_total": int(len(observed_frame)),
         "winner_rows": int(len(winners)),
         "table_names": [path.name for path in tables],
         "budgets": sorted({str(value) for value in frame["budget_level"].tolist() if str(value)}),
@@ -310,7 +329,13 @@ def _minimum_viable_deployment_table(*, winners: pd.DataFrame) -> pd.DataFrame:
         preferred = scenario_frame.loc[scenario_frame["budget_level"] == "b2"]
         if preferred.empty:
             preferred = scenario_frame.sort_values(["budget_sort", "rank_within_budget"], kind="stable").tail(1)
-        best = preferred.sort_values(["task_cost_est", "p99_ms", "qps"], ascending=[True, True, False], kind="stable").iloc[0]
+        quality_floor = _quality_floor(str(scenario))
+        eligible = preferred.loc[pd.to_numeric(preferred["primary_quality_value"], errors="coerce") >= quality_floor]
+        if "errors" in preferred.columns:
+            eligible = eligible.loc[pd.to_numeric(eligible["errors"], errors="coerce").fillna(0.0) <= 0.0]
+        if eligible.empty:
+            eligible = preferred
+        best = eligible.sort_values(["task_cost_est", "p99_ms", "qps"], ascending=[True, True, False], kind="stable").iloc[0]
         reason_parts = [
             f"{best['primary_quality_metric']}={float(best['primary_quality_value']):.3f}",
         ]
@@ -350,7 +375,7 @@ def _support_table(
         statuses = conformance_status_by_adapter.get(adapter, [])
         has_pass = "pass" in statuses
         reportable = bool(has_pass and behavior_card_present)
-        included_in_report = adapter in reported_engines
+        included_in_report = bool(reportable and adapter in reported_engines)
         observed_in_runs = adapter in observed_engines
 
         exclusion_reason = ""
@@ -403,6 +428,42 @@ def _load_conformance_statuses(conformance_matrix_path: Path | None) -> dict[str
     return rows
 
 
+def _resolve_reportability_inputs(
+    *,
+    conformance_matrix_path: Path | None,
+    behavior_dir: Path | None,
+) -> tuple[Path, Path]:
+    if conformance_matrix_path is None:
+        raise ValueError("portable paper-facing reports require --conformance-matrix")
+    if behavior_dir is None:
+        raise ValueError("portable paper-facing reports require --behavior-dir")
+    resolved_conformance_matrix_path = conformance_matrix_path.resolve()
+    if not resolved_conformance_matrix_path.exists():
+        raise FileNotFoundError(f"conformance matrix not found: {resolved_conformance_matrix_path}")
+    resolved_behavior_dir = behavior_dir.resolve()
+    if not resolved_behavior_dir.exists():
+        raise FileNotFoundError(f"behavior directory not found: {resolved_behavior_dir}")
+    return resolved_conformance_matrix_path, resolved_behavior_dir
+
+
+def _reportability_by_adapter(
+    *,
+    conformance_matrix_path: Path,
+    behavior_dir: Path,
+) -> dict[str, dict[str, bool | str]]:
+    statuses_by_adapter = _load_conformance_statuses(conformance_matrix_path)
+    reportability: dict[str, dict[str, bool | str]] = {}
+    for adapter in sorted(set(REQUIRED_ADAPTERS) | set(statuses_by_adapter)):
+        behavior_card = str(BEHAVIOR_CARD_BY_ADAPTER.get(adapter, ""))
+        behavior_card_present = True if not behavior_card else bool((behavior_dir / behavior_card).exists())
+        statuses = statuses_by_adapter.get(adapter, [])
+        reportability[adapter] = {
+            "reportable": bool("pass" in statuses and behavior_card_present),
+            "behavior_card": behavior_card,
+        }
+    return reportability
+
+
 def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
     if winners.empty:
         _draw_placeholder(ax=ax, message="No portable winners available")
@@ -415,7 +476,6 @@ def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
     ax.bar(np.arange(len(summary)), summary["task_cost_est"].astype(float), color=colors)
     ax.set_xticks(np.arange(len(summary)), labels=labels, rotation=30, ha="right")
     ax.set_ylabel("Task Cost Est")
-    ax.set_title("Portable Winners by Budget")
     ax.grid(axis="y", alpha=0.4)
 
 
@@ -431,7 +491,6 @@ def _plot_budget_stability(*, ax: Any, stability: pd.DataFrame) -> None:
     ax.set_xticks(x, labels=labels, rotation=30, ha="right")
     ax.set_ylim(0.0, 1.05)
     ax.set_ylabel("Agreement / Correlation")
-    ax.set_title("Budget Stability")
     ax.grid(axis="y", alpha=0.4)
     ax.legend(frameon=False, loc="lower right")
 
@@ -449,9 +508,14 @@ def _plot_s2_freshness(*, ax: Any, winners: pd.DataFrame) -> None:
     ax.set_xticks(x, labels=s2["engine"].astype(str).tolist(), rotation=20, ha="right")
     ax.set_ylim(0.0, 1.05)
     ax.set_ylabel("Freshness Hit")
-    ax.set_title("S2 Freshness")
     ax.grid(axis="y", alpha=0.4)
     ax.legend(frameon=False, loc="lower right")
+
+
+def _quality_floor(scenario: str) -> float:
+    if scenario == "s3_multi_hop":
+        return 0.30
+    return 0.25
 
 
 def _engine_color(engine: str) -> str:
@@ -518,6 +582,8 @@ def _set_plot_style() -> None:
             "text.color": TEXT_COLOR,
             "axes.labelcolor": TEXT_COLOR,
             "axes.facecolor": FIGURE_FACE_COLOR,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
             "figure.facecolor": FIGURE_FACE_COLOR,
             "savefig.facecolor": FIGURE_FACE_COLOR,
             "grid.color": GRID_COLOR,

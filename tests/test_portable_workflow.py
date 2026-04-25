@@ -6,16 +6,16 @@ from pathlib import Path
 from maxionbench.tools import portable_workflow as workflow_mod
 
 
-def test_ensure_lancedb_service_uri_sets_default(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI", raising=False)
-    uri = workflow_mod.ensure_lancedb_service_uri(repo_root=tmp_path)
-    assert uri == str((tmp_path / "artifacts/lancedb/service").resolve())
+def test_ensure_lancedb_inproc_uri_sets_default(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("MAXIONBENCH_LANCEDB_INPROC_URI", raising=False)
+    uri = workflow_mod.ensure_lancedb_inproc_uri(repo_root=tmp_path)
+    assert uri == str((tmp_path / "artifacts/lancedb/inproc").resolve())
 
 
 def test_portable_setup_runs_services_and_conformance(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, list[str]]] = []
 
-    monkeypatch.delenv("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI", raising=False)
+    monkeypatch.delenv("MAXIONBENCH_LANCEDB_INPROC_URI", raising=False)
     monkeypatch.setattr(workflow_mod, "services_main", lambda argv=None: calls.append(("services", list(argv or []))) or 0)
     monkeypatch.setattr(workflow_mod, "conformance_matrix_main", lambda argv=None: calls.append(("conformance", list(argv or []))) or 0)
 
@@ -34,14 +34,14 @@ def test_portable_setup_runs_services_and_conformance(tmp_path: Path, monkeypatc
                 "--timeout-s",
                 "30",
                 "--adapters",
-                "mock,faiss-cpu,lancedb-inproc,lancedb-service,qdrant,pgvector",
+                "mock,faiss-cpu,lancedb-inproc,qdrant,pgvector",
             ],
         ),
     ]
 
 
 def test_portable_setup_raises_when_services_fail(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.delenv("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI", raising=False)
+    monkeypatch.delenv("MAXIONBENCH_LANCEDB_INPROC_URI", raising=False)
     monkeypatch.setattr(workflow_mod, "services_main", lambda argv=None: 1)
     monkeypatch.setattr(workflow_mod, "conformance_matrix_main", lambda argv=None: 0)
 

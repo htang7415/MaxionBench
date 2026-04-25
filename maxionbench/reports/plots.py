@@ -13,7 +13,7 @@ from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_stat
 FONT_SIZE = 16
 PANEL_PX = 600
 DPI = 100
-STYLE_VERSION = "portable_v1"
+STYLE_VERSION = "portable_v2_neurips"
 FIGURE_FACE_COLOR = "#ffffff"
 TEXT_COLOR = "#1f2933"
 GRID_COLOR = "#d9dee5"

@@ -24,8 +24,8 @@ _SERVICE_ADAPTER_MAP: dict[str, tuple[str, dict[str, Any]]] = {
 }
 
 _LANCEDB_ENV_NOTE = (
-    "Set MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI before running benchmarks:\n"
-    "  export MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI=\"$PWD/artifacts/lancedb/service\""
+    "Set MAXIONBENCH_LANCEDB_INPROC_URI before running LanceDB in-process benchmarks:\n"
+    "  export MAXIONBENCH_LANCEDB_INPROC_URI=\"$PWD/artifacts/lancedb/inproc\""
 )
 
 
