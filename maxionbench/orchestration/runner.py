@@ -609,6 +609,7 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         "stale_answer_rate_at_5s": result.stale_answer_rate_at_5s,
                         "p95_visibility_latency_ms": result.p95_visibility_latency_ms,
                         "event_count": result.event_count,
+                        "overlap_skipped_event_count": result.overlap_skipped_event_count,
                         "freshness_floor_for_budget": freshness_floor,
                     },
                 )

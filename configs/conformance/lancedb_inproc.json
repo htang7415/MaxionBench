@@ -1,6 +1,6 @@
 {
   "adapter": "lancedb-inproc",
-  "adapter_options_json": "{\"uri\":\"artifacts/lancedb/conformance\"}",
+  "adapter_options_json": "{\"uri\":\"${MAXIONBENCH_LANCEDB_INPROC_URI:-/tmp/maxionbench/lancedb/conformance}\"}",
   "collection": "conformance",
   "dimension": 4,
   "metric": "ip"

@@ -16,6 +16,7 @@ from maxionbench.tools.execute_run_matrix import execute_run_matrix
 from maxionbench.tools.verify_promotion_gate import verify_portable_promotion_gate
 
 _PORTABLE_SERVICE_ENGINES = frozenset({"qdrant", "pgvector"})
+_DEFAULT_PAPER_EXCLUDED_ENGINES = frozenset({"lancedb-service"})
 
 
 def _default_lancedb_local_uri(*, repo_root: Path, lane: str) -> str:
@@ -47,6 +48,15 @@ def _execution_engines(*, selected_engines: list[str], engine_filter: set[str] |
         return list(selected_engines)
     allowed = {engine.strip() for engine in engine_filter if engine.strip()}
     return [engine for engine in selected_engines if engine in allowed]
+
+
+def _effective_engine_filter(*, selected_engines: list[str], engine_filter: set[str] | None) -> set[str] | None:
+    if engine_filter is not None:
+        return {engine.strip() for engine in engine_filter if engine.strip()} or None
+    return {
+        engine for engine in selected_engines
+        if engine not in _DEFAULT_PAPER_EXCLUDED_ENGINES
+    }
 
 
 def _selected_matrix_rows(
@@ -135,11 +145,6 @@ def submit_portable(
             repo_root=resolved_repo_root,
             lane="inproc",
         )
-    if not str(os.environ.get("MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI") or "").strip():
-        os.environ["MAXIONBENCH_LANCEDB_SERVICE_INPROC_URI"] = _default_lancedb_local_uri(
-            repo_root=resolved_repo_root,
-            lane="service",
-        )
     resolved_out_dir = (
         out_dir.expanduser().resolve()
         if out_dir is not None
@@ -161,10 +166,14 @@ def submit_portable(
         lane=lane,
         skip_s6=skip_s6,
     )
+    effective_engine_filter = _effective_engine_filter(
+        selected_engines=list(matrix.selected_engines),
+        engine_filter=engine_filter,
+    )
     selected_rows = _selected_matrix_rows(
         matrix=matrix,
         lane=lane,
-        engine_filter=engine_filter,
+        engine_filter=effective_engine_filter,
         scenario_filter=scenario_filter,
         template_filter=template_filter,
         max_runs=max_runs,
@@ -177,7 +186,7 @@ def submit_portable(
         repo_root=resolved_repo_root,
         selected_engines=_execution_engines(
             selected_engines=list(matrix.selected_engines),
-            engine_filter=engine_filter,
+            engine_filter=effective_engine_filter,
         ),
         adapter_timeout_s=adapter_timeout_s,
         poll_interval_s=poll_interval_s,
@@ -192,7 +201,7 @@ def submit_portable(
         no_retry=no_retry,
         skip_completed=skip_completed,
         continue_on_failure=continue_on_failure,
-        engine_filter=engine_filter,
+        engine_filter=effective_engine_filter,
         scenario_filter=scenario_filter,
         template_filter=template_filter,
         max_runs=max_runs,
@@ -207,7 +216,19 @@ def submit_portable(
         "matrix_path": str(matrix_path.resolve()),
         "generated_config_dir": str(Path(matrix.generated_config_dir).resolve()),
         "output_root": str(resolved_output_root),
-        "selected_engines": list(matrix.selected_engines),
+        "selected_engines": _execution_engines(
+            selected_engines=list(matrix.selected_engines),
+            engine_filter=effective_engine_filter,
+        ),
+        "excluded_engines": sorted(
+            set(matrix.selected_engines)
+            - set(
+                _execution_engines(
+                    selected_engines=list(matrix.selected_engines),
+                    engine_filter=effective_engine_filter,
+                )
+            )
+        ),
         "selected_templates": list(matrix.selected_templates),
         "matrix_rows": _matrix_row_counts(matrix=matrix),
         "execution": execution,

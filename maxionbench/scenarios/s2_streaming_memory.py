@@ -39,6 +39,7 @@ class StreamingMemoryResult:
     stale_answer_rate_at_5s: float
     p95_visibility_latency_ms: float
     event_count: int
+    overlap_skipped_event_count: int = 0
 
     def __post_init__(self) -> None:
         if math.isnan(self.freshness_hit_at_5s) and math.isnan(self.stale_answer_rate_at_5s):
@@ -74,6 +75,8 @@ def run(
     hit_1s: list[float] = []
     hit_5s: list[float] = []
     visibility_latencies_ms: list[float] = []
+    background_doc_ids = {str(doc_id) for doc_id in background.doc_ids}
+    overlap_skipped_event_count = 0
     event_count = min(len(events.query_ids), len(events.query_vectors))
     for event_idx in range(event_count):
         qid = events.query_ids[event_idx]
@@ -82,6 +85,9 @@ def run(
         if not evidence_ids:
             continue
         evidence_id = evidence_ids[0]
+        if evidence_id in background_doc_ids:
+            overlap_skipped_event_count += 1
+            continue
         try:
             doc_idx = events.doc_ids.index(evidence_id)
         except ValueError:
@@ -94,6 +100,7 @@ def run(
                     "text": events.doc_texts[doc_idx],
                     "token_count": len(tokenize_text(events.doc_texts[doc_idx])),
                     "event_source": "streaming_memory",
+                    "freshness_probe_query_id": str(qid),
                 },
             )
         )
@@ -119,6 +126,7 @@ def run(
         stale_answer_rate_at_5s=1.0 - freshness_hit_at_5s if hit_5s else 0.0,
         p95_visibility_latency_ms=visibility_summary["p95_ms"],
         event_count=len(hit_5s),
+        overlap_skipped_event_count=overlap_skipped_event_count,
     )
 
 

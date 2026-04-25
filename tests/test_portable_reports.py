@@ -7,6 +7,7 @@ import shutil
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
 from maxionbench.cli import main as cli_main
@@ -17,6 +18,7 @@ from maxionbench.reports.portable_exports import (
     _minimum_viable_deployment_table,
     _spearman_rank_correlation,
     _winner_rows,
+    generate_portable_report_bundle,
 )
 from maxionbench.scenarios import s2_streaming_memory as s2_streaming_memory_mod
 from maxionbench.tools.verify_engine_readiness import REQUIRED_ADAPTERS
@@ -211,7 +213,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
 
     conformance_dir = tmp_path / "artifacts" / "conformance"
     conformance_dir.mkdir(parents=True)
-    pd.DataFrame([{"adapter": adapter, "status": "pass"} for adapter in REQUIRED_ADAPTERS]).to_csv(
+    pd.DataFrame([{"adapter": adapter, "status": "pass"} for adapter in ("mock", *REQUIRED_ADAPTERS)]).to_csv(
         conformance_dir / "conformance_matrix.csv",
         index=False,
     )
@@ -360,3 +362,127 @@ def test_minimum_viable_deployment_table_includes_freshness_for_s2_rows() -> Non
     deployment = _minimum_viable_deployment_table(winners=winners)
 
     assert deployment.iloc[0]["why"] == "answer_f1=0.812, freshness_hit@5s=0.975, p99=84.5ms, task_cost=0.456789"
+
+
+def test_generate_portable_report_bundle_requires_conformance_inputs(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "qdrant"
+    run_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "run_id": "run-1",
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "engine": "qdrant",
+                "embedding_model": "emb",
+                "quality_target": 0.0,
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.5,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 1.0,
+                "freshness_hit_at_5s": float("nan"),
+                "stale_answer_rate_at_5s": float("nan"),
+                "evidence_coverage_at_10": float("nan"),
+                "clients_read": 1,
+                "repeat_idx": 0,
+                "search_params_json": "{}",
+                "__meta_profile": "portable-agentic",
+            }
+        ]
+    ).to_parquet(run_dir / "results.parquet", index=False)
+    (run_dir / "run_status.json").write_text(json.dumps({"status": "success"}) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="require --conformance-matrix"):
+        generate_portable_report_bundle(
+            input_dir=tmp_path / "runs",
+            out_dir=tmp_path / "out",
+            conformance_matrix_path=None,
+            behavior_dir=tmp_path / "behavior",
+        )
+
+
+def test_support_table_filters_non_reportable_engines_from_report(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    qdrant_run = runs_root / "qdrant"
+    pgvector_run = runs_root / "pgvector"
+    qdrant_run.mkdir(parents=True)
+    pgvector_run.mkdir(parents=True)
+
+    frame = pd.DataFrame(
+        [
+            {
+                "run_id": "qdrant-run",
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "engine": "qdrant",
+                "embedding_model": "emb",
+                "quality_target": 0.0,
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.5,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 1.0,
+                "freshness_hit_at_5s": float("nan"),
+                "stale_answer_rate_at_5s": float("nan"),
+                "evidence_coverage_at_10": float("nan"),
+                "clients_read": 1,
+                "repeat_idx": 0,
+                "search_params_json": "{}",
+                "__meta_profile": "portable-agentic",
+            },
+            {
+                "run_id": "pgvector-run",
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "engine": "pgvector",
+                "embedding_model": "emb",
+                "quality_target": 0.0,
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.49,
+                "p99_ms": 12.0,
+                "qps": 90.0,
+                "task_cost_est": 1.1,
+                "freshness_hit_at_5s": float("nan"),
+                "stale_answer_rate_at_5s": float("nan"),
+                "evidence_coverage_at_10": float("nan"),
+                "clients_read": 1,
+                "repeat_idx": 0,
+                "search_params_json": "{}",
+                "__meta_profile": "portable-agentic",
+            },
+        ]
+    )
+    frame.iloc[[0]].to_parquet(qdrant_run / "results.parquet", index=False)
+    frame.iloc[[1]].to_parquet(pgvector_run / "results.parquet", index=False)
+    (qdrant_run / "run_status.json").write_text(json.dumps({"status": "success"}) + "\n", encoding="utf-8")
+    (pgvector_run / "run_status.json").write_text(json.dumps({"status": "success"}) + "\n", encoding="utf-8")
+
+    matrix_path = tmp_path / "conformance_matrix.csv"
+    pd.DataFrame(
+        [
+            {"adapter": "qdrant", "status": "pass"},
+            {"adapter": "pgvector", "status": "fail"},
+            {"adapter": "faiss-cpu", "status": "pass"},
+            {"adapter": "lancedb-inproc", "status": "fail"},
+            {"adapter": "lancedb-service", "status": "fail"},
+        ]
+    ).to_csv(matrix_path, index=False)
+    behavior_dir = tmp_path / "behavior"
+    shutil.copytree(Path("docs/behavior"), behavior_dir)
+
+    out_dir = tmp_path / "out"
+    generate_portable_report_bundle(
+        input_dir=runs_root,
+        out_dir=out_dir,
+        conformance_matrix_path=matrix_path,
+        behavior_dir=behavior_dir,
+    )
+
+    winners = pd.read_csv(out_dir / "portable_winners.csv")
+    support = pd.read_csv(out_dir / "portable_support_table.csv")
+
+    assert winners["engine"].tolist() == ["qdrant"]
+    pgvector_row = support.loc[support["engine"] == "pgvector"].iloc[0]
+    assert bool(pgvector_row["reportable"]) is False
+    assert bool(pgvector_row["included_in_report"]) is False
