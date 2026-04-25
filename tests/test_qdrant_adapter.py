@@ -142,6 +142,47 @@ def test_qdrant_http_bulk_upsert_splits_large_payloads(
         assert len(body["points"]) == 1
 
 
+def test_qdrant_http_bulk_upsert_retries_transient_connection_errors(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def _fake_request(method, path, *, json=None, allow_404=False):  # type: ignore[no-untyped-def]
+        calls.append((method, path, json))
+        if len(calls) < 3:
+            raise requests.ConnectionError("connection reset by peer")
+        return {}
+
+    adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter, "_request", _fake_request)
+    monkeypatch.setattr(adapter, "_HTTP_UPSERT_RETRY_BACKOFF_S", 0.0)
+
+    written = adapter.bulk_upsert([UpsertRecord(id="doc-1", vector=[1.0, 2.0], payload={"tenant": "a"})])
+
+    assert written == 1
+    assert len(calls) == 3
+    assert all(call[0] == "PUT" for call in calls)
+
+
+def test_qdrant_http_bulk_upsert_raises_after_retry_budget_exhausted(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def _fake_request(method, path, *, json=None, allow_404=False):  # type: ignore[no-untyped-def]
+        calls.append((method, path, json))
+        raise requests.ConnectionError("connection reset by peer")
+
+    adapter = QdrantAdapter()
+    monkeypatch.setattr(adapter, "_request", _fake_request)
+    monkeypatch.setattr(adapter, "_HTTP_UPSERT_RETRY_BACKOFF_S", 0.0)
+
+    with pytest.raises(requests.ConnectionError, match="connection reset by peer"):
+        adapter.bulk_upsert([UpsertRecord(id="doc-1", vector=[1.0, 2.0], payload={"tenant": "a"})])
+
+    assert len(calls) == adapter._HTTP_UPSERT_MAX_ATTEMPTS
+
+
 def test_qdrant_create_drops_stale_collection_on_already_exists(
     monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
