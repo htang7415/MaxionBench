@@ -122,6 +122,7 @@ def preprocess_crag_small_slice(
             }
         )
 
+        evidence_doc_id: str | None = None
         for page_idx, page in enumerate(ex.get("search_results", [])):
             raw_html = str(page.get("page_result") or "")
             page_text = simple_html_to_text(raw_html)
@@ -141,7 +142,13 @@ def preprocess_crag_small_slice(
                         "page_last_modified": str(page.get("page_last_modified") or "").strip(),
                     }
                 )
-                qrel_rows.append((qid, doc_id, 1))
+                # Mark only the first chunk of the first page as the event evidence doc.
+                # All other chunks are background distractors (no qrel entry).
+                # This gives exactly one evidence doc per event, which is what S2
+                # freshness probes insert and then try to retrieve.
+                if evidence_doc_id is None:
+                    evidence_doc_id = doc_id
+                    qrel_rows.append((qid, doc_id, 1))
 
     write_jsonl(out_dir / "corpus.jsonl", corpus_rows)
     write_jsonl(out_dir / "queries.jsonl", query_rows)
