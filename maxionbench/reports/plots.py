@@ -10,22 +10,24 @@ import pandas as pd
 
 from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_status
 
-FONT_SIZE = 16
-PANEL_PX = 600
-DPI = 100
-STYLE_VERSION = "portable_v2_neurips"
+FONT_SIZE = 10
+PANEL_WIDTH_IN = 6.8
+PANEL_HEIGHT_IN = 3.2
+PANEL_PX = 2040
+DPI = 300
+STYLE_VERSION = "portable_v3_neurips_camera_ready"
 FIGURE_FACE_COLOR = "#ffffff"
 TEXT_COLOR = "#1f2933"
 GRID_COLOR = "#d9dee5"
 ENGINE_PALETTE = (
-    "#4E79A7",
-    "#F28E2B",
-    "#59A14F",
-    "#E15759",
-    "#76B7B2",
-    "#B07AA1",
-    "#9C755F",
-    "#EDC948",
+    "#0072B2",
+    "#E69F00",
+    "#009E73",
+    "#D55E00",
+    "#56B4E9",
+    "#CC79A7",
+    "#6F4E37",
+    "#F0E442",
 )
 
 

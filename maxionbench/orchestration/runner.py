@@ -466,7 +466,7 @@ def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
     for repeat_idx in range(cfg.repeats):
         for client_count in cfg.clients_grid:
             sweep_runs: list[_SweepRun] = []
-            for search_params in cfg.search_sweep:
+            for search_idx, search_params in enumerate(cfg.search_sweep):
                 setup_start = time.perf_counter()
                 adapter = _create_benchmark_adapter(cfg=cfg)
                 baseline = measure_rpc_baseline(
@@ -474,6 +474,7 @@ def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                     request_count=cfg.rpc_baseline_requests,
                 )
                 ingest_text_dataset(adapter, dataset)
+                observations: list[dict[str, Any]] = []
                 result = evaluate_text_queries(
                     adapter=adapter,
                     cfg=PortableTextConfig(
@@ -487,7 +488,15 @@ def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         search_params=search_params,
                     ),
                     dataset=dataset,
+                    observation_sink=observations.append,
                 )
+                observation_path = _portable_observation_path(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    search_idx=search_idx,
+                )
+                _write_jsonl(path=observation_path, payloads=observations)
                 stats = adapter.stats()
                 adapter.drop(collection="maxionbench")
                 profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count)
@@ -507,6 +516,7 @@ def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         "evidence_coverage_at_5": result.evidence_coverage_at_5,
                         "evidence_coverage_at_10": result.evidence_coverage_at_10,
                         "evidence_coverage_at_20": result.evidence_coverage_at_20,
+                        "observation_path": str(observation_path),
                     },
                 )
                 sweep_runs.append(
@@ -561,13 +571,14 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
     for repeat_idx in range(cfg.repeats):
         for client_count in cfg.clients_grid:
             sweep_runs: list[_SweepRun] = []
-            for search_params in cfg.search_sweep:
+            for search_idx, search_params in enumerate(cfg.search_sweep):
                 setup_start = time.perf_counter()
                 adapter = _create_benchmark_adapter(cfg=cfg)
                 baseline = measure_rpc_baseline(
                     request_fn=minimal_rpc_request_fn(adapter=adapter, vector_dim=cfg.vector_dim),
                     request_count=cfg.rpc_baseline_requests,
                 )
+                observations: list[dict[str, Any]] = []
                 result = run_streaming_memory(
                     adapter=adapter,
                     cfg=StreamingMemoryConfig(
@@ -583,7 +594,16 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                     ),
                     background=background,
                     events=events,
+                    static_observation_sink=observations.append,
+                    freshness_observation_sink=observations.append,
                 )
+                observation_path = _portable_observation_path(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    search_idx=search_idx,
+                )
+                _write_jsonl(path=observation_path, payloads=observations)
                 stats = adapter.stats()
                 adapter.drop(collection="maxionbench")
                 profile, rate = _resource_profile_and_rate_for_cfg(
@@ -611,6 +631,7 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         "event_count": result.event_count,
                         "overlap_skipped_event_count": result.overlap_skipped_event_count,
                         "freshness_floor_for_budget": freshness_floor,
+                        "observation_path": str(observation_path),
                     },
                 )
                 sweep_runs.append(
@@ -668,7 +689,7 @@ def _run_portable_s3_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
     for repeat_idx in range(cfg.repeats):
         for client_count in cfg.clients_grid:
             sweep_runs: list[_SweepRun] = []
-            for search_params in cfg.search_sweep:
+            for search_idx, search_params in enumerate(cfg.search_sweep):
                 setup_start = time.perf_counter()
                 adapter = _create_benchmark_adapter(cfg=cfg)
                 baseline = measure_rpc_baseline(
@@ -676,6 +697,7 @@ def _run_portable_s3_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                     request_count=cfg.rpc_baseline_requests,
                 )
                 ingest_text_dataset(adapter, dataset)
+                observations: list[dict[str, Any]] = []
                 result = evaluate_text_queries(
                     adapter=adapter,
                     cfg=PortableTextConfig(
@@ -689,7 +711,15 @@ def _run_portable_s3_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         search_params=search_params,
                     ),
                     dataset=dataset,
+                    observation_sink=observations.append,
                 )
+                observation_path = _portable_observation_path(
+                    cfg=cfg,
+                    repeat_idx=repeat_idx,
+                    client_count=client_count,
+                    search_idx=search_idx,
+                )
+                _write_jsonl(path=observation_path, payloads=observations)
                 stats = adapter.stats()
                 adapter.drop(collection="maxionbench")
                 profile, rate = _resource_profile_and_rate_for_cfg(cfg=cfg, stats=stats, client_count=client_count)
@@ -709,6 +739,7 @@ def _run_portable_s3_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         "evidence_coverage_at_5": result.evidence_coverage_at_5,
                         "evidence_coverage_at_10": result.evidence_coverage_at_10,
                         "evidence_coverage_at_20": result.evidence_coverage_at_20,
+                        "observation_path": str(observation_path),
                     },
                 )
                 sweep_runs.append(
@@ -1468,6 +1499,16 @@ def _run_id(config_fingerprint: str, repeat_idx: int, client_count: int, quality
     if suffix:
         return f"{base}-{suffix}"
     return base
+
+
+def _portable_observation_path(*, cfg: RunConfig, repeat_idx: int, client_count: int, search_idx: int) -> Path:
+    safe_scenario = str(cfg.scenario).replace("/", "_")
+    return (
+        Path(cfg.output_dir).resolve()
+        / "logs"
+        / "observations"
+        / f"{safe_scenario}_r{repeat_idx}_c{client_count}_s{search_idx}.jsonl"
+    )
 
 
 def _run_s1_sweep_for_client(
@@ -2457,6 +2498,7 @@ def _normalize_benchmark_metric(metric: str | None) -> str:
 
 
 def _write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for payload in payloads:
             handle.write(json.dumps(payload, sort_keys=True))

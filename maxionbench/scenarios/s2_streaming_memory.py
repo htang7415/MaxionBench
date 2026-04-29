@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import numpy as np
 
@@ -54,6 +54,8 @@ def run(
     cfg: StreamingMemoryConfig,
     background: D4RetrievalDataset,
     events: D4RetrievalDataset,
+    static_observation_sink: Callable[[Mapping[str, Any]], None] | None = None,
+    freshness_observation_sink: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> StreamingMemoryResult:
     ingest_text_dataset(adapter, background)
     static = evaluate_text_queries(
@@ -69,6 +71,7 @@ def run(
             search_params=cfg.search_params,
         ),
         dataset=background,
+        observation_sink=static_observation_sink,
     )
 
     adapter.set_search_params(cfg.search_params or {})
@@ -115,6 +118,18 @@ def run(
         visibility_latencies_ms.append(visibility_s * 1000.0)
         hit_1s.append(float(probe_hit_1s))
         hit_5s.append(float(probe_hit_5s))
+        if freshness_observation_sink is not None:
+            freshness_observation_sink(
+                {
+                    "observation_type": "freshness",
+                    "event_index": int(event_idx),
+                    "query_id": str(qid),
+                    "target_doc_id": str(evidence_id),
+                    "visibility_latency_ms": float(visibility_s * 1000.0),
+                    "freshness_hit_at_1s": int(probe_hit_1s),
+                    "freshness_hit_at_5s": int(probe_hit_5s),
+                }
+            )
 
     visibility_summary = latency_summary(visibility_latencies_ms)
     freshness_hit_at_1s = float(np.mean(np.asarray(hit_1s, dtype=np.float64))) if hit_1s else 0.0

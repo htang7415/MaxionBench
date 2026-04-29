@@ -5,6 +5,8 @@ artifacts/
 results/
 results_quick_check/
 logs/
+paper/
+/.*/
 ._*
 
 # Python/package build outputs

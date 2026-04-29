@@ -15,7 +15,10 @@ from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.portable_exports import (
     _extract_portable_frame,
+    _neurips_main_results_table,
+    _minimum_viable_deployment_sensitivity_table,
     _minimum_viable_deployment_table,
+    _portable_decision_table,
     _spearman_rank_correlation,
     _winner_rows,
     generate_portable_report_bundle,
@@ -242,6 +245,11 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_winners.csv").exists()
     assert (out_dir / "portable_stability.csv").exists()
     assert (out_dir / "minimum_viable_deployment.csv").exists()
+    assert (out_dir / "minimum_viable_deployment_sensitivity.csv").exists()
+    assert (out_dir / "portable_decision_table.csv").exists()
+    assert (out_dir / "portable_decision_table.tex").exists()
+    assert (out_dir / "neurips_main_results.csv").exists()
+    assert (out_dir / "neurips_main_results.tex").exists()
     assert (out_dir / "portable_support_table.csv").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
     assert (out_dir / "portable_task_cost_by_budget.png").exists()
@@ -250,9 +258,12 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_budget_stability.meta.json").exists()
     assert (out_dir / "portable_s2_freshness.png").exists()
     assert (out_dir / "portable_s2_freshness.meta.json").exists()
+    assert (out_dir / "portable_mvd_sensitivity.png").exists()
+    assert (out_dir / "portable_mvd_sensitivity.meta.json").exists()
 
     winners = pd.read_csv(out_dir / "portable_winners.csv")
     deployment = pd.read_csv(out_dir / "minimum_viable_deployment.csv")
+    decision = pd.read_csv(out_dir / "portable_decision_table.csv")
     stability = pd.read_csv(out_dir / "portable_stability.csv")
     support = pd.read_csv(out_dir / "portable_support_table.csv")
     task_cost_meta = json.loads((out_dir / "portable_task_cost_by_budget.meta.json").read_text(encoding="utf-8"))
@@ -261,6 +272,9 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"} <= set(winners["scenario"].astype(str))
     assert not deployment.empty
     assert "workload_type" in deployment.columns
+    assert not decision.empty
+    assert "strict_p99_engine" in decision.columns
+    assert "quality_winner_engine" in decision.columns
     assert not support.empty
     assert set(REQUIRED_ADAPTERS) <= set(support["engine"].astype(str))
     assert "reportable" in support.columns
@@ -268,6 +282,125 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert task_cost_meta["mode"] == "portable-agentic"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns
+
+
+def test_neurips_main_results_table_includes_quality_and_freshness_ci_fields() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 8,
+                "rank_within_budget": 1,
+                "engine": "engine-s2",
+                "embedding_model": "emb-s2",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "freshness_hit_at_1s": 0.84,
+                "freshness_hit_at_5s": 0.84,
+                "event_count": 500,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 8,
+                "rank_within_budget": 1,
+                "engine": "engine-s2",
+                "embedding_model": "emb-s2",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.52,
+                "freshness_hit_at_1s": 0.84,
+                "freshness_hit_at_5s": 0.84,
+                "event_count": 500,
+                "p99_ms": 12.0,
+                "qps": 90.0,
+                "task_cost_est": 1.2,
+            },
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 0.4,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+
+    table = _neurips_main_results_table(frame=winners, winners=winners, stability=stability)
+    row = table.iloc[0]
+
+    assert row["primary_quality_mean"] == pytest.approx(0.51)
+    assert row["primary_quality_ci95_low"] <= row["primary_quality_mean"] <= row["primary_quality_ci95_high"]
+    assert row["freshness_hit_at_5s_mean"] == pytest.approx(0.84)
+    assert row["freshness_hit_at_5s_ci95_low"] < row["freshness_hit_at_5s_ci95_high"]
+    assert row["freshness_event_count"] == 500
+    assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
+
+
+def test_neurips_main_results_table_prefers_archived_observations(tmp_path: Path) -> None:
+    observation_path = tmp_path / "observations.jsonl"
+    _write_jsonl(
+        observation_path,
+        [
+            {"observation_type": "quality", "query_id": "q1", "ndcg_at_10": 0.25},
+            {"observation_type": "quality", "query_id": "q2", "ndcg_at_10": 0.75},
+            {"observation_type": "freshness", "query_id": "e1", "freshness_hit_at_1s": 1, "freshness_hit_at_5s": 1},
+            {"observation_type": "freshness", "query_id": "e2", "freshness_hit_at_1s": 0, "freshness_hit_at_5s": 1},
+        ],
+    )
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 8,
+                "rank_within_budget": 1,
+                "engine": "engine-s2",
+                "embedding_model": "emb-s2",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "freshness_hit_at_1s": 0.0,
+                "freshness_hit_at_5s": 0.0,
+                "event_count": 500,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 1.0,
+                "observation_path": str(observation_path),
+            }
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 1.0,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+
+    table = _neurips_main_results_table(frame=winners, winners=winners, stability=stability)
+    row = table.iloc[0]
+
+    assert row["primary_quality_mean"] == pytest.approx(0.5)
+    assert row["primary_quality_samples"] == 2
+    assert str(row["primary_quality_ci_method"]).startswith("query-level bootstrap")
+    assert row["freshness_hit_at_1s_mean"] == pytest.approx(0.5)
+    assert row["freshness_hit_at_5s_mean"] == pytest.approx(1.0)
+    assert row["freshness_event_count"] == 2
+    assert str(row["freshness_ci_method"]).startswith("Wilson binomial CI from archived per-event")
 
 
 def test_winner_rows_keeps_clients_read_dimension() -> None:
@@ -361,7 +494,116 @@ def test_minimum_viable_deployment_table_includes_freshness_for_s2_rows() -> Non
 
     deployment = _minimum_viable_deployment_table(winners=winners)
 
-    assert deployment.iloc[0]["why"] == "answer_f1=0.812, freshness_hit@5s=0.975, p99=84.5ms, task_cost=0.456789"
+    assert deployment.iloc[0]["why"] == "answer_f1=0.812, freshness_hit@5s=0.975, p99_mean=84.5ms, p99_max=84.5ms, task_cost=0.456789"
+
+
+def test_minimum_viable_deployment_sensitivity_exposes_latency_threshold_effect() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 1,
+                "engine": "engine-cheap-slow",
+                "embedding_model": "emb",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.82,
+                "p99_ms": 300.0,
+                "qps": 10.0,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 2,
+                "engine": "engine-fast",
+                "embedding_model": "emb",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.81,
+                "p99_ms": 80.0,
+                "qps": 20.0,
+                "task_cost_est": 2.0,
+            },
+        ]
+    )
+
+    sensitivity = _minimum_viable_deployment_sensitivity_table(winners=winners)
+    by_threshold = {
+        str(row["p99_max_threshold_ms"]): row["minimum_engine"]
+        for row in sensitivity.to_dict(orient="records")
+    }
+
+    assert by_threshold["100.0"] == "engine-fast"
+    assert by_threshold["200.0"] == "engine-fast"
+    assert by_threshold["500.0"] == "engine-cheap-slow"
+    assert by_threshold["none"] == "engine-cheap-slow"
+
+
+def test_portable_decision_table_separates_latency_cost_and_quality_choices() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 1,
+                "engine": "engine-cheap-slow",
+                "embedding_model": "emb-small",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.82,
+                "p99_ms": 300.0,
+                "qps": 10.0,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 2,
+                "engine": "engine-fast",
+                "embedding_model": "emb-small",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.81,
+                "p99_ms": 80.0,
+                "qps": 20.0,
+                "task_cost_est": 2.0,
+            },
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 3,
+                "engine": "engine-quality",
+                "embedding_model": "emb-base",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.90,
+                "p99_ms": 90.0,
+                "qps": 15.0,
+                "task_cost_est": 3.0,
+            },
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s3_multi_hop",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 0.3,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+
+    table = _portable_decision_table(winners=winners, stability=stability)
+    row = table.iloc[0]
+
+    assert row["strict_p99_engine"] == "engine-fast"
+    assert row["unconstrained_cost_engine"] == "engine-cheap-slow"
+    assert row["quality_winner_engine"] == "engine-quality"
+    assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
 
 
 def test_generate_portable_report_bundle_requires_conformance_inputs(tmp_path: Path) -> None:

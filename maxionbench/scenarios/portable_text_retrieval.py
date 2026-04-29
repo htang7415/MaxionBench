@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import numpy as np
 
@@ -74,6 +74,7 @@ def evaluate_text_queries(
     adapter: Any,
     cfg: PortableTextConfig,
     dataset: D4RetrievalDataset,
+    observation_sink: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> PortableTextResult:
     adapter.set_search_params(cfg.search_params or {})
     latencies_ms: list[float] = []
@@ -127,12 +128,35 @@ def evaluate_text_queries(
         latencies_ms.append(latency_ms)
         retrieved_token_counts.append(retrieved_tokens)
         errors += err
-        recall_values.append(recall_at_k(retrieved_ids, relevant_ids, k=min(10, cfg.top_k)))
-        ndcg_values.append(ndcg_at_10(retrieved_ids, {doc_id: float(rel) for doc_id, rel in qrels.items()}))
-        mrr_values.append(mrr_at_k(retrieved_ids, relevant_ids, k=min(10, cfg.top_k)))
-        evidence_coverage_5.append(evidence_coverage_at_k(retrieved_ids, evidence_ids, k=5))
-        evidence_coverage_10.append(evidence_coverage_at_k(retrieved_ids, evidence_ids, k=10))
-        evidence_coverage_20.append(evidence_coverage_at_k(retrieved_ids, evidence_ids, k=20))
+        recall = recall_at_k(retrieved_ids, relevant_ids, k=min(10, cfg.top_k))
+        ndcg = ndcg_at_10(retrieved_ids, {doc_id: float(rel) for doc_id, rel in qrels.items()})
+        mrr = mrr_at_k(retrieved_ids, relevant_ids, k=min(10, cfg.top_k))
+        coverage_5 = evidence_coverage_at_k(retrieved_ids, evidence_ids, k=5)
+        coverage_10 = evidence_coverage_at_k(retrieved_ids, evidence_ids, k=10)
+        coverage_20 = evidence_coverage_at_k(retrieved_ids, evidence_ids, k=20)
+        recall_values.append(recall)
+        ndcg_values.append(ndcg)
+        mrr_values.append(mrr)
+        evidence_coverage_5.append(coverage_5)
+        evidence_coverage_10.append(coverage_10)
+        evidence_coverage_20.append(coverage_20)
+        if observation_sink is not None:
+            observation_sink(
+                {
+                    "observation_type": "quality",
+                    "query_index": int(query_idx),
+                    "query_id": str(qid),
+                    "latency_ms": float(latency_ms),
+                    "retrieved_input_tokens": float(retrieved_tokens),
+                    "error": int(err),
+                    "recall_at_10": float(recall),
+                    "ndcg_at_10": float(ndcg),
+                    "mrr_at_10": float(mrr),
+                    "evidence_coverage_at_5": float(coverage_5),
+                    "evidence_coverage_at_10": float(coverage_10),
+                    "evidence_coverage_at_20": float(coverage_20),
+                }
+            )
 
     summary = latency_summary(latencies_ms)
     over_sla = sum(1 for latency_ms in latencies_ms if latency_ms > cfg.sla_threshold_ms)
