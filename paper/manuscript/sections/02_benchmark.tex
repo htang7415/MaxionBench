@@ -1,0 +1,33 @@
+\section{Benchmark design}
+
+\subsection{Scope and systems under test}
+
+\sys evaluates retrieval infrastructure rather than full agent task success. The benchmark is intentionally single-node: all experiments run on one commodity operator machine, and the paper does not make distributed-systems or GPU-scaling claims. The reportable engine set contains FAISS CPU \citep{johnson2019faiss}, LanceDB in-process \citep{lancedb}, PostgreSQL with pgvector \citep{pgvector}, and Qdrant \citep{qdrant}. LanceDB service mode is listed but excluded from the paper matrix because the archived conformance table has no passing local service row.
+
+\sys is organized as a decision-audit pipeline rather than as a single leaderboard: a reported winner is valid only under a stated conformance gate, workload, objective, and run budget.
+
+Every reportable engine must pass the same adapter contract before its runs can enter paper-facing tables. The contract covers lifecycle operations, bulk and incremental writes, query and batch query, vector and payload updates, delete semantics, flush or commit behavior, index controls, and minimum stats fields. The conformance suite checks CRUD correctness, post-flush visibility, filter correctness, update semantics, delete semantics, and streaming-memory freshness semantics. This gate prevents a benchmark table from silently mixing engines with different unsupported behavior and is the main reason the paper treats missing conformance as an exclusion rather than a bad score.
+
+\subsection{Workloads}
+
+\sys uses three workloads designed to isolate retrieval-infrastructure behavior that matters to agentic applications. S1 is single-hop retrieval over SciFact and FiQA through local BEIR-format bundles \citep{thakur2021beir,wadden2020scifact,maia2018fiqa}; its primary quality metric is \ndcg. S2 combines a deterministic 50K-passage static background from the same source family with a CRAG-500 event stream \citep{facebookcrag}; it reports static \ndcg{} and freshness probes at one and five seconds after insert acknowledgment. S3 uses \textsc{HotpotQA-portable}, a frozen preprocessing of the HotpotQA dev distractor split, and measures whether the retrieved top-10 contains the supporting evidence set with \ecov.
+
+The workloads use fixed concurrency pins to keep the protocol small enough for a one-day local run. S1 and S3 evaluate read clients $\{1,4,8\}$. S2 uses eight read clients and two serialized write clients, then probes each inserted event passage at $T+1s$ and $T+5s$, where $T$ is the time at which the adapter's insert plus flush path returns. Each workload is evaluated with two local embedding tiers, BAAI/bge-small-en-v1.5 and BAAI/bge-base-en-v1.5 \citep{bge}.
+
+\subsection{Metrics and decisions}
+
+\sys reports quality, tail latency, throughput, task-cost estimates, and stability across budget levels. For S1 and S2, quality is \ndcg. For S3, quality is
+\[
+\mathrm{evidence\_coverage@k}(q)=\frac{|E(q)\cap R_k(q)|}{|E(q)|},
+\]
+where $E(q)$ is the gold evidence set and $R_k(q)$ is the retrieved top-$k$ set. For S2, freshness is a binary hit if the inserted supporting passage appears in $R_{10}(q,T+\Delta)$ for $\Delta\in\{1s,5s\}$.
+
+The deployment rule is deliberately simple. For each workload, engine, and embedding tier, surviving configurations are ranked by
+\[
+\mathrm{task\_cost\_est}=C_{\mathrm{retrieval}}+C_{\mathrm{embedding}}+c_{\mathrm{llm\_in}}\cdot N_{\mathrm{retrieved\_input\_tokens}},
+\]
+with lower p99 and higher throughput used as tie-breaks. The minimum viable deployment is the lowest-cost survivor under the default worst-case p99 threshold of 200 ms. The report also exposes no-p99 cost and quality-first decisions because these are plausible operator objectives with different winners.
+
+\subsection{Budget ladder}
+
+The benchmark uses three budget levels to test whether decisions are stable under shorter local runs. B0 uses 10 seconds of warmup, 10 seconds of measurement, and one repeat. B1 uses 15 seconds of warmup, 30 seconds of measurement, and one repeat. B2 uses 30 seconds of warmup, 60 seconds of measurement, and two repeats. Stability is reported as Spearman rank correlation, top-1 agreement, and top-2 agreement between budget-level rankings. This design treats instability as a result to report, not as a failure to hide.

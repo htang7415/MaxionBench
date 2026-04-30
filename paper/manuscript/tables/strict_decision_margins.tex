@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Strict-decision margins on all B2 rows. The comparison candidate is the next lowest-cost engine/embedding that also meets the workload quality floor and 200 ms worst-case p99 cap. Positive deltas mean the comparison candidate is higher than the strict choice.}
+\label{tab:strict-decision-margins}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllrrrl}
+\toprule
+Workload & Strict choice & Next strict candidate & Metric & $\Delta$ quality & $\Delta$ cost & $\Delta$ p99 & Interpretation \\
+\midrule
+S1 single-hop & faiss-cpu / bge-small & lancedb-inproc / bge-small & \ndcg{} & 0.000 & 0.000 & +160.9 ms & cost/quality tie; p99 tie-break \\
+S2 streaming & faiss-cpu / bge-small & lancedb-inproc / bge-small & \ndcg{} & 0.000 & 0.000 & +137.8 ms & cost/quality tie; p99 tie-break \\
+S3 multi-hop & faiss-cpu / bge-small & qdrant / bge-small & \ecov{} & -0.037 & +0.548 & -4.6 ms & lower cost and higher quality \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

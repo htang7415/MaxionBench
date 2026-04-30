@@ -1,0 +1,836 @@
+"""Top-level CLI for MaxionBench."""
+
+from __future__ import annotations
+
+from argparse import ArgumentParser
+from pathlib import Path
+import re
+
+from maxionbench.conformance.run import main as conformance_main
+
+_MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = ArgumentParser(prog="maxionbench")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser("run", help="Run a benchmark scenario")
+    run_parser.add_argument("--config", required=True)
+    run_parser.add_argument("--budget", default=None)
+    run_parser.add_argument("--seed", type=int, default=None)
+    run_parser.add_argument("--repeats", type=int, default=None)
+    run_parser.add_argument("--no-retry", action="store_true")
+    run_parser.add_argument("--output-dir", default=None)
+    run_parser.add_argument("--enforce-readiness", action="store_true")
+    run_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    run_parser.add_argument("--behavior-dir", default="docs/behavior")
+    run_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+
+    validate_parser = subparsers.add_parser("validate", help="Validate output artifacts")
+    validate_parser.add_argument("--input", required=True)
+    validate_mode_group = validate_parser.add_mutually_exclusive_group()
+    validate_mode_group.add_argument("--strict-schema", action="store_true")
+    validate_mode_group.add_argument("--legacy-ok", action="store_true")
+    validate_parser.add_argument("--enforce-protocol", action="store_true")
+    validate_parser.add_argument("--json", action="store_true")
+
+    migrate_parser = subparsers.add_parser(
+        "migrate-stage-timing",
+        help="Backfill legacy results with stage timing columns",
+    )
+    migrate_parser.add_argument("--input", required=True)
+    migrate_parser.add_argument("--dry-run", action="store_true")
+
+    verify_branch_parser = subparsers.add_parser(
+        "verify-branch-protection",
+        help="Verify GitHub branch protection required checks",
+    )
+    verify_branch_parser.add_argument("--repo", required=True)
+    verify_branch_parser.add_argument("--branch", default="main")
+    verify_branch_parser.add_argument("--token", default=None)
+    verify_branch_parser.add_argument("--timeout-s", type=float, default=10.0)
+    verify_branch_parser.add_argument("--required-check", action="append", dest="required_checks", default=None)
+    verify_branch_parser.add_argument("--include-drift-check", action="store_true")
+    verify_branch_parser.add_argument("--include-strict-readiness-check", action="store_true")
+    verify_branch_parser.add_argument("--include-publish-bundle-check", action="store_true")
+    verify_branch_parser.add_argument("--json", action="store_true")
+
+    verify_pins_parser = subparsers.add_parser(
+        "verify-pins",
+        help="Verify pinned scenario config values",
+    )
+    verify_pins_parser.add_argument("--config-dir", default="configs/scenarios_portable")
+    verify_pins_parser.add_argument("--json", action="store_true")
+
+    verify_dataset_manifests_parser = subparsers.add_parser(
+        "verify-dataset-manifests",
+        help="Verify dataset manifest coverage and pinned metadata fields",
+    )
+    verify_dataset_manifests_parser.add_argument("--manifest-dir", default="maxionbench/datasets/manifests")
+    verify_dataset_manifests_parser.add_argument("--json", action="store_true")
+
+    download_datasets_parser = subparsers.add_parser(
+        "download-datasets",
+        help="Download the portable-agentic dataset tree under dataset/",
+    )
+    download_datasets_parser.add_argument("--root", default="dataset")
+    download_datasets_parser.add_argument("--cache-dir", default=".cache")
+    download_datasets_parser.add_argument("--datasets", default=None)
+    download_datasets_parser.add_argument("--crag-examples", type=int, default=500)
+    download_datasets_parser.add_argument("--force", action="store_true")
+    download_datasets_parser.add_argument("--timeout-s", type=float, default=60.0)
+    download_datasets_parser.add_argument("--json", action="store_true")
+
+    preprocess_datasets_parser = subparsers.add_parser(
+        "preprocess-datasets",
+        help="Normalize raw datasets into the canonical processed layout",
+    )
+    preprocess_datasets_parser.add_argument("mode", choices=["beir", "crag"])
+    preprocess_datasets_parser.add_argument("--input", default=None)
+    preprocess_datasets_parser.add_argument("--out", required=True)
+    preprocess_datasets_parser.add_argument("--family", default=None)
+    preprocess_datasets_parser.add_argument("--name", default=None)
+    preprocess_datasets_parser.add_argument("--metric", default=None)
+    preprocess_datasets_parser.add_argument("--base", default=None)
+    preprocess_datasets_parser.add_argument("--queries", default=None)
+    preprocess_datasets_parser.add_argument("--gt", default=None)
+    preprocess_datasets_parser.add_argument("--filters", default=None)
+    preprocess_datasets_parser.add_argument("--payloads", default=None)
+    preprocess_datasets_parser.add_argument("--query-split", default=None)
+    preprocess_datasets_parser.add_argument("--private-query-token", default=None)
+    preprocess_datasets_parser.add_argument("--skip-payloads", action="store_true")
+    preprocess_datasets_parser.add_argument("--split", default=None)
+    preprocess_datasets_parser.add_argument("--max-examples", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--chunk-chars", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--overlap", type=int, default=None)
+    preprocess_datasets_parser.add_argument("--json", action="store_true")
+
+    preprocess_hotpot_portable_parser = subparsers.add_parser(
+        "preprocess-hotpot-portable",
+        help="Build the bounded HotpotQA-portable corpus from the official dev distractor set",
+    )
+    preprocess_hotpot_portable_parser.add_argument("--input", required=True)
+    preprocess_hotpot_portable_parser.add_argument("--out", required=True)
+    preprocess_hotpot_portable_parser.add_argument("--json", action="store_true")
+
+    precompute_text_embeddings_parser = subparsers.add_parser(
+        "precompute-text-embeddings",
+        help="Precompute model-backed embeddings for processed text datasets",
+    )
+    precompute_text_embeddings_parser.add_argument("--input", required=True)
+    precompute_text_embeddings_parser.add_argument("--model-id", required=True)
+    precompute_text_embeddings_parser.add_argument("--batch-size", type=int, default=16)
+    precompute_text_embeddings_parser.add_argument("--device", default="auto")
+    precompute_text_embeddings_parser.add_argument("--max-length", type=int, default=512)
+    precompute_text_embeddings_parser.add_argument("--require-device", default=None)
+    precompute_text_embeddings_parser.add_argument("--no-normalize", action="store_true")
+    precompute_text_embeddings_parser.add_argument("--force", action="store_true")
+    precompute_text_embeddings_parser.add_argument("--json", action="store_true")
+
+    run_matrix_parser = subparsers.add_parser(
+        "run-matrix",
+        help="Build a generated run matrix from scenario and engine configs",
+    )
+    run_matrix_parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
+    run_matrix_parser.add_argument("--engine-config-dir", default="configs/engines_portable")
+    run_matrix_parser.add_argument("--out-dir", required=True)
+    run_matrix_parser.add_argument("--output-root", default="artifacts/runs/portable_matrix")
+    run_matrix_parser.add_argument("--budget", default=None, choices=["b0", "b1", "b2"])
+    run_matrix_parser.add_argument("--lane", default="all", choices=["cpu", "gpu", "all"])
+    run_matrix_parser.add_argument("--json", action="store_true")
+
+    execute_run_matrix_parser = subparsers.add_parser(
+        "execute-run-matrix",
+        help="Execute a generated run matrix sequentially",
+    )
+    execute_run_matrix_parser.add_argument("--matrix", required=True)
+    execute_run_matrix_parser.add_argument("--lane", default="cpu", choices=["cpu", "gpu", "all"])
+    execute_run_matrix_parser.add_argument("--budget", default=None)
+    execute_run_matrix_parser.add_argument("--seed", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--repeats", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--no-retry", action="store_true")
+    execute_run_matrix_parser.add_argument("--skip-completed", action="store_true")
+    execute_run_matrix_parser.add_argument("--continue-on-failure", action="store_true")
+    execute_run_matrix_parser.add_argument("--engine-filter", default=None)
+    execute_run_matrix_parser.add_argument("--scenario-filter", default=None)
+    execute_run_matrix_parser.add_argument("--template-filter", default=None)
+    execute_run_matrix_parser.add_argument("--max-runs", type=int, default=None)
+    execute_run_matrix_parser.add_argument("--deadline-hours", type=float, default=None)
+    execute_run_matrix_parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
+    execute_run_matrix_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    execute_run_matrix_parser.add_argument("--json", action="store_true")
+
+    submit_portable_parser = subparsers.add_parser(
+        "submit-portable",
+        help="Generate and execute a portable-agentic budget run for a local Mac host",
+    )
+    submit_portable_parser.add_argument("--budget", required=True, choices=["b0", "b1", "b2"])
+    submit_portable_parser.add_argument("--repo-root", default=".")
+    submit_portable_parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
+    submit_portable_parser.add_argument("--engine-config-dir", default="configs/engines_portable")
+    submit_portable_parser.add_argument("--out-dir", default=None)
+    submit_portable_parser.add_argument("--output-root", default=None)
+    submit_portable_parser.add_argument("--lane", default="cpu", choices=["cpu", "gpu", "all"])
+    submit_portable_parser.add_argument("--seed", type=int, default=None)
+    submit_portable_parser.add_argument("--repeats", type=int, default=None)
+    submit_portable_parser.add_argument("--no-retry", action="store_true")
+    submit_portable_parser.add_argument("--no-skip-completed", action="store_true")
+    submit_portable_parser.add_argument("--continue-on-failure", action="store_true")
+    submit_portable_parser.add_argument("--engine-filter", default=None)
+    submit_portable_parser.add_argument("--scenario-filter", default=None)
+    submit_portable_parser.add_argument("--template-filter", default=None)
+    submit_portable_parser.add_argument("--max-runs", type=int, default=None)
+    submit_portable_parser.add_argument("--deadline-hours", type=float, default=24.0)
+    submit_portable_parser.add_argument("--adapter-timeout-s", type=float, default=120.0)
+    submit_portable_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    submit_portable_parser.add_argument("--no-verify-promotion", action="store_true")
+    submit_portable_parser.add_argument("--json", action="store_true")
+
+    portable_workflow_parser = subparsers.add_parser(
+        "portable-workflow",
+        help="Run one high-level portable workflow phase",
+    )
+    portable_workflow_parser.add_argument("phase", choices=["setup", "data", "finalize"])
+    portable_workflow_parser.add_argument("--repo-root", default=".")
+    portable_workflow_parser.add_argument("--json", action="store_true")
+
+    verify_conformance_configs_parser = subparsers.add_parser(
+        "verify-conformance-configs",
+        help="Verify conformance config catalog shape and required adapter coverage",
+    )
+    verify_conformance_configs_parser.add_argument("--config-dir", default="configs/conformance")
+    verify_conformance_configs_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    verify_conformance_configs_parser.add_argument("--json", action="store_true")
+
+    verify_behavior_cards_parser = subparsers.add_parser(
+        "verify-behavior-cards",
+        help="Verify behavior-card coverage and required sections",
+    )
+    verify_behavior_cards_parser.add_argument("--behavior-dir", default="docs/behavior")
+    verify_behavior_cards_parser.add_argument("--json", action="store_true")
+
+    verify_engine_readiness_parser = subparsers.add_parser(
+        "verify-engine-readiness",
+        help="Verify conformance + behavior-card readiness",
+    )
+    verify_engine_readiness_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    verify_engine_readiness_parser.add_argument("--behavior-dir", default="docs/behavior")
+    verify_engine_readiness_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    verify_engine_readiness_parser.add_argument("--allow-nonpass-status", action="store_true")
+    verify_engine_readiness_parser.add_argument("--require-mock-pass", action="store_true")
+    verify_engine_readiness_parser.add_argument("--target-adapter", default=None)
+    verify_engine_readiness_parser.add_argument("--json", action="store_true")
+
+    pre_run_gate_parser = subparsers.add_parser(
+        "pre-run-gate",
+        help="Run pre-run readiness gate for benchmark execution",
+    )
+    pre_run_gate_parser.add_argument("--config", required=True)
+    pre_run_gate_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    pre_run_gate_parser.add_argument("--behavior-dir", default="docs/behavior")
+    pre_run_gate_parser.add_argument("--allow-gpu-unavailable", action="store_true")
+    pre_run_gate_parser.add_argument("--json", action="store_true")
+
+    verify_promotion_gate_parser = subparsers.add_parser(
+        "verify-promotion-gate",
+        help="Verify strict-readiness artifact before promotion",
+    )
+    verify_promotion_gate_parser.add_argument("--portable-results", default=None)
+    verify_promotion_gate_parser.add_argument("--from-budget", default=None, choices=["b0", "b1"])
+    verify_promotion_gate_parser.add_argument("--out-candidates", default=None)
+    verify_promotion_gate_parser.add_argument(
+        "--strict-readiness-summary",
+        default="artifacts/conformance_strict/engine_readiness_summary.json",
+    )
+    verify_promotion_gate_parser.add_argument("--conformance-matrix", default=None)
+    verify_promotion_gate_parser.add_argument("--json", action="store_true")
+
+    snapshot_checks_parser = subparsers.add_parser(
+        "snapshot-required-checks",
+        help="Write required-checks snapshot JSON artifact",
+    )
+    snapshot_checks_parser.add_argument("--output", default="artifacts/ci/required_checks_snapshot.json")
+    snapshot_checks_parser.add_argument("--report-workflow", default=".github/workflows/report_preflight.yml")
+    snapshot_checks_parser.add_argument("--drift-workflow", default=".github/workflows/branch_protection_drift.yml")
+    snapshot_checks_parser.add_argument("--branch-protection-doc", default="docs/ci/branch_protection.md")
+    snapshot_checks_parser.add_argument("--pr-template", default=".github/pull_request_template.md")
+    snapshot_checks_parser.add_argument("--strict", action="store_true")
+    snapshot_checks_parser.add_argument("--json", action="store_true")
+
+    report_parser = subparsers.add_parser("report", help="Generate report artifacts")
+    report_parser.add_argument("--input", required=True)
+    report_parser.add_argument("--mode", required=True, choices=["portable-agentic"])
+    report_parser.add_argument("--out", required=False)
+    report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
+    report_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
+    report_parser.add_argument("--behavior-dir", default="docs/behavior")
+
+    conformance_parser = subparsers.add_parser("conformance", help="Run adapter conformance tests")
+    conformance_parser.add_argument("--adapter", default="mock")
+    conformance_parser.add_argument("--adapter-options-json", default="{}")
+    conformance_parser.add_argument("--collection", default="conformance")
+    conformance_parser.add_argument("--dimension", type=int, default=4)
+    conformance_parser.add_argument("--metric", default="ip")
+
+    wait_adapter_parser = subparsers.add_parser(
+        "wait-adapter",
+        help="Poll an adapter healthcheck until it becomes ready",
+    )
+    wait_source = wait_adapter_parser.add_mutually_exclusive_group(required=True)
+    wait_source.add_argument("--config", default=None)
+    wait_source.add_argument("--adapter", default=None)
+    wait_adapter_parser.add_argument("--adapter-options-json", default="{}")
+    wait_adapter_parser.add_argument("--timeout-s", type=float, default=120.0)
+    wait_adapter_parser.add_argument("--poll-interval-s", type=float, default=1.0)
+    wait_adapter_parser.add_argument("--json", action="store_true")
+
+    conformance_matrix_parser = subparsers.add_parser(
+        "conformance-matrix",
+        help="Run conformance tests for all adapter configs",
+    )
+    conformance_matrix_parser.add_argument("--config-dir", default="configs/conformance")
+    conformance_matrix_parser.add_argument("--out-dir", default="artifacts/conformance")
+    conformance_matrix_parser.add_argument("--timeout-s", type=float, default=300.0)
+    conformance_matrix_parser.add_argument("--adapters", default="")
+
+    services_parser = subparsers.add_parser(
+        "services",
+        help="Manage benchmark service containers (docker compose up/down/status/wait)",
+    )
+    services_parser.add_argument("action", choices=["up", "down", "status", "wait"])
+    services_parser.add_argument(
+        "--profile",
+        choices=["portable"],
+        default="portable",
+        help="Service group to target (portable = qdrant, pgvector)",
+    )
+    services_parser.add_argument(
+        "--services",
+        default=None,
+        help="Comma-separated explicit service list; overrides --profile",
+    )
+    services_parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Poll service health after 'up' until ready",
+    )
+    services_parser.add_argument("--volumes", action="store_true", help="Remove volumes on 'down'")
+    services_parser.add_argument("--timeout-s", type=float, default=120.0)
+    services_parser.add_argument("--poll-interval-s", type=float, default=2.0)
+    services_parser.add_argument("--compose-file", default=None)
+    services_parser.add_argument("--skip-arch-check", action="store_true")
+    services_parser.add_argument("--json", action="store_true")
+
+    archive_parser = subparsers.add_parser(
+        "archive",
+        help="Archive run artifacts into a versioned, compressed bundle",
+    )
+    archive_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Archive identifier (default: UTC timestamp)",
+    )
+    archive_parser.add_argument("--results-dir", default="results")
+    archive_parser.add_argument("--runs-dir", default=None)
+    archive_parser.add_argument("--figures-dir", default=None)
+    archive_parser.add_argument("--hotpot-portable-dir", default=None)
+    archive_parser.add_argument("--conformance-dir", default=None)
+    archive_parser.add_argument("--docs", default=None)
+    archive_parser.add_argument("--no-tar", action="store_true")
+    archive_parser.add_argument("--dry-run", action="store_true")
+    archive_parser.add_argument("--json", action="store_true")
+
+    args = parser.parse_args(argv)
+    if args.command == "run":
+        from maxionbench.orchestration.runner import main as run_main
+
+        run_argv: list[str] = ["--config", args.config]
+        if args.budget is not None:
+            run_argv.extend(["--budget", args.budget])
+        if args.seed is not None:
+            run_argv.extend(["--seed", str(args.seed)])
+        if args.repeats is not None:
+            run_argv.extend(["--repeats", str(args.repeats)])
+        if args.no_retry:
+            run_argv.append("--no-retry")
+        if args.output_dir:
+            run_argv.extend(["--output-dir", args.output_dir])
+        if args.enforce_readiness:
+            run_argv.append("--enforce-readiness")
+        if args.conformance_matrix:
+            run_argv.extend(["--conformance-matrix", args.conformance_matrix])
+        if args.behavior_dir:
+            run_argv.extend(["--behavior-dir", args.behavior_dir])
+        if args.allow_gpu_unavailable:
+            run_argv.append("--allow-gpu-unavailable")
+        return run_main(run_argv)
+    if args.command == "validate":
+        from maxionbench.tools.validate_outputs import validate_path
+        import json
+
+        summary = validate_path(
+            Path(args.input).resolve(),
+            strict_schema=not bool(args.legacy_ok),
+            enforce_protocol=bool(args.enforce_protocol),
+        )
+        if args.json:
+            print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0 if bool(summary.get("pass", False)) else 1
+    if args.command == "migrate-stage-timing":
+        from maxionbench.tools.migrate_stage_timing import backfill_path
+        import json
+
+        summary = backfill_path(Path(args.input).resolve(), dry_run=args.dry_run)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "verify-branch-protection":
+        from maxionbench.tools.verify_branch_protection import main as verify_branch_main
+
+        verify_argv: list[str] = ["--repo", args.repo, "--branch", args.branch, "--timeout-s", str(args.timeout_s)]
+        if args.token:
+            verify_argv.extend(["--token", args.token])
+        for check in args.required_checks or []:
+            verify_argv.extend(["--required-check", check])
+        if args.include_drift_check:
+            verify_argv.append("--include-drift-check")
+        if args.include_strict_readiness_check:
+            verify_argv.append("--include-strict-readiness-check")
+        if args.include_publish_bundle_check:
+            verify_argv.append("--include-publish-bundle-check")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_branch_main(verify_argv)
+    if args.command == "verify-pins":
+        from maxionbench.tools.verify_pins import main as verify_pins_main
+
+        verify_argv: list[str] = ["--config-dir", args.config_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_pins_main(verify_argv)
+    if args.command == "verify-dataset-manifests":
+        from maxionbench.tools.verify_dataset_manifests import main as verify_dataset_manifests_main
+
+        verify_argv = ["--manifest-dir", args.manifest_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_dataset_manifests_main(verify_argv)
+    if args.command == "download-datasets":
+        from maxionbench.tools.download_datasets import main as download_datasets_main
+
+        download_argv: list[str] = [
+            "--root",
+            args.root,
+            "--cache-dir",
+            args.cache_dir,
+            "--datasets",
+            args.datasets or "",
+            "--crag-examples",
+            str(args.crag_examples),
+            "--timeout-s",
+            str(args.timeout_s),
+        ]
+        if args.force:
+            download_argv.append("--force")
+        if args.json:
+            download_argv.append("--json")
+        return download_datasets_main(download_argv)
+    if args.command == "preprocess-datasets":
+        from maxionbench.tools.preprocess_datasets import main as preprocess_datasets_main
+
+        required_by_mode = {
+            "beir": {
+                "--input": args.input,
+                "--name": args.name,
+            },
+            "crag": {
+                "--input": args.input,
+            },
+        }
+        missing = [flag for flag, value in required_by_mode.get(args.mode, {}).items() if value in {None, ""}]
+        if missing:
+            parser.error(f"preprocess-datasets {args.mode} requires {' '.join(missing)}")
+
+        preprocess_argv: list[str] = [args.mode, "--out", args.out]
+        if args.input is not None:
+            preprocess_argv.extend(["--input", args.input])
+        if args.family is not None:
+            preprocess_argv.extend(["--family", args.family])
+        if args.name is not None:
+            preprocess_argv.extend(["--name", args.name])
+        if args.metric is not None:
+            preprocess_argv.extend(["--metric", args.metric])
+        if args.base is not None:
+            preprocess_argv.extend(["--base", args.base])
+        if args.queries is not None:
+            preprocess_argv.extend(["--queries", args.queries])
+        if args.gt is not None:
+            preprocess_argv.extend(["--gt", args.gt])
+        if args.filters is not None:
+            preprocess_argv.extend(["--filters", args.filters])
+        if args.payloads is not None:
+            preprocess_argv.extend(["--payloads", args.payloads])
+        if args.query_split is not None:
+            preprocess_argv.extend(["--query-split", args.query_split])
+        if args.private_query_token is not None:
+            preprocess_argv.extend(["--private-query-token", args.private_query_token])
+        if args.skip_payloads:
+            preprocess_argv.append("--skip-payloads")
+        if args.split is not None:
+            preprocess_argv.extend(["--split", args.split])
+        if args.max_examples is not None:
+            preprocess_argv.extend(["--max-examples", str(args.max_examples)])
+        if args.chunk_chars is not None:
+            preprocess_argv.extend(["--chunk-chars", str(args.chunk_chars)])
+        if args.overlap is not None:
+            preprocess_argv.extend(["--overlap", str(args.overlap)])
+        if args.json:
+            preprocess_argv.append("--json")
+        return preprocess_datasets_main(preprocess_argv)
+    if args.command == "preprocess-hotpot-portable":
+        from maxionbench.tools.preprocess_hotpot_portable import main as preprocess_hotpot_portable_main
+
+        preprocess_argv: list[str] = [
+            "--input",
+            args.input,
+            "--out",
+            args.out,
+        ]
+        if args.json:
+            preprocess_argv.append("--json")
+        return preprocess_hotpot_portable_main(preprocess_argv)
+    if args.command == "precompute-text-embeddings":
+        from maxionbench.tools.precompute_text_embeddings import main as precompute_text_embeddings_main
+
+        precompute_argv: list[str] = [
+            "--input",
+            args.input,
+            "--model-id",
+            args.model_id,
+            "--batch-size",
+            str(args.batch_size),
+            "--device",
+            args.device,
+            "--max-length",
+            str(args.max_length),
+        ]
+        if args.require_device:
+            precompute_argv.extend(["--require-device", args.require_device])
+        if args.no_normalize:
+            precompute_argv.append("--no-normalize")
+        if args.force:
+            precompute_argv.append("--force")
+        if args.json:
+            precompute_argv.append("--json")
+        return precompute_text_embeddings_main(precompute_argv)
+    if args.command == "run-matrix":
+        from maxionbench.orchestration.run_matrix import main as run_matrix_main
+
+        matrix_argv = [
+            "--scenario-config-dir",
+            args.scenario_config_dir,
+            "--engine-config-dir",
+            args.engine_config_dir,
+            "--out-dir",
+            args.out_dir,
+            "--output-root",
+            args.output_root,
+            "--lane",
+            args.lane,
+        ]
+        if args.budget is not None:
+            matrix_argv.extend(["--budget", args.budget])
+        if args.json:
+            matrix_argv.append("--json")
+        return run_matrix_main(matrix_argv)
+    if args.command == "execute-run-matrix":
+        from maxionbench.tools.execute_run_matrix import main as execute_run_matrix_main
+
+        execute_argv = [
+            "--matrix",
+            args.matrix,
+            "--lane",
+            args.lane,
+            "--adapter-timeout-s",
+            str(args.adapter_timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.budget is not None:
+            execute_argv.extend(["--budget", args.budget])
+        if args.seed is not None:
+            execute_argv.extend(["--seed", str(args.seed)])
+        if args.repeats is not None:
+            execute_argv.extend(["--repeats", str(args.repeats)])
+        if args.no_retry:
+            execute_argv.append("--no-retry")
+        if args.skip_completed:
+            execute_argv.append("--skip-completed")
+        if args.continue_on_failure:
+            execute_argv.append("--continue-on-failure")
+        if args.engine_filter is not None:
+            execute_argv.extend(["--engine-filter", args.engine_filter])
+        if args.scenario_filter is not None:
+            execute_argv.extend(["--scenario-filter", args.scenario_filter])
+        if args.template_filter is not None:
+            execute_argv.extend(["--template-filter", args.template_filter])
+        if args.max_runs is not None:
+            execute_argv.extend(["--max-runs", str(args.max_runs)])
+        if args.deadline_hours is not None:
+            execute_argv.extend(["--deadline-hours", str(args.deadline_hours)])
+        if args.json:
+            execute_argv.append("--json")
+        return execute_run_matrix_main(execute_argv)
+    if args.command == "submit-portable":
+        from maxionbench.tools.submit_portable import main as submit_portable_main
+
+        submit_argv = [
+            "--budget",
+            args.budget,
+            "--repo-root",
+            args.repo_root,
+            "--scenario-config-dir",
+            args.scenario_config_dir,
+            "--engine-config-dir",
+            args.engine_config_dir,
+            "--lane",
+            args.lane,
+            "--deadline-hours",
+            str(args.deadline_hours),
+            "--adapter-timeout-s",
+            str(args.adapter_timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.out_dir:
+            submit_argv.extend(["--out-dir", args.out_dir])
+        if args.output_root:
+            submit_argv.extend(["--output-root", args.output_root])
+        if args.seed is not None:
+            submit_argv.extend(["--seed", str(args.seed)])
+        if args.repeats is not None:
+            submit_argv.extend(["--repeats", str(args.repeats)])
+        if args.no_retry:
+            submit_argv.append("--no-retry")
+        if args.no_skip_completed:
+            submit_argv.append("--no-skip-completed")
+        if args.continue_on_failure:
+            submit_argv.append("--continue-on-failure")
+        if args.engine_filter:
+            submit_argv.extend(["--engine-filter", args.engine_filter])
+        if args.scenario_filter:
+            submit_argv.extend(["--scenario-filter", args.scenario_filter])
+        if args.template_filter:
+            submit_argv.extend(["--template-filter", args.template_filter])
+        if args.max_runs is not None:
+            submit_argv.extend(["--max-runs", str(args.max_runs)])
+        if args.no_verify_promotion:
+            submit_argv.append("--no-verify-promotion")
+        if args.json:
+            submit_argv.append("--json")
+        return submit_portable_main(submit_argv)
+    if args.command == "portable-workflow":
+        from maxionbench.tools.portable_workflow import main as portable_workflow_main
+
+        workflow_argv = [args.phase, "--repo-root", args.repo_root]
+        if args.json:
+            workflow_argv.append("--json")
+        return portable_workflow_main(workflow_argv)
+    if args.command == "verify-conformance-configs":
+        from maxionbench.tools.verify_conformance_configs import main as verify_conformance_configs_main
+
+        verify_argv = ["--config-dir", args.config_dir]
+        if args.allow_gpu_unavailable:
+            verify_argv.append("--allow-gpu-unavailable")
+        if args.json:
+            verify_argv.append("--json")
+        return verify_conformance_configs_main(verify_argv)
+    if args.command == "verify-behavior-cards":
+        from maxionbench.tools.verify_behavior_cards import main as verify_behavior_cards_main
+
+        verify_argv: list[str] = ["--behavior-dir", args.behavior_dir]
+        if args.json:
+            verify_argv.append("--json")
+        return verify_behavior_cards_main(verify_argv)
+    if args.command == "verify-engine-readiness":
+        from maxionbench.tools.verify_engine_readiness import main as verify_engine_readiness_main
+
+        verify_argv: list[str] = [
+            "--conformance-matrix",
+            args.conformance_matrix,
+            "--behavior-dir",
+            args.behavior_dir,
+        ]
+        if args.allow_gpu_unavailable:
+            verify_argv.append("--allow-gpu-unavailable")
+        if args.allow_nonpass_status:
+            verify_argv.append("--allow-nonpass-status")
+        if args.require_mock_pass:
+            verify_argv.append("--require-mock-pass")
+        if args.target_adapter:
+            verify_argv.extend(["--target-adapter", args.target_adapter])
+        if args.json:
+            verify_argv.append("--json")
+        return verify_engine_readiness_main(verify_argv)
+    if args.command == "pre-run-gate":
+        from maxionbench.tools.pre_run_gate import main as pre_run_gate_main
+
+        gate_argv: list[str] = [
+            "--config",
+            args.config,
+            "--conformance-matrix",
+            args.conformance_matrix,
+            "--behavior-dir",
+            args.behavior_dir,
+        ]
+        if args.allow_gpu_unavailable:
+            gate_argv.append("--allow-gpu-unavailable")
+        if args.json:
+            gate_argv.append("--json")
+        return pre_run_gate_main(gate_argv)
+    if args.command == "verify-promotion-gate":
+        from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
+
+        verify_argv: list[str] = []
+        if args.portable_results:
+            verify_argv.extend(["--portable-results", args.portable_results])
+            if args.from_budget:
+                verify_argv.extend(["--from-budget", args.from_budget])
+            if args.out_candidates:
+                verify_argv.extend(["--out-candidates", args.out_candidates])
+        else:
+            verify_argv.extend(["--strict-readiness-summary", args.strict_readiness_summary])
+        if args.conformance_matrix:
+            verify_argv.extend(["--conformance-matrix", args.conformance_matrix])
+        if args.json:
+            verify_argv.append("--json")
+        return verify_promotion_gate_main(verify_argv)
+    if args.command == "snapshot-required-checks":
+        from maxionbench.tools.required_checks_snapshot import main as snapshot_required_checks_main
+
+        snapshot_argv: list[str] = [
+            "--output",
+            args.output,
+            "--report-workflow",
+            args.report_workflow,
+            "--drift-workflow",
+            args.drift_workflow,
+            "--branch-protection-doc",
+            args.branch_protection_doc,
+            "--pr-template",
+            args.pr_template,
+        ]
+        if args.strict:
+            snapshot_argv.append("--strict")
+        if args.json:
+            snapshot_argv.append("--json")
+        return snapshot_required_checks_main(snapshot_argv)
+    if args.command == "report":
+        if args.mode == "portable-agentic":
+            from maxionbench.reports.portable_exports import generate_portable_report_bundle
+
+            if args.milestone_id:
+                raise ValueError("--milestone-id is not valid when --mode portable-agentic")
+            if not args.out:
+                raise ValueError("--out is required when --mode portable-agentic")
+            generate_portable_report_bundle(
+                input_dir=Path(args.input).resolve(),
+                out_dir=Path(args.out).resolve(),
+                conformance_matrix_path=Path(args.conformance_matrix).resolve(),
+                behavior_dir=Path(args.behavior_dir).resolve(),
+            )
+            return 0
+
+        raise ValueError(f"Unsupported report mode: {args.mode}")
+    if args.command == "conformance":
+        conformance_argv = [
+            "--adapter",
+            args.adapter,
+            "--adapter-options-json",
+            args.adapter_options_json,
+            "--collection",
+            args.collection,
+            "--dimension",
+            str(args.dimension),
+            "--metric",
+            args.metric,
+        ]
+        return conformance_main(conformance_argv)
+    if args.command == "wait-adapter":
+        from maxionbench.tools.wait_adapter import main as wait_adapter_main
+
+        wait_argv: list[str] = [
+            "--timeout-s",
+            str(args.timeout_s),
+            "--poll-interval-s",
+            str(args.poll_interval_s),
+        ]
+        if args.config:
+            wait_argv.extend(["--config", args.config])
+        if args.adapter:
+            wait_argv.extend(["--adapter", args.adapter])
+            wait_argv.extend(["--adapter-options-json", args.adapter_options_json])
+        if args.json:
+            wait_argv.append("--json")
+        return wait_adapter_main(wait_argv)
+    if args.command == "conformance-matrix":
+        from maxionbench.conformance.matrix import main as conformance_matrix_main
+
+        matrix_argv = [
+            "--config-dir",
+            args.config_dir,
+            "--out-dir",
+            args.out_dir,
+            "--timeout-s",
+            str(args.timeout_s),
+        ]
+        if str(args.adapters).strip():
+            matrix_argv.extend(["--adapters", args.adapters])
+        return conformance_matrix_main(matrix_argv)
+    if args.command == "services":
+        from maxionbench.tools.service_lifecycle import main as services_main
+
+        services_argv: list[str] = [args.action, "--profile", args.profile]
+        if args.services:
+            services_argv.extend(["--services", args.services])
+        if args.wait:
+            services_argv.append("--wait")
+        if args.volumes:
+            services_argv.append("--volumes")
+        services_argv.extend(["--timeout-s", str(args.timeout_s)])
+        services_argv.extend(["--poll-interval-s", str(args.poll_interval_s)])
+        if args.skip_arch_check:
+            services_argv.append("--skip-arch-check")
+        if args.compose_file:
+            services_argv.extend(["--compose-file", args.compose_file])
+        if args.json:
+            services_argv.append("--json")
+        return services_main(services_argv)
+    if args.command == "archive":
+        from maxionbench.tools.archive import main as archive_main
+
+        archive_argv: list[str] = ["--results-dir", args.results_dir]
+        if args.run_id:
+            archive_argv.extend(["--run-id", args.run_id])
+        if args.runs_dir:
+            archive_argv.extend(["--runs-dir", args.runs_dir])
+        if args.figures_dir:
+            archive_argv.extend(["--figures-dir", args.figures_dir])
+        if args.hotpot_portable_dir:
+            archive_argv.extend(["--hotpot-portable-dir", args.hotpot_portable_dir])
+        if args.conformance_dir:
+            archive_argv.extend(["--conformance-dir", args.conformance_dir])
+        if args.docs:
+            archive_argv.extend(["--docs", args.docs])
+        if args.no_tar:
+            archive_argv.append("--no-tar")
+        if args.dry_run:
+            archive_argv.append("--dry-run")
+        if args.json:
+            archive_argv.append("--json")
+        return archive_main(archive_argv)
+    raise ValueError(f"Unsupported command {args.command}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,48 @@
+{
+  "dpi": 300,
+  "figure_name": "portable_budget_stability",
+  "font_size": 10,
+  "generated_at_utc": "2026-04-29T03:33:26.040395+00:00",
+  "mode": "portable-agentic",
+  "panel_pixels": 2040,
+  "rows_used": 9,
+  "scenario_budget_pairs": [
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s3_multi_hop"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s3_multi_hop"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s3_multi_hop"
+    }
+  ],
+  "style_version": "portable_v3_neurips_camera_ready"
+}

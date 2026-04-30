@@ -1,0 +1,35 @@
+\section{Reproducibility details}
+
+The portable workflow is run from the repository root. The main commands are:
+\begin{verbatim}
+maxionbench portable-workflow setup --json
+maxionbench portable-workflow data --json
+maxionbench submit-portable --budget b0 --json
+maxionbench submit-portable --budget b1 --json
+maxionbench submit-portable --budget b2 --json
+maxionbench portable-workflow finalize --json
+\end{verbatim}
+The archived bundle used by this manuscript is \texttt{results/20260429T033427Z}. It contains 972 run-artifact files, 42 generated figure files, 27 \textsc{HotpotQA-portable} files, and 27 conformance files. The strict-schema validation command used during manuscript preparation was:
+\begin{verbatim}
+python -m maxionbench.cli validate --input artifacts/runs/portable \
+  --strict-schema --json
+\end{verbatim}
+It returned \texttt{"pass": true}, \texttt{"error\_count": 0}, and \texttt{"run\_dirs\_checked": 72}.
+
+The archived portable matrix contains 72 \texttt{results.parquet} files, including 24 B2 result files with matching \texttt{run\_metadata.json} files. The recorded local runtime is an Apple M4 Mac mini with 10 logical CPU cores, 16 GB RAM, macOS 26.4.1, Python 3.11.14, Docker 29.4.0, and no GPUs. \textsc{HotpotQA-portable} contains 66{,}635 documents, 7{,}405 questions, and 14{,}810 qrels; \texttt{hotpot\_portable/checksums.json} stores SHA-256 checksums for the corpus, queries, qrels, metadata, and manifest.
+
+The reviewer artifact also includes an artifact card, a local readiness verifier, and Croissant-style metadata for \textsc{HotpotQA-portable}. The verifier checks that the manuscript, archive manifest, paper-facing tables, paired-audit summaries, and metadata files are present and internally consistent; the Croissant metadata records the corpus, query, and qrel files, their intended evaluation use, and the license/provenance boundary inherited from HotpotQA.
+
+\section{Claim-evidence map}
+
+\input{tables/evidence_strength}
+
+\begin{itemize}[leftmargin=*]
+  \item Claim: \sys is conformance-gated. Evidence: the support table reports passing conformance and behavior cards for all included engines, and the report excludes LanceDB service because conformance is missing.
+  \item Claim: strict 200 ms p99 deployment selects FAISS CPU with bge-small for S1, S2, and S3. Evidence: Table~\ref{tab:portable-main-results} and Table~\ref{tab:portable-decision-table}.
+  \item Claim: strict decisions have different margins across workloads. Evidence: Table~\ref{tab:strict-decision-margins} shows S1/S2 as cost/quality ties resolved by latency and S3 as lower-cost and higher-quality than the next strict-cost candidate.
+  \item Claim: objective choice changes deployment conclusions. Evidence: Table~\ref{tab:portable-decision-table} shows different quality-first winners for all workloads and a no-p99 cost shift for S3.
+  \item Claim: the S3 quality-first pgvector result should not be read as a substantive quality advantage. Evidence: Table~\ref{tab:s3-paired-quality} reports a matched-query audit over all 5{,}000 S3 queries in which pgvector trails FAISS CPU by 0.0001 \ecov{} with paired 95\% interval [-0.0003, 0.0000].
+  \item Claim: the S2 strict decision is not hiding a Qdrant quality or freshness win. Evidence: Table~\ref{tab:s2-competitor-check} reports a larger same-machine paired check with 1{,}788 matched quality observations and 200 matched freshness events.
+  \item Claim: budget stability is workload-dependent. Evidence: B0-to-B2 top-1 agreement is 0 for S1/S2 and 1 for S3, with Spearman correlations 0.79, 0.43, and 0.31.
+\end{itemize}

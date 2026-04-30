@@ -1,0 +1,36 @@
+{
+  "budgets": [
+    "b0",
+    "b1",
+    "b2"
+  ],
+  "engines": [
+    "faiss-cpu",
+    "lancedb-inproc",
+    "pgvector",
+    "qdrant"
+  ],
+  "generated_at_utc": "2026-04-29T03:51:09.021103+00:00",
+  "mode": "portable-agentic",
+  "observed_rows_total": 224,
+  "rows_total": 224,
+  "scenarios": [
+    "s1_single_hop",
+    "s2_streaming_memory",
+    "s3_multi_hop"
+  ],
+  "support_table_rows": 5,
+  "table_names": [
+    "portable_summary.csv",
+    "portable_winners.csv",
+    "portable_stability.csv",
+    "minimum_viable_deployment.csv",
+    "minimum_viable_deployment_sensitivity.csv",
+    "portable_decision_table.csv",
+    "portable_decision_table.tex",
+    "neurips_main_results.csv",
+    "neurips_main_results.tex",
+    "portable_support_table.csv"
+  ],
+  "winner_rows": 168
+}

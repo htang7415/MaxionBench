@@ -1,0 +1,73 @@
+{
+  "budget_level": "b0",
+  "c_llm_in": 0.15,
+  "clients_read": 1,
+  "clients_read_grid": [
+    1,
+    4,
+    8
+  ],
+  "clients_write": 0,
+  "config_fingerprint": "c44994d2d8aae4b6583f8c738b92c8cdaf69bc1eab9a8b3dc5303c63c9cb343d",
+  "dataset_bundle": "HOTPOT_PORTABLE",
+  "dataset_cache_checksums": [],
+  "dataset_hash": "portable-s3-hotpotqa-dev-distractor",
+  "embedding_dim": 768,
+  "embedding_model": "BAAI/bge-base-en-v1.5",
+  "engine": "pgvector",
+  "engine_version": "postgres16-pgvector",
+  "gpu_tracks_omission_reason": null,
+  "gpu_tracks_omitted": false,
+  "ground_truth_engine": "hotpot_portable_qrels",
+  "ground_truth_k": 10,
+  "ground_truth_metric": "evidence_coverage@10",
+  "ground_truth_source": "hotpot_portable_supporting_facts",
+  "hardware_runtime": {
+    "apple_silicon_model": "Apple M4",
+    "container_runtime_hint": null,
+    "cpu_count_logical": 10,
+    "docker_version": "Docker version 29.4.0, build 9d7ad9f",
+    "gpu_count": 0,
+    "hostname": "Mac-mini.local",
+    "macos_version": "26.4.1",
+    "platform": "macOS-26.4.1-x86_64-i386-64bit",
+    "python_version": "3.11.14",
+    "slurm_array_task_id": null,
+    "slurm_job_id": null,
+    "total_memory_bytes": 17179869184
+  },
+  "no_retry": true,
+  "profile": "portable-agentic",
+  "quality_target": 0.3,
+  "quality_targets": [
+    0.3
+  ],
+  "repeats": 1,
+  "resource_profile": {
+    "cpu_vcpu": 4.0,
+    "disk_tb": 0.0005478337407112122,
+    "gpu_count": 0.0,
+    "ram_gib": 0.0,
+    "rhu_rate": 0.01043449979624711
+  },
+  "rhu_references": {
+    "c_ref_vcpu": 96.0,
+    "d_ref_tb": 7.68,
+    "g_ref_gpu": 1.0,
+    "r_ref_gib": 512.0
+  },
+  "rhu_weights": {
+    "w_c": 0.25,
+    "w_d": 0.25,
+    "w_g": 0.25,
+    "w_r": 0.25
+  },
+  "rtt_baseline_ms_p50": 0.3888955106958747,
+  "rtt_baseline_ms_p99": 0.6520430592354386,
+  "rtt_baseline_request_profile": "healthcheck_plus_query_topk1_zero_vector",
+  "run_id": "run-c44994d2d8-r0-c1-t30-portable_s3",
+  "scenario": "s3_multi_hop",
+  "seed": 42,
+  "sla_threshold_ms": 150.0,
+  "timestamp_utc": "2026-04-26T12:38:29+00:00"
+}

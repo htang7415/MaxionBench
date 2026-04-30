@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+.DS_Store
+._*
+paper/manuscript/*.aux
+paper/manuscript/*.blg
+paper/manuscript/*.fdb_latexmk
+paper/manuscript/*.fls
+paper/manuscript/*.log
+paper/manuscript/*.out
+dataset/processed/hotpot_portable/embeddings/

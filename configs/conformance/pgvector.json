@@ -1,0 +1,7 @@
+{
+  "adapter": "pgvector",
+  "adapter_options_json": "{\"dsn\":\"${MAXIONBENCH_PGVECTOR_DSN:-postgresql://postgres:postgres@127.0.0.1:5432/postgres}\",\"schema\":\"public\",\"index_method\":\"none\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}

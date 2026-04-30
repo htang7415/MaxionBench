@@ -1,0 +1,10 @@
+{
+  "dpi": 300,
+  "figure_name": "portable_s2_freshness",
+  "font_size": 10,
+  "generated_at_utc": "2026-04-29T03:33:26.192778+00:00",
+  "mode": "portable-agentic",
+  "panel_pixels": 2040,
+  "rows_used": 24,
+  "style_version": "portable_v3_neurips_camera_ready"
+}

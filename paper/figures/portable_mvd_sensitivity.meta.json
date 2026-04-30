@@ -1,0 +1,24 @@
+{
+  "dpi": 300,
+  "figure_name": "portable_mvd_sensitivity",
+  "font_size": 10,
+  "generated_at_utc": "2026-04-29T03:33:26.442260+00:00",
+  "mode": "portable-agentic",
+  "p99_thresholds": [
+    "100.0",
+    "200.0",
+    "500.0",
+    "none",
+    "100.0",
+    "200.0",
+    "500.0",
+    "none",
+    "100.0",
+    "200.0",
+    "500.0",
+    "none"
+  ],
+  "panel_pixels": 2040,
+  "rows_used": 12,
+  "style_version": "portable_v3_neurips_camera_ready"
+}

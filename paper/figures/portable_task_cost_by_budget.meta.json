@@ -1,0 +1,20 @@
+{
+  "budgets": [
+    "b0",
+    "b1",
+    "b2"
+  ],
+  "dpi": 300,
+  "figure_name": "portable_task_cost_by_budget",
+  "font_size": 10,
+  "generated_at_utc": "2026-04-29T03:33:25.864010+00:00",
+  "mode": "portable-agentic",
+  "panel_pixels": 2040,
+  "rows_used": 168,
+  "scenarios": [
+    "s1_single_hop",
+    "s2_streaming_memory",
+    "s3_multi_hop"
+  ],
+  "style_version": "portable_v3_neurips_camera_ready"
+}

@@ -1,0 +1,73 @@
+\begin{thebibliography}{10}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[{Beijing Academy of Artificial Intelligence}(2023)]{bge}
+{Beijing Academy of Artificial Intelligence}.
+\newblock {BAAI} general embedding models.
+\newblock \url{https://huggingface.co/BAAI}, 2023.
+\newblock Model identifiers bge-small-en-v1.5 and bge-base-en-v1.5.
+
+\bibitem[{Facebook Research}(2024)]{facebookcrag}
+{Facebook Research}.
+\newblock {CRAG}: Comprehensive rag benchmark.
+\newblock \url{https://github.com/facebookresearch/CRAG}, 2024.
+\newblock Dataset source used for the CRAG-500 event stream.
+
+\bibitem[Johnson et~al.(2019)Johnson, Douze, and J{\'e}gou]{johnson2019faiss}
+Jeff Johnson, Matthijs Douze, and Herv{\'e} J{\'e}gou.
+\newblock Billion-scale similarity search with {GPUs}.
+\newblock \emph{IEEE Transactions on Big Data}, 2019.
+
+\bibitem[{LanceDB}(2024)]{lancedb}
+{LanceDB}.
+\newblock {LanceDB}: Developer-friendly vector database.
+\newblock \url{https://lancedb.com/}, 2024.
+
+\bibitem[Maia et~al.(2018)Maia, Handschuh, Freitas, Davis, McDermott, Zarrouk,
+  and Balahur]{maia2018fiqa}
+Macedo Maia, Siegfried Handschuh, Andr{\'e} Freitas, Brian Davis, Ross
+  McDermott, Manel Zarrouk, and Alexandra Balahur.
+\newblock {WWW'18} open challenge: Financial opinion mining and question
+  answering.
+\newblock In \emph{Companion Proceedings of the Web Conference}, 2018.
+
+\bibitem[{pgvector contributors}(2024)]{pgvector}
+{pgvector contributors}.
+\newblock {pgvector}: Open-source vector similarity search for {PostgreSQL}.
+\newblock \url{https://github.com/pgvector/pgvector}, 2024.
+
+\bibitem[{Qdrant contributors}(2024)]{qdrant}
+{Qdrant contributors}.
+\newblock {Qdrant}: Vector database and similarity search engine.
+\newblock \url{https://qdrant.tech/}, 2024.
+
+\bibitem[Thakur et~al.(2021)Thakur, Reimers, R{\"u}ckl{\'e}, Srivastava, and
+  Gurevych]{thakur2021beir}
+Nandan Thakur, Nils Reimers, Andreas R{\"u}ckl{\'e}, Abhishek Srivastava, and
+  Iryna Gurevych.
+\newblock {BEIR}: A heterogeneous benchmark for zero-shot evaluation of
+  information retrieval models.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2021.
+
+\bibitem[Wadden et~al.(2020)Wadden, Lin, Lo, Wang, van Zuylen, Cohan, and
+  Hajishirzi]{wadden2020scifact}
+David Wadden, Shanchuan Lin, Kyle Lo, Lucy~Lu Wang, Madeleine van Zuylen, Arman
+  Cohan, and Hannaneh Hajishirzi.
+\newblock {SciFact}: A dataset for fact verification of scientific claims.
+\newblock In \emph{Proceedings of the 2020 Conference on Empirical Methods in
+  Natural Language Processing}, 2020.
+
+\bibitem[Yang et~al.(2018)Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and
+  Manning]{yang2018hotpotqa}
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William~W. Cohen, Ruslan
+  Salakhutdinov, and Christopher~D. Manning.
+\newblock {HotpotQA}: A dataset for diverse, explainable multi-hop question
+  answering.
+\newblock In \emph{Proceedings of the 2018 Conference on Empirical Methods in
+  Natural Language Processing}, 2018.
+
+\end{thebibliography}

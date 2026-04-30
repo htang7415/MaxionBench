@@ -1,0 +1,6 @@
+engine: pgvector
+engine_version: "postgres16-pgvector"
+adapter_options:
+  dsn: ${MAXIONBENCH_PGVECTOR_DSN:-postgresql://postgres:postgres@127.0.0.1:5432/postgres}
+  schema: public
+  connect_timeout_s: 10.0

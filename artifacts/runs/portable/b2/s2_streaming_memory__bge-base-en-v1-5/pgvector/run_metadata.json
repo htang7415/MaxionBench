@@ -1,0 +1,71 @@
+{
+  "budget_level": "b2",
+  "c_llm_in": 0.15,
+  "clients_read": 8,
+  "clients_read_grid": [
+    8
+  ],
+  "clients_write": 2,
+  "config_fingerprint": "a47a429f2dec7e54b2885342e715bd78bc489a4e14e8ef2a3cbeebd2b21cfc2f",
+  "dataset_bundle": "D4",
+  "dataset_cache_checksums": [],
+  "dataset_hash": "portable-s2-unresolved",
+  "embedding_dim": 768,
+  "embedding_model": "BAAI/bge-base-en-v1.5",
+  "engine": "pgvector",
+  "engine_version": "postgres16-pgvector",
+  "gpu_tracks_omission_reason": null,
+  "gpu_tracks_omitted": false,
+  "ground_truth_engine": "processed_text_qrels",
+  "ground_truth_k": 10,
+  "ground_truth_metric": "ndcg_at_10",
+  "ground_truth_source": "portable_text_qrels_plus_streaming_events",
+  "hardware_runtime": {
+    "apple_silicon_model": "Apple M4",
+    "container_runtime_hint": null,
+    "cpu_count_logical": 10,
+    "docker_version": "Docker version 29.4.0, build 9d7ad9f",
+    "gpu_count": 0,
+    "hostname": "Mac-mini.local",
+    "macos_version": "26.4.1",
+    "platform": "macOS-26.4.1-x86_64-i386-64bit",
+    "python_version": "3.11.14",
+    "slurm_array_task_id": null,
+    "slurm_job_id": null,
+    "total_memory_bytes": 17179869184
+  },
+  "no_retry": true,
+  "profile": "portable-agentic",
+  "quality_target": 0.25,
+  "quality_targets": [
+    0.25
+  ],
+  "repeats": 2,
+  "resource_profile": {
+    "cpu_vcpu": 10.0,
+    "disk_tb": 0.0004227198660373688,
+    "gpu_count": 0.0,
+    "ram_gib": 0.0,
+    "rhu_rate": 0.02605542707897257
+  },
+  "rhu_references": {
+    "c_ref_vcpu": 96.0,
+    "d_ref_tb": 7.68,
+    "g_ref_gpu": 1.0,
+    "r_ref_gib": 512.0
+  },
+  "rhu_weights": {
+    "w_c": 0.25,
+    "w_d": 0.25,
+    "w_g": 0.25,
+    "w_r": 0.25
+  },
+  "rtt_baseline_ms_p50": 0.39429153548553586,
+  "rtt_baseline_ms_p99": 1.075055752880871,
+  "rtt_baseline_request_profile": "healthcheck_plus_query_topk1_zero_vector",
+  "run_id": "run-a47a429f2d-r0-c8-t25-portable_s2",
+  "scenario": "s2_streaming_memory",
+  "seed": 42,
+  "sla_threshold_ms": 120.0,
+  "timestamp_utc": "2026-04-27T17:16:23+00:00"
+}

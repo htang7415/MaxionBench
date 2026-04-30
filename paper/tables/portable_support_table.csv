@@ -1,0 +1,6 @@
+engine,behavior_card,behavior_card_present,conformance_statuses,reportable,included_in_report,exclusion_reason
+faiss-cpu,faiss_cpu.md,True,pass,True,True,
+lancedb-inproc,lancedb.md,True,pass,True,True,
+lancedb-service,lancedb.md,True,,False,False,missing conformance row
+pgvector,pgvector.md,True,pass,True,True,
+qdrant,qdrant.md,True,pass,True,True,

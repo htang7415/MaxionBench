@@ -1,0 +1,14 @@
+dataset_bundle: D4
+source_version: v0.1
+source_checksum_sha256: ec2b6cafc265dc082c66398488d2ac7aeba1d93e7793165b393de68a4e7f4350
+approx_bytes_dataset: 6442450944
+approx_bytes_engine: 12884901888
+approx_bytes_temp: 3221225472
+crag_source: facebookresearch/CRAG
+crag_file: data/crag_task_1_and_2_dev_v4.jsonl.bz2
+crag_url: https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2
+beir_subsets:
+  - scifact
+  - fiqa
+crag_slice_queries: 500
+crag_slice_docs: 437344

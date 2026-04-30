@@ -1,0 +1,7 @@
+{
+  "dataset_name": "hotpotqa-portable",
+  "doc_count": 66635,
+  "qrel_count": 14810,
+  "question_count": 7405,
+  "source_file": "/Volumes/Max/AI/Project/MaxionBench/dataset/D4/hotpotqa/hotpot_dev_distractor_v1.json"
+}

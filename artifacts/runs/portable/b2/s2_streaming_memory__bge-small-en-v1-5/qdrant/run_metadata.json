@@ -1,0 +1,71 @@
+{
+  "budget_level": "b2",
+  "c_llm_in": 0.15,
+  "clients_read": 8,
+  "clients_read_grid": [
+    8
+  ],
+  "clients_write": 2,
+  "config_fingerprint": "1ff9bba79403b24d7b713eeb17a2fb8bcc8f84c29efc4904cc7599f55b0fb799",
+  "dataset_bundle": "D4",
+  "dataset_cache_checksums": [],
+  "dataset_hash": "portable-s2-unresolved",
+  "embedding_dim": 384,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "engine": "qdrant",
+  "engine_version": "server",
+  "gpu_tracks_omission_reason": null,
+  "gpu_tracks_omitted": false,
+  "ground_truth_engine": "processed_text_qrels",
+  "ground_truth_k": 10,
+  "ground_truth_metric": "ndcg_at_10",
+  "ground_truth_source": "portable_text_qrels_plus_streaming_events",
+  "hardware_runtime": {
+    "apple_silicon_model": "Apple M4",
+    "container_runtime_hint": null,
+    "cpu_count_logical": 10,
+    "docker_version": "Docker version 29.4.0, build 9d7ad9f",
+    "gpu_count": 0,
+    "hostname": "Mac-mini.local",
+    "macos_version": "26.4.1",
+    "platform": "macOS-26.4.1-x86_64-i386-64bit",
+    "python_version": "3.11.14",
+    "slurm_array_task_id": null,
+    "slurm_job_id": null,
+    "total_memory_bytes": 17179869184
+  },
+  "no_retry": true,
+  "profile": "portable-agentic",
+  "quality_target": 0.25,
+  "quality_targets": [
+    0.25
+  ],
+  "repeats": 2,
+  "resource_profile": {
+    "cpu_vcpu": 10.0,
+    "disk_tb": 0.0,
+    "gpu_count": 0.0,
+    "ram_gib": 0.0,
+    "rhu_rate": 0.026041666666666668
+  },
+  "rhu_references": {
+    "c_ref_vcpu": 96.0,
+    "d_ref_tb": 7.68,
+    "g_ref_gpu": 1.0,
+    "r_ref_gib": 512.0
+  },
+  "rhu_weights": {
+    "w_c": 0.25,
+    "w_d": 0.25,
+    "w_g": 0.25,
+    "w_r": 0.25
+  },
+  "rtt_baseline_ms_p50": 4.822354472707957,
+  "rtt_baseline_ms_p99": 8.024594985181466,
+  "rtt_baseline_request_profile": "healthcheck_plus_query_topk1_zero_vector",
+  "run_id": "run-1ff9bba794-r0-c8-t25-portable_s2",
+  "scenario": "s2_streaming_memory",
+  "seed": 42,
+  "sla_threshold_ms": 120.0,
+  "timestamp_utc": "2026-04-28T10:28:47+00:00"
+}

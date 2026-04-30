@@ -1,0 +1,33 @@
+profile: portable-agentic
+budget_level: b2
+engine: mock
+engine_version: 0.1.0
+embedding_model: BAAI/bge-small-en-v1.5
+embedding_dim: 384
+c_llm_in: 0.15
+scenario: s2_streaming_memory
+dataset_bundle: D4
+dataset_hash: portable-s2-unresolved
+processed_dataset_path: ${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D4
+seed: 42
+repeats: 2
+no_retry: true
+output_dir: artifacts/runs/portable/s2_streaming_memory_mock
+quality_target: 0.25
+quality_targets: [0.25]
+clients_read: 8
+clients_write: 2
+clients_grid: [8]
+d4_beir_subsets: [scifact, fiqa]
+d4_include_crag: false
+d4_max_docs: 50000
+search_sweep:
+  - hnsw_ef: 64
+phase_max_requests_per_phase: 1000
+s2_max_freshness_events: 100
+rpc_baseline_requests: 1000
+sla_threshold_ms: 120.0
+vector_dim: 384
+num_vectors: 1
+num_queries: 1
+top_k: 10

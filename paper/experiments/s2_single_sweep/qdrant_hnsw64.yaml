@@ -1,0 +1,39 @@
+adapter_options:
+  host: ${MAXIONBENCH_QDRANT_HOST:-127.0.0.1}
+  port: ${MAXIONBENCH_QDRANT_PORT:-6333}
+  timeout_s: 30.0
+budget_level: b2
+c_llm_in: 0.15
+clients_grid:
+- 8
+clients_read: 8
+clients_write: 2
+d4_beir_subsets:
+- scifact
+- fiqa
+d4_include_crag: false
+d4_max_docs: 50000
+dataset_bundle: D4
+dataset_hash: portable-s2-unresolved
+embedding_dim: 384
+embedding_model: BAAI/bge-small-en-v1.5
+engine: qdrant
+engine_version: server
+no_retry: true
+num_queries: 1
+num_vectors: 1
+output_dir: /Volumes/Max/AI/Project/MaxionBench/artifacts/runs/neurips_rerun/s2_qdrant_hnsw64_single/qdrant
+processed_dataset_path: ${MAXIONBENCH_DATASET_ROOT:-dataset}/processed/D4
+profile: portable-agentic
+quality_target: 0.25
+quality_targets:
+- 0.25
+repeats: 1
+rpc_baseline_requests: 1000
+scenario: s2_streaming_memory
+search_sweep:
+- hnsw_ef: 64
+seed: 42
+sla_threshold_ms: 120.0
+top_k: 10
+vector_dim: 384

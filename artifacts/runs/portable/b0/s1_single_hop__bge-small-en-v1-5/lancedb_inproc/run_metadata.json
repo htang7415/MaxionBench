@@ -1,0 +1,73 @@
+{
+  "budget_level": "b0",
+  "c_llm_in": 0.15,
+  "clients_read": 1,
+  "clients_read_grid": [
+    1,
+    4,
+    8
+  ],
+  "clients_write": 0,
+  "config_fingerprint": "84c9618a8652c1f486277f2a50d5bdca45ba1d01bf96da0903107fc21e7fe5fc",
+  "dataset_bundle": "D4",
+  "dataset_cache_checksums": [],
+  "dataset_hash": "portable-s1-unresolved",
+  "embedding_dim": 384,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "engine": "lancedb-inproc",
+  "engine_version": "local",
+  "gpu_tracks_omission_reason": null,
+  "gpu_tracks_omitted": false,
+  "ground_truth_engine": "processed_text_qrels",
+  "ground_truth_k": 10,
+  "ground_truth_metric": "ndcg_at_10",
+  "ground_truth_source": "portable_text_qrels",
+  "hardware_runtime": {
+    "apple_silicon_model": "Apple M4",
+    "container_runtime_hint": null,
+    "cpu_count_logical": 10,
+    "docker_version": "Docker version 29.4.0, build 9d7ad9f",
+    "gpu_count": 0,
+    "hostname": "Mac-mini.local",
+    "macos_version": "26.4.1",
+    "platform": "macOS-26.4.1-x86_64-i386-64bit",
+    "python_version": "3.11.14",
+    "slurm_array_task_id": null,
+    "slurm_job_id": null,
+    "total_memory_bytes": 17179869184
+  },
+  "no_retry": true,
+  "profile": "portable-agentic",
+  "quality_target": 0.25,
+  "quality_targets": [
+    0.25
+  ],
+  "repeats": 1,
+  "resource_profile": {
+    "cpu_vcpu": 4.0,
+    "disk_tb": 0.00011023363549611531,
+    "gpu_count": 0.0,
+    "ram_gib": 0.07152557373046875,
+    "rhu_rate": 0.010455179597703552
+  },
+  "rhu_references": {
+    "c_ref_vcpu": 96.0,
+    "d_ref_tb": 7.68,
+    "g_ref_gpu": 1.0,
+    "r_ref_gib": 512.0
+  },
+  "rhu_weights": {
+    "w_c": 0.25,
+    "w_d": 0.25,
+    "w_g": 0.25,
+    "w_r": 0.25
+  },
+  "rtt_baseline_ms_p50": 0.000125030055642128,
+  "rtt_baseline_ms_p99": 0.00016705598682165146,
+  "rtt_baseline_request_profile": "healthcheck_plus_query_topk1_zero_vector",
+  "run_id": "run-84c9618a86-r0-c1-t25-portable_s1",
+  "scenario": "s1_single_hop",
+  "seed": 42,
+  "sla_threshold_ms": 50.0,
+  "timestamp_utc": "2026-04-25T22:36:06+00:00"
+}

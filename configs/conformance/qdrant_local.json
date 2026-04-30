@@ -1,0 +1,7 @@
+{
+  "adapter": "qdrant",
+  "adapter_options_json": "{\"location\":\"${MAXIONBENCH_QDRANT_LOCAL_LOCATION:-:memory:}\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}

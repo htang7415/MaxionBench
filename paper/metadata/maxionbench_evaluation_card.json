@@ -1,0 +1,88 @@
+{
+  "name": "MaxionBench-Portable evaluation card",
+  "version": "0.1",
+  "track_target": "NeurIPS 2026 Evaluations & Datasets",
+  "evaluation_object": "Agentic retrieval infrastructure under conformance-gated, single-node local deployment assumptions.",
+  "primary_claim": "Agentic retrieval systems require decision-audit evaluation across conformance, quality, freshness, tail latency, task cost, budget stability, and objective sensitivity.",
+  "supported_claims": [
+    {
+      "claim": "Strict 200 ms p99 deployment selects FAISS CPU with bge-small for S1, S2, and S3 in the archived local run bundle.",
+      "evidence": [
+        "paper/tables/neurips_main_results.csv",
+        "paper/tables/portable_decision_table.csv",
+        "paper/manuscript/tables/strict_decision_margins.tex"
+      ],
+      "scope": "single local machine, archived portable bundle"
+    },
+    {
+      "claim": "Objective choice changes conclusions.",
+      "evidence": [
+        "paper/tables/portable_decision_table.csv",
+        "paper/figures/portable_mvd_sensitivity.pdf"
+      ],
+      "scope": "reported portable objectives and budget rows"
+    },
+    {
+      "claim": "The S3 pgvector quality-first edge is not substantive under matched-query audit.",
+      "evidence": [
+        "paper/experiments/s3_paired_quality/summary.json",
+        "paper/manuscript/tables/s3_paired_quality.tex"
+      ],
+      "scope": "5,000 matched S3 bge-base queries"
+    },
+    {
+      "claim": "S2 Qdrant does not hide a quality/freshness win in the paired checks.",
+      "evidence": [
+        "paper/experiments/s2_standard_competitor/paired_faiss_qdrant_summary.json",
+        "paper/experiments/s2_mini_bundle/s2_b2_deadline_mini_bundle_summary.json",
+        "paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+        "paper/manuscript/tables/s2_competitor_check.tex"
+      ],
+      "scope": "standard Qdrant sanity check, bounded same-orchestration mini-bundle, and larger same-machine two-repeat paired check"
+    }
+  ],
+  "not_supported": [
+    "universal engine ranking",
+    "production-cluster latency claims",
+    "end-to-end agent task success",
+    "claims about managed vector database deployments"
+  ],
+  "datasets": [
+    {
+      "name": "D4 portable S1/S2 processed text bundles",
+      "role": "single-hop retrieval and streaming-memory background/events",
+      "metadata": "paper tables and run configs"
+    },
+    {
+      "name": "HotpotQA-portable",
+      "role": "S3 multi-hop evidence retrieval",
+      "metadata": "paper/metadata/hotpotqa_portable_croissant.jsonld"
+    }
+  ],
+  "engines": [
+    "FAISS CPU",
+    "LanceDB in-process",
+    "pgvector",
+    "Qdrant"
+  ],
+  "compute_scope": {
+    "machine": "Apple M4 Mac mini",
+    "logical_cpu_cores": 10,
+    "ram_gib": 16,
+    "gpu_count": 0,
+    "os": "macOS 26.4.1",
+    "python": "3.11.14 in the archived manuscript metadata; local current environment may differ",
+    "docker": "29.4.0"
+  },
+  "reviewer_checks": [
+    "python paper/verify_neurips_artifacts.py --json",
+    "python -m pytest -q",
+    "python -m maxionbench.cli validate --input artifacts/runs/portable --strict-schema --json"
+  ],
+  "known_limitations": [
+    "Only one local hardware profile is included.",
+    "The S2 same-machine reruns cap freshness events for deadline turnaround.",
+    "The artifact evaluates retrieval infrastructure, not generated answer quality.",
+    "Dataset hosting URLs must be anonymized and finalized before submission."
+  ]
+}

@@ -1,0 +1,4 @@
+engine: lancedb-inproc
+engine_version: "local"
+adapter_options:
+  uri: ${MAXIONBENCH_LANCEDB_INPROC_URI:-/tmp/maxionbench/lancedb/inproc}

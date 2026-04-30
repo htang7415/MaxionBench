@@ -1,0 +1,129 @@
+adapter,config_file,status,exit_code,duration_s,command,note,stdout_path,stderr_path
+faiss-cpu,REPO_ROOT/configs/conformance/faiss_cpu.json,pass,0,0.85884,python -m maxionbench.conformance.run --adapter faiss-cpu --adapter-options-json {} --collection conformance --dimension 4 --metric ip,"{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 6.2e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.009543, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 9.3e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 3e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 3.2e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000296, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 7.6e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 7.7e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable""}
+{""adapter"": ""faiss-cpu"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 6.9e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench...(truncated)",REPO_ROOT/artifacts/conformance/adapter_logs/faiss_cpu__faiss-cpu.stdout.txt,REPO_ROOT/artifacts/conformance/adapter_logs/faiss_cpu__faiss-cpu.stderr.txt
+lancedb-inproc,REPO_ROOT/configs/conformance/lancedb_inproc.json,pass,0,1.998859,"python -m maxionbench.conformance.run --adapter lancedb-inproc --adapter-options-json {""uri"":""${MAXIONBENCH_LANCEDB_INPROC_URI:-/tmp/maxionbench/lancedb/conformance}""} --collection conformance --dimension 4 --metric ip","{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 5.5e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.183168, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.005221, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 3.4e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000126, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.007837, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.007407, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics""}
+{""adapter"": ""lancedb-inproc"", ""adapter_options"": {""uri"": ""/tmp/maxionbench/lancedb/inproc""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.004975, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable""}
+{""adapt...(truncated)",REPO_ROOT/artifacts/conformance/adapter_logs/lancedb_inproc__lancedb-inproc.stdout.txt,REPO_ROOT/artifacts/conformance/adapter_logs/lancedb_inproc__lancedb-inproc.stderr.txt
+mock,REPO_ROOT/configs/conformance/mock.json,pass,0,0.347516,python -m maxionbench.conformance.run --adapter mock --adapter-options-json {} --collection conformance --dimension 4 --metric ip,"{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 4.1e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 7.8e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 5.5e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 3.2e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 3.3e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 6e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 5e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 4.8e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable""}
+{""adapter"": ""mock"", ""adapter_options"": {}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 4.1e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_insert_and...(truncated)",REPO_ROOT/artifacts/conformance/adapter_logs/mock__mock.stdout.txt,REPO_ROOT/artifacts/conformance/adapter_logs/mock__mock.stderr.txt
+pgvector,REPO_ROOT/configs/conformance/pgvector.json,pass,0,0.688373,"python -m maxionbench.conformance.run --adapter pgvector --adapter-options-json {""dsn"":""${MAXIONBENCH_PGVECTOR_DSN:-postgresql://postgres:postgres@127.0.0.1:5432/postgres}"",""schema"":""public"",""index_method"":""none""} --collection conformance --dimension 4 --metric ip","{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck""}
+{""adapter"": ""pgvector"", ""adapter_options"": {""dsn"": ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"", ""index_method"": ""none"", ""schema"": ""public""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+{""adapter"": ""pgvector"", ""connect_latency_s"": 0.062667, ""connectivity_ok"": true, ""create_extension_latency_s"": 0.001906, ""create_table_latency_s"": 0.007278, ""diag_table"": ""conformance_diag_003c080c"", ""drop_table_latency_s"": 0.002458, ""event"": ""conformance_adapter_diagnostics"", ""extension_version"": ""0.8.2"", ""schema"": ""public""}
+.{""duration_s"": 0.000456, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility""}
+{""adapter"": ""pgvector"", ""adapter_options"": {""dsn"": ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"", ""index_method"": ""none"", ""schema"": ""public""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+{""adapter"": ""pgvector"", ""connect_latency_s"": 0.014041, ""connectivity_ok"": true, ""create_extension_latency_s"": 0.000585, ""create_table_latency_s"": 0.002346, ""diag_table"": ""conformance_diag_f32b990a"", ""drop_table_latency_s"": 0.00093, ""event"": ""conformance_adapter_diagnostics"", ""extension_version"": ""0.8.2"", ""schema"": ""public""}
+.{""duration_s"": 0.003571, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness""}
+{""adapter"": ""pgvector"", ""adapter_options"": {""dsn"": ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"", ""index_method"": ""none"", ""schema"": ""public""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+{""adapter"": ""pgvector"", ""connect_latency_s"": 0.012271, ""connectivity_ok"": true, ""create_extension_latency_s"": 0.000465, ""create_table_latency_s"": 0.001879, ""diag_table"": ""conformance_diag_8aece3c7"", ""drop_table_latency_s"": 0.000757, ""event"": ""conformance_adapter_diagnostics"", ""extension_version"": ""0.8.2"", ""schema"": ""public""}
+.{""duration_s"": 0.0016, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results""}
+{""adapter"": ""pgvector"", ""adapter_options"": {""dsn"": ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"", ""index_method"": ""none"", ""schema"": ""public""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+{""adapter"": ""pgvector"", ""connect_latency_s"": 0.011509, ""connectivity_ok"": true, ""create_extension_latency_s"": 0.000565, ""create_table_latency_s"": 0.002263, ""diag_table"": ""conformance_diag_5f855f8a"", ""drop_table_latency_s"": 0.000787, ""event"": ""conformance_adapter_diagnostics"", ""extension_version"": ""0.8.2"", ""schema"": ""public""}
+.{""duration_s"": 0.000805, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop""}
+{""adapter"": ""pgvector"", ""adapter_options"": {""dsn"": ""postgresql://postgres:postgres@127.0.0.1:5432/postgres"", ""index_method"": ""none"", ""schema"": ""public""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+{""adapter"": ""pgvector"", ""connect_latency_s"": 0.011392, ""connectivity_ok"": true, ""create_extension_latency_s"": 0.000469, ""create_t...(truncated)",REPO_ROOT/artifacts/conformance/adapter_logs/pgvector__pgvector.stdout.txt,REPO_ROOT/artifacts/conformance/adapter_logs/pgvector__pgvector.stderr.txt
+qdrant,REPO_ROOT/configs/conformance/qdrant_local.json,pass,0,0.969427,"python -m maxionbench.conformance.run --adapter qdrant --adapter-options-json {""location"":""${MAXIONBENCH_QDRANT_LOCAL_LOCATION:-:memory:}""} --collection conformance --dimension 4 --metric ip","{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 5.6e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_healthcheck"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.002243, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_flush_controls_visibility"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000455, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_filter_correctness"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.00015, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_query_empty_collection_returns_no_results"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 7.1e-05, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_empty_bulk_upsert_is_noop"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000266, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_vectors_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000274, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_update_payload_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.000192, ""event"": ""conformance_test_end"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_delete_semantics"", ""outcome"": ""passed""}
+{""event"": ""conformance_test_start"", ""nodeid"": ""maxionbench/conformance/test_conformance.py::test_double_delete_is_stable""}
+{""adapter"": ""qdrant"", ""adapter_options"": {""location"": "":memory:""}, ""collection"": ""conformance"", ""dimension"": 4, ""event"": ""conformance_adapter_context"", ""metric"": ""ip""}
+.{""duration_s"": 0.0002, ""event"": ""conformance_te...(truncated)",REPO_ROOT/artifacts/conformance/adapter_logs/qdrant_local__qdrant.stdout.txt,REPO_ROOT/artifacts/conformance/adapter_logs/qdrant_local__qdrant.stderr.txt

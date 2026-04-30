@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Reviewer-facing evidence map. The main claims are framed as benchmark and decision-audit claims rather than universal engine rankings.}
+\label{tab:evidence-strength}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llll}
+\toprule
+Claim & Main evidence & Residual risk & Paper stance \\
+\midrule
+Conformance-gated reporting & 72 strict-schema run dirs; support table & Adapter coverage is local & Supported protocol claim \\
+Strict-latency decisions & Main and decision tables; margin table & One hardware profile & Local deployment evidence \\
+S2 has no hidden Qdrant quality/freshness win & Larger same-machine paired S2 check in Table~\ref{tab:s2-competitor-check} plus the bounded mini-bundle & Freshness remains capped & Sanity check, not universal latency evidence \\
+S3 pgvector quality edge is not substantive & 5{,}000-query paired audit in Table~\ref{tab:s3-paired-quality} & One matched audit & Objective sensitivity, not quality win \\
+Budget stability is workload-dependent & B0-to-B2 top-1 and Spearman stats & Lower ranks remain noisy & Report budgets explicitly \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

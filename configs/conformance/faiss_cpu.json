@@ -1,0 +1,7 @@
+{
+  "adapter": "faiss-cpu",
+  "adapter_options_json": "{}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}

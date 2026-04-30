@@ -1,0 +1,50 @@
+{
+  "budget_level": "b2",
+  "cpu_rows": [
+    {
+      "config_path": "/Volumes/Max/AI/Project/MaxionBench/artifacts/run_matrix/neurips_s2_larger_same_machine_b2/generated_configs/cpu/s2_streaming_memory__bge-base-en-v1-5__faiss_cpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s2_streaming_memory",
+      "template_name": "s2_streaming_memory__bge-base-en-v1-5.yaml"
+    },
+    {
+      "config_path": "/Volumes/Max/AI/Project/MaxionBench/artifacts/run_matrix/neurips_s2_larger_same_machine_b2/generated_configs/cpu/s2_streaming_memory__bge-base-en-v1-5__qdrant.yaml",
+      "dataset_bundle": "D4",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s2_streaming_memory",
+      "template_name": "s2_streaming_memory__bge-base-en-v1-5.yaml"
+    },
+    {
+      "config_path": "/Volumes/Max/AI/Project/MaxionBench/artifacts/run_matrix/neurips_s2_larger_same_machine_b2/generated_configs/cpu/s2_streaming_memory__bge-small-en-v1-5__faiss_cpu.yaml",
+      "dataset_bundle": "D4",
+      "engine": "faiss-cpu",
+      "group": "cpu",
+      "scenario": "s2_streaming_memory",
+      "template_name": "s2_streaming_memory__bge-small-en-v1-5.yaml"
+    },
+    {
+      "config_path": "/Volumes/Max/AI/Project/MaxionBench/artifacts/run_matrix/neurips_s2_larger_same_machine_b2/generated_configs/cpu/s2_streaming_memory__bge-small-en-v1-5__qdrant.yaml",
+      "dataset_bundle": "D4",
+      "engine": "qdrant",
+      "group": "cpu",
+      "scenario": "s2_streaming_memory",
+      "template_name": "s2_streaming_memory__bge-small-en-v1-5.yaml"
+    }
+  ],
+  "generated_config_dir": "/Volumes/Max/AI/Project/MaxionBench/artifacts/run_matrix/neurips_s2_larger_same_machine_b2/generated_configs",
+  "gpu_rows": [],
+  "lane": "cpu",
+  "output_root": "artifacts/runs/neurips_rerun/s2_larger_same_machine_b2",
+  "repo_root": "/Volumes/Max/AI/Project/MaxionBench",
+  "selected_engines": [
+    "faiss-cpu",
+    "qdrant"
+  ],
+  "selected_templates": [
+    "s2_streaming_memory__bge-small-en-v1-5.yaml",
+    "s2_streaming_memory__bge-base-en-v1-5.yaml"
+  ]
+}

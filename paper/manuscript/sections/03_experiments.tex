@@ -1,0 +1,51 @@
+\section{Experiments}
+
+\subsection{Artifact audit}
+
+The paper is built from the archived bundle \texttt{results/20260429T033427Z}. The archive contains the run artifacts, generated figures, \textsc{HotpotQA-portable} manifest and checksums, conformance matrix, and the operator command documents. A strict-schema validation pass over \texttt{artifacts/runs/portable} checked 72 run directories and returned zero errors. The paper-facing support table reports passing conformance and behavior-card coverage for FAISS CPU, LanceDB in-process, pgvector, and Qdrant; LanceDB service is excluded because it has no conformance row.
+
+\input{tables/neurips_main_results}
+
+Table~\ref{tab:portable-main-results} summarizes the strict-latency minimum viable deployments. Under the 200 ms worst-case p99 threshold, all three workloads select FAISS CPU with bge-small. The S1 minimum viable deployment reaches \ndcg{} 0.506 with a 95\% confidence interval of 0.494--0.516 and a maximum observed p99 of 11.2 ms. S2 selects the same engine and embedding, with \ndcg{} 0.506, \freshfive{} 0.830, and maximum p99 10.0 ms. S3 selects FAISS CPU with bge-small at \ecov{} 0.852 and maximum p99 22.8 ms.
+
+\input{tables/portable_decision_table}
+
+Table~\ref{tab:portable-decision-table} shows that the deployment decision is objective-sensitive. The strict p99 and no-p99 cost objectives agree for S1 and S2, but S3 shifts to LanceDB in-process with bge-small when the p99 constraint is removed. Quality-first decisions differ more strongly: LanceDB in-process with bge-base leads S1, FAISS CPU with bge-base leads S2, and pgvector with bge-base leads S3. The S3 quality-first margin is fragile rather than substantive: using all B2 rows, pgvector-base exceeds FAISS-base by only 0.00016 \ecov{} with an aggregate-row bootstrap interval of -0.00280 to 0.00304.
+
+\input{tables/s3_paired_quality}
+
+Table~\ref{tab:s3-paired-quality} audits that S3 margin with a matched-query check over all 5{,}000 S3 queries. Under identical bge-base queries, pgvector IVF32 and IVF64 are both 0.0001 \ecov{} below FAISS HNSW32, with paired intervals that include zero and no positive bootstrap mass at the reported precision. Their p99 latencies are also an order of magnitude larger in this check. We therefore treat the archived pgvector row as objective-sensitivity evidence, not as a meaningful quality advantage.
+
+\input{tables/strict_decision_margins}
+
+Table~\ref{tab:strict-decision-margins} makes the strict-latency decision margins explicit. For S1 and S2, FAISS CPU with bge-small is not a relevance-quality win over the closest LanceDB in-process candidate; it is a cost and quality tie that the deployment rule resolves by lower worst-case p99 and higher throughput. For S3, the nearest strict-cost alternative is not a tie: Qdrant with bge-small is more expensive and has lower evidence coverage, although it is slightly faster at the observed tail. The highest-quality strict-latency S3 option remains FAISS CPU with bge-base, which improves \ecov{} by 0.020 over bge-small but increases task cost by 0.704 and worst-case p99 by 33.4 ms on the B2 audit rows.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.48\linewidth]{../figures/portable_task_cost_by_budget.pdf}
+  \hfill
+  \includegraphics[width=0.48\linewidth]{../figures/portable_budget_stability.pdf}
+  \caption{Budget effects in the portable benchmark. Left: task-cost estimates across budget levels. Right: budget-stability summaries show that short runs do not always preserve the B2 ranking.}
+  \label{fig:budget-effects}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.48\linewidth]{../figures/portable_s2_freshness.pdf}
+  \hfill
+  \includegraphics[width=0.48\linewidth]{../figures/portable_mvd_sensitivity.pdf}
+  \caption{Agent-facing stressors. Left: S2 freshness is measured after acknowledged inserts at fixed one- and five-second probes. Right: S3 is sensitive to relaxing the p99 threshold, while S1 and S2 keep the same minimum viable engine across the reported thresholds.}
+  \label{fig:freshness-sensitivity}
+\end{figure}
+
+The budget analysis supports a qualified answer to the paper's research question. B0-to-B2 top-1 agreement is zero for S1 and S2, with Spearman correlations 0.79 and 0.43, respectively. S3 has top-1 agreement of one but Spearman correlation 0.31, which means the recommended minimum deployment is stable while lower-ranked alternatives remain noisy. The benchmark can therefore produce actionable local decisions, but the evidence should include the budget level and stability statistics used to reach those decisions.
+
+\subsection{Quick rerun checks}
+
+To reduce the risk that the manuscript overfits one archived table, we ran narrow spot checks while preparing the draft. A completed B2 rerun of S1 FAISS CPU with bge-small reproduced the same \ndcg{} value of 0.506 and had maximum p99 27.7 ms across nine measured rows. A completed B2 rerun of S3 FAISS CPU with bge-small reproduced \ecov{} 0.8515 and had maximum p99 20.6 ms across nine measured rows. A completed B2 rerun of S3 FAISS CPU with bge-base produced \ecov{} 0.871 and maximum p99 72.0 ms across nine measured rows, and the full matched-query S3 audit in Table~\ref{tab:s3-paired-quality} directly checks the quality-first margin. These checks are not used to replace the archived paper tables; they are included as reviewer-facing sanity checks for the strict-latency and objective-sensitivity story.
+
+\input{tables/s2_competitor_check}
+
+Table~\ref{tab:s2-competitor-check} adds a larger same-machine S2 competitor check. Under one generated matrix, FAISS CPU and Qdrant each complete two B2 repeats with zero errors, 894 quality observations per repeat, and 100 freshness probes per repeat. Qdrant matches FAISS exactly on all 200 paired freshness events and has a paired \ndcg{} delta of -0.0027 with a 95\% interval of -0.0052 to -0.0006 over 1{,}788 matched quality observations. This check rules out a hidden Qdrant quality or freshness win in this setting. The p99 direction differs from the earlier one-row Qdrant check, so we treat S2 latency as local-run evidence and keep the archived deployment table as the primary decision source.
+
+The earlier same-orchestration deadline mini-bundle is retained as a turnaround-oriented repeatability check. It used smaller static and freshness caps; both engines completed with zero errors, Qdrant minus FAISS paired \ndcg{} was -0.0007 with a 95\% interval of -0.0026 to 0.0005 over 500 matched quality observations, and the paired freshness deltas were exactly zero over 80 matched freshness events.

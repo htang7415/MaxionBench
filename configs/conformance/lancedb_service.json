@@ -1,0 +1,7 @@
+{
+  "adapter": "lancedb-service",
+  "adapter_options_json": "{\"base_url\":\"${MAXIONBENCH_LANCEDB_SERVICE_URL:-http://127.0.0.1:18080}\"}",
+  "collection": "conformance",
+  "dimension": 4,
+  "metric": "ip"
+}
