@@ -175,7 +175,7 @@ def _export_portable_tables(
 
     winners = _winner_rows(frame=frame)
     winners_path = out_dir / "portable_winners.csv"
-    winners.to_csv(winners_path, index=False)
+    _csv_safe_frame(winners).to_csv(winners_path, index=False)
     tables.append(winners_path)
 
     stability = _stability_table(winners=winners)
@@ -911,6 +911,7 @@ def _engine_configuration_table(*, frame: pd.DataFrame, support: pd.DataFrame) -
 def _s3_all_evidence_hit_table(*, winners: pd.DataFrame, decision: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     targets = _s3_all_evidence_targets(winners=winners, decision=decision)
+    supplemental = _load_s3_all_evidence_supplement()
     for target in targets:
         selected = winners.loc[
             (winners["scenario"].astype(str) == "s3_multi_hop")
@@ -943,16 +944,30 @@ def _s3_all_evidence_hit_table(*, winners: pd.DataFrame, decision: pd.DataFrame)
             coverage = float(aggregate_values.mean()) if not aggregate_values.empty else float("nan")
             method = "query-level observations unavailable; aggregate evidence_coverage@10 retained"
             samples = 0
+        supplement = supplemental.get((str(target["engine"]), str(target["embedding_model"])))
+        row_role = str(target["role"])
+        source_path = _source_paths_for_frame(selected)
+        if supplement is not None and _selected_from_archived_portable_run(selected):
+            row_role = str(supplement.get("role") or row_role)
+            coverage = _safe_float(supplement.get("evidence_coverage_at_10"))
+            all_hit = _safe_float(supplement.get("all_evidence_hit_at_10"))
+            samples = int(_safe_float(supplement.get("query_level_observations")))
+            method = "query-level S3 all-evidence audit summary"
+            source_paths = supplement.get("source_paths") or []
+            if isinstance(source_paths, list):
+                source_path = "; ".join(str(item) for item in source_paths[:3])
+                if len(source_paths) > 3:
+                    source_path = f"{source_path}; ..."
         rows.append(
             {
-                "row_role": str(target["role"]),
+                "row_role": row_role,
                 "engine": str(target["engine"]),
                 "embedding_model": str(target["embedding_model"]),
                 "evidence_coverage_at_10": coverage,
                 "all_evidence_hit_at_10": all_hit,
                 "query_level_observations": samples,
                 "method": method,
-                "source_path": _source_paths_for_frame(selected),
+                "source_path": source_path,
             }
         )
     return pd.DataFrame(
@@ -968,6 +983,38 @@ def _s3_all_evidence_hit_table(*, winners: pd.DataFrame, decision: pd.DataFrame)
             "source_path",
         ],
     )
+
+
+def _selected_from_archived_portable_run(selected: pd.DataFrame) -> bool:
+    for col in ("__run_path", "observation_path"):
+        if col not in selected.columns:
+            continue
+        for raw in selected[col].dropna().astype(str).tolist():
+            if "artifacts/runs/portable/" in raw.replace("\\", "/"):
+                return True
+    return False
+
+
+def _load_s3_all_evidence_supplement() -> dict[tuple[str, str], dict[str, Any]]:
+    path = Path("paper/experiments/s3_all_evidence/summary.json")
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        engine = str(row.get("engine") or "")
+        embedding = str(row.get("embedding_model") or "")
+        if engine and embedding:
+            by_key[(engine, embedding)] = dict(row)
+    return by_key
 
 
 def _strict_candidate_groups(*, winners: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -1124,6 +1171,26 @@ def _relative_path_string(path: Path) -> str:
         return str(path.resolve().relative_to(Path.cwd().resolve()))
     except Exception:
         return str(path)
+
+
+def _csv_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    safe = frame.copy()
+    root = str(Path.cwd().resolve())
+    for col in safe.columns:
+        if safe[col].dtype != object:
+            continue
+        safe[col] = safe[col].map(lambda value: _strip_workspace_prefix(value, root=root))
+    return safe
+
+
+def _strip_workspace_prefix(value: object, *, root: str) -> object:
+    if not isinstance(value, str):
+        if isinstance(value, Mapping):
+            return {key: _strip_workspace_prefix(item, root=root) for key, item in value.items()}
+        if isinstance(value, list):
+            return [_strip_workspace_prefix(item, root=root) for item in value]
+        return value
+    return value.replace(root + "/", "").replace(root, ".")
 
 
 def _first_config_payload(frame: pd.DataFrame) -> dict[str, Any]:
@@ -1760,7 +1827,7 @@ def _s3_all_evidence_hit_latex(*, table: pd.DataFrame) -> str:
         "\\centering",
         "\\small",
         "\\setlength{\\tabcolsep}{3.5pt}",
-        "\\caption{S3 all-evidence hit@10 audit rows. Blank all-evidence cells indicate rows that still require query-level dumps.}",
+        "\\caption{S3 all-evidence hit@10 audit rows. Query-level rows come from archived observations when present and targeted matched-audit observations otherwise.}",
         "\\label{tab:s3-all-evidence-hit}",
         "\\resizebox{\\linewidth}{!}{%",
         "\\begin{tabular}{lllccc}",
