@@ -1,0 +1,16 @@
+{
+  "dataset_name": "hotpotqa-portable",
+  "extra": {
+    "retrieval_unit": "context_paragraph",
+    "source_family": "HotpotQA",
+    "split": "dev_distractor"
+  },
+  "family": "D4",
+  "metric": "evidence_coverage",
+  "num_docs": 66635,
+  "num_queries": 7405,
+  "preprocess_version": "0.1",
+  "schema_version": "maxionbench-processed-v1",
+  "source_path": "dataset/D4/hotpotqa/hotpot_dev_distractor_v1.json",
+  "task_type": "text_retrieval_strict"
+}
