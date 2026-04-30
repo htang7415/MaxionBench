@@ -54,3 +54,14 @@ maxionbench = "maxionbench.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["maxionbench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "maxionbench/conformance"]
+norecursedirs = [
+  ".git",
+  ".pytest_cache",
+  "artifacts",
+  "dataset",
+  "release",
+  "results",
+]
