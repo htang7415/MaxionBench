@@ -279,6 +279,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_mvd_sensitivity.png").exists()
     assert (out_dir / "portable_mvd_sensitivity.meta.json").exists()
 
+    summary = pd.read_csv(out_dir / "portable_summary.csv")
     winners = pd.read_csv(out_dir / "portable_winners.csv")
     deployment = pd.read_csv(out_dir / "minimum_viable_deployment.csv")
     decision = pd.read_csv(out_dir / "portable_decision_table.csv")
@@ -287,6 +288,10 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     task_cost_meta = json.loads((out_dir / "portable_task_cost_by_budget.meta.json").read_text(encoding="utf-8"))
 
     assert not winners.empty
+    assert "post_insert_hit_at_10_5s" in summary.columns
+    assert "freshness_hit_at_5s" not in summary.columns
+    assert "post_insert_hit_at_10_5s" in winners.columns
+    assert "freshness_hit_at_5s" not in winners.columns
     assert {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"} <= set(winners["scenario"].astype(str))
     assert not deployment.empty
     assert "workload_type" in deployment.columns
@@ -302,7 +307,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert "spearman_rho" in stability.columns
 
 
-def test_neurips_main_results_table_includes_quality_and_freshness_ci_fields() -> None:
+def test_neurips_main_results_table_includes_quality_and_post_insert_ci_fields() -> None:
     winners = pd.DataFrame(
         [
             {
@@ -358,9 +363,9 @@ def test_neurips_main_results_table_includes_quality_and_freshness_ci_fields() -
 
     assert row["primary_quality_mean"] == pytest.approx(0.51)
     assert row["primary_quality_ci95_low"] <= row["primary_quality_mean"] <= row["primary_quality_ci95_high"]
-    assert row["freshness_hit_at_5s_mean"] == pytest.approx(0.84)
-    assert row["freshness_hit_at_5s_ci95_low"] < row["freshness_hit_at_5s_ci95_high"]
-    assert row["freshness_event_count"] == 500
+    assert row["post_insert_hit_at_10_5s_mean"] == pytest.approx(0.84)
+    assert row["post_insert_hit_at_10_5s_ci95_low"] < row["post_insert_hit_at_10_5s_ci95_high"]
+    assert row["post_insert_event_count"] == 500
     assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
 
 
@@ -415,10 +420,10 @@ def test_neurips_main_results_table_prefers_archived_observations(tmp_path: Path
     assert row["primary_quality_mean"] == pytest.approx(0.5)
     assert row["primary_quality_samples"] == 2
     assert str(row["primary_quality_ci_method"]).startswith("query-level bootstrap")
-    assert row["freshness_hit_at_1s_mean"] == pytest.approx(0.5)
-    assert row["freshness_hit_at_5s_mean"] == pytest.approx(1.0)
-    assert row["freshness_event_count"] == 2
-    assert str(row["freshness_ci_method"]).startswith("Wilson binomial CI from archived per-event")
+    assert row["post_insert_hit_at_10_1s_mean"] == pytest.approx(0.5)
+    assert row["post_insert_hit_at_10_5s_mean"] == pytest.approx(1.0)
+    assert row["post_insert_event_count"] == 2
+    assert str(row["post_insert_ci_method"]).startswith("Wilson binomial CI from archived per-event")
 
 
 def test_winner_rows_keeps_clients_read_dimension() -> None:

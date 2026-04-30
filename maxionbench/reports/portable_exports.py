@@ -38,6 +38,19 @@ _MVD_SENSITIVITY_THRESHOLDS_MS: tuple[float | None, ...] = (100.0, 200.0, 500.0,
 _BOOTSTRAP_SEED = 20260428
 _BOOTSTRAP_RESAMPLES = 2000
 _COST_SENSITIVITY_MULTIPLIERS: tuple[float, ...] = (0.1, 1.0, 10.0)
+_REPORT_COLUMN_ALIASES = {
+    "freshness_hit_at_1s": "post_insert_hit_at_10_1s",
+    "freshness_hit_at_5s": "post_insert_hit_at_10_5s",
+    "freshness_floor_for_budget": "post_insert_floor_for_budget",
+    "freshness_hit_at_1s_mean": "post_insert_hit_at_10_1s_mean",
+    "freshness_hit_at_1s_ci95_low": "post_insert_hit_at_10_1s_ci95_low",
+    "freshness_hit_at_1s_ci95_high": "post_insert_hit_at_10_1s_ci95_high",
+    "freshness_hit_at_5s_mean": "post_insert_hit_at_10_5s_mean",
+    "freshness_hit_at_5s_ci95_low": "post_insert_hit_at_10_5s_ci95_low",
+    "freshness_hit_at_5s_ci95_high": "post_insert_hit_at_10_5s_ci95_high",
+    "freshness_event_count": "post_insert_event_count",
+    "freshness_ci_method": "post_insert_ci_method",
+}
 
 
 def generate_portable_report_bundle(
@@ -169,13 +182,19 @@ def _export_portable_tables(
     ].copy()
     for int_col in ("event_count", "overlap_skipped_event_count"):
         summary[int_col] = pd.to_numeric(summary[int_col], errors="coerce").astype("Int64")
+    summary = summary.rename(columns=_REPORT_COLUMN_ALIASES)
     summary_path = out_dir / "portable_summary.csv"
     summary.to_csv(summary_path, index=False)
     tables.append(summary_path)
 
     winners = _winner_rows(frame=frame)
     winners_path = out_dir / "portable_winners.csv"
-    _csv_safe_frame(winners).to_csv(winners_path, index=False)
+    winners_csv = _csv_safe_frame(winners).rename(columns=_REPORT_COLUMN_ALIASES)
+    winners_csv = winners_csv.drop(
+        columns=[col for col in winners_csv.columns if col.startswith("__") or col == "search_params_json"],
+        errors="ignore",
+    )
+    winners_csv.to_csv(winners_path, index=False)
     tables.append(winners_path)
 
     stability = _stability_table(winners=winners)
@@ -1400,18 +1419,18 @@ def _neurips_main_results_table(*, frame: pd.DataFrame, winners: pd.DataFrame, s
             "mvd_p99_max_threshold_ms": _MVD_P99_MAX_MS_THRESHOLD,
         }
         if scenario == "s2_streaming_memory":
-            row.update(_s2_freshness_ci_fields(selected=selected))
+            row.update(_s2_post_insert_ci_fields(selected=selected))
         else:
             row.update(
                 {
-                    "freshness_hit_at_1s_mean": float("nan"),
-                    "freshness_hit_at_1s_ci95_low": float("nan"),
-                    "freshness_hit_at_1s_ci95_high": float("nan"),
-                    "freshness_hit_at_5s_mean": float("nan"),
-                    "freshness_hit_at_5s_ci95_low": float("nan"),
-                    "freshness_hit_at_5s_ci95_high": float("nan"),
-                    "freshness_event_count": 0,
-                    "freshness_ci_method": "",
+                    "post_insert_hit_at_10_1s_mean": float("nan"),
+                    "post_insert_hit_at_10_1s_ci95_low": float("nan"),
+                    "post_insert_hit_at_10_1s_ci95_high": float("nan"),
+                    "post_insert_hit_at_10_5s_mean": float("nan"),
+                    "post_insert_hit_at_10_5s_ci95_low": float("nan"),
+                    "post_insert_hit_at_10_5s_ci95_high": float("nan"),
+                    "post_insert_event_count": 0,
+                    "post_insert_ci_method": "",
                 }
             )
         row.update(_stability_fields(stability=stability, scenario=scenario))
@@ -1426,14 +1445,14 @@ def _neurips_main_results_table(*, frame: pd.DataFrame, winners: pd.DataFrame, s
         "primary_quality_ci95_high",
         "primary_quality_ci_method",
         "primary_quality_samples",
-        "freshness_hit_at_1s_mean",
-        "freshness_hit_at_1s_ci95_low",
-        "freshness_hit_at_1s_ci95_high",
-        "freshness_hit_at_5s_mean",
-        "freshness_hit_at_5s_ci95_low",
-        "freshness_hit_at_5s_ci95_high",
-        "freshness_event_count",
-        "freshness_ci_method",
+        "post_insert_hit_at_10_1s_mean",
+        "post_insert_hit_at_10_1s_ci95_low",
+        "post_insert_hit_at_10_1s_ci95_high",
+        "post_insert_hit_at_10_5s_mean",
+        "post_insert_hit_at_10_5s_ci95_low",
+        "post_insert_hit_at_10_5s_ci95_high",
+        "post_insert_event_count",
+        "post_insert_ci_method",
         "p99_ms_mean",
         "p99_ms_max",
         "task_cost_est_mean",
@@ -1510,7 +1529,7 @@ def _observation_metric_column(metric: str) -> str:
     }.get(metric, metric)
 
 
-def _s2_freshness_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
+def _s2_post_insert_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
     observations = [
         row
         for row in _load_selected_observations(selected=selected)
@@ -1518,8 +1537,8 @@ def _s2_freshness_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
     ]
     if observations:
         fields: dict[str, Any] = {
-            "freshness_event_count": len(observations),
-            "freshness_ci_method": "Wilson binomial CI from archived per-event post-insert observations",
+            "post_insert_event_count": len(observations),
+            "post_insert_ci_method": "Wilson binomial CI from archived per-event post-insert observations",
         }
         for col in ("freshness_hit_at_1s", "freshness_hit_at_5s"):
             hits = [
@@ -1529,24 +1548,26 @@ def _s2_freshness_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
             ]
             rate = float(np.mean(np.asarray(hits, dtype=np.float64))) if hits else float("nan")
             low, high = _wilson_ci(rate=rate, n=len(hits))
-            fields[f"{col}_mean"] = rate
-            fields[f"{col}_ci95_low"] = low
-            fields[f"{col}_ci95_high"] = high
+            output_col = _REPORT_COLUMN_ALIASES[col]
+            fields[f"{output_col}_mean"] = rate
+            fields[f"{output_col}_ci95_low"] = low
+            fields[f"{output_col}_ci95_high"] = high
         return fields
 
     event_counts = pd.to_numeric(selected.get("event_count", pd.Series(dtype=float)), errors="coerce").dropna()
     event_count = int(event_counts.max()) if not event_counts.empty else 0
     fields: dict[str, Any] = {
-        "freshness_event_count": event_count,
-        "freshness_ci_method": "Wilson binomial CI from archived post-insert hit rate and event_count; repeated runs are not counted as independent events",
+        "post_insert_event_count": event_count,
+        "post_insert_ci_method": "Wilson binomial CI from archived post-insert hit rate and event_count; repeated runs are not counted as independent events",
     }
     for col in ("freshness_hit_at_1s", "freshness_hit_at_5s"):
         rates = pd.to_numeric(selected.get(col, pd.Series(dtype=float)), errors="coerce").dropna()
         rate = float(rates.mean()) if not rates.empty else float("nan")
         low, high = _wilson_ci(rate=rate, n=event_count)
-        fields[f"{col}_mean"] = rate
-        fields[f"{col}_ci95_low"] = low
-        fields[f"{col}_ci95_high"] = high
+        output_col = _REPORT_COLUMN_ALIASES[col]
+        fields[f"{output_col}_mean"] = rate
+        fields[f"{output_col}_ci95_low"] = low
+        fields[f"{output_col}_ci95_high"] = high
     return fields
 
 
@@ -1618,9 +1639,9 @@ def _neurips_main_results_latex(*, table: pd.DataFrame) -> str:
         )
         quality_cell = f"{metric} {quality}"
         fresh = _format_ci(
-            mean=_safe_float(row["freshness_hit_at_5s_mean"]),
-            low=_safe_float(row["freshness_hit_at_5s_ci95_low"]),
-            high=_safe_float(row["freshness_hit_at_5s_ci95_high"]),
+            mean=_safe_float(row["post_insert_hit_at_10_5s_mean"]),
+            low=_safe_float(row["post_insert_hit_at_10_5s_ci95_low"]),
+            high=_safe_float(row["post_insert_hit_at_10_5s_ci95_high"]),
             empty="--",
         )
         p99 = _safe_float(row["p99_ms_max"])
