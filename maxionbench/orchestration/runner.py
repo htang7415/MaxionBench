@@ -567,7 +567,7 @@ def _run_portable_s1_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
 def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_path: Path) -> list[ResultRow]:
     background, events = _load_portable_s2_datasets(cfg, config_path=config_path)
     rows: list[ResultRow] = []
-    freshness_floor = _portable_s2_freshness_floor(cfg.budget_level)
+    post_insert_floor = _portable_s2_post_insert_floor(cfg.budget_level)
     for repeat_idx in range(cfg.repeats):
         for client_count in cfg.clients_grid:
             sweep_runs: list[_SweepRun] = []
@@ -631,7 +631,7 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         "p95_visibility_latency_ms": result.p95_visibility_latency_ms,
                         "event_count": result.event_count,
                         "overlap_skipped_event_count": result.overlap_skipped_event_count,
-                        "freshness_floor_for_budget": freshness_floor,
+                        "freshness_floor_for_budget": post_insert_floor,
                         "observation_path": str(observation_path),
                     },
                 )
@@ -674,7 +674,7 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                     sweep_runs=[
                         run
                         for run in sweep_runs
-                        if float(run.search_params.get("freshness_hit_at_5s", 0.0)) >= freshness_floor
+                        if float(run.search_params.get("freshness_hit_at_5s", 0.0)) >= post_insert_floor
                     ],
                     config_fingerprint=config_fingerprint,
                     quality_getter=lambda run: run.ndcg_at_10,
@@ -1782,7 +1782,7 @@ def _portable_payload(
     return payload
 
 
-def _portable_s2_freshness_floor(budget_level: str | None) -> float:
+def _portable_s2_post_insert_floor(budget_level: str | None) -> float:
     normalized = str(budget_level or "").strip().lower()
     if normalized == "b1":
         return 0.6

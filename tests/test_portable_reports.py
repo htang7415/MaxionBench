@@ -274,8 +274,8 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_task_cost_by_budget.meta.json").exists()
     assert (out_dir / "portable_budget_stability.png").exists()
     assert (out_dir / "portable_budget_stability.meta.json").exists()
-    assert (out_dir / "portable_s2_freshness.png").exists()
-    assert (out_dir / "portable_s2_freshness.meta.json").exists()
+    assert (out_dir / "portable_s2_post_insert_retrievability.png").exists()
+    assert (out_dir / "portable_s2_post_insert_retrievability.meta.json").exists()
     assert (out_dir / "portable_mvd_sensitivity.png").exists()
     assert (out_dir / "portable_mvd_sensitivity.meta.json").exists()
 

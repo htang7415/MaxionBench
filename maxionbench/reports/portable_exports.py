@@ -336,16 +336,16 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(stability_path)
 
-    freshness_path = out_dir / "portable_s2_freshness.png"
+    post_insert_path = out_dir / "portable_s2_post_insert_retrievability.png"
     fig, ax = _paper_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
-    _plot_s2_freshness(ax=ax, winners=winners)
-    _save_paper_figure(fig=fig, path=freshness_path)
+    _plot_s2_post_insert_retrievability(ax=ax, winners=winners)
+    _save_paper_figure(fig=fig, path=post_insert_path)
     plt.close(fig)
     _write_meta(
-        freshness_path,
+        post_insert_path,
         {
-            "figure_name": "portable_s2_freshness",
+            "figure_name": "portable_s2_post_insert_retrievability",
             "mode": "portable-agentic",
             "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
             "font_size": FONT_SIZE,
@@ -355,7 +355,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
             "rows_used": int(len(winners.loc[winners["scenario"] == "s2_streaming_memory"])),
         },
     )
-    figures.append(freshness_path)
+    figures.append(post_insert_path)
 
     mvd_sensitivity = _minimum_viable_deployment_sensitivity_table(winners=winners)
     mvd_sensitivity_path = out_dir / "portable_mvd_sensitivity.png"
@@ -2092,7 +2092,7 @@ def _plot_budget_stability(*, ax: Any, stability: pd.DataFrame) -> None:
     _style_axis(ax)
 
 
-def _plot_s2_freshness(*, ax: Any, winners: pd.DataFrame) -> None:
+def _plot_s2_post_insert_retrievability(*, ax: Any, winners: pd.DataFrame) -> None:
     s2 = winners.loc[winners["scenario"] == "s2_streaming_memory"].copy()
     if s2.empty:
         _draw_placeholder(ax=ax, message="No S2 post-insert rows available")
