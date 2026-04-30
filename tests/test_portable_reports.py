@@ -14,11 +14,17 @@ from maxionbench.cli import main as cli_main
 from maxionbench.datasets.loaders.processed import embedding_model_slug
 from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.portable_exports import (
+    _cost_formula_table,
+    _cost_sensitivity_table,
+    _decision_error_ablation_table,
+    _engine_configuration_table,
     _extract_portable_frame,
+    _latency_distribution_table,
     _neurips_main_results_table,
     _minimum_viable_deployment_sensitivity_table,
     _minimum_viable_deployment_table,
     _portable_decision_table,
+    _s3_all_evidence_hit_table,
     _spearman_rank_correlation,
     _winner_rows,
     generate_portable_report_bundle,
@@ -250,6 +256,18 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_decision_table.tex").exists()
     assert (out_dir / "neurips_main_results.csv").exists()
     assert (out_dir / "neurips_main_results.tex").exists()
+    assert (out_dir / "decision_error_ablation.csv").exists()
+    assert (out_dir / "decision_error_ablation.tex").exists()
+    assert (out_dir / "cost_formula.csv").exists()
+    assert (out_dir / "cost_formula.tex").exists()
+    assert (out_dir / "cost_sensitivity.csv").exists()
+    assert (out_dir / "cost_sensitivity.tex").exists()
+    assert (out_dir / "latency_distribution.csv").exists()
+    assert (out_dir / "latency_distribution.tex").exists()
+    assert (out_dir / "engine_configuration.csv").exists()
+    assert (out_dir / "engine_configuration.tex").exists()
+    assert (out_dir / "s3_all_evidence_hit.csv").exists()
+    assert (out_dir / "s3_all_evidence_hit.tex").exists()
     assert (out_dir / "portable_support_table.csv").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
     assert (out_dir / "portable_task_cost_by_budget.png").exists()
@@ -604,6 +622,172 @@ def test_portable_decision_table_separates_latency_cost_and_quality_choices() ->
     assert row["unconstrained_cost_engine"] == "engine-cheap-slow"
     assert row["quality_winner_engine"] == "engine-quality"
     assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
+
+
+def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "candidate"
+    run_dir.mkdir(parents=True)
+    (run_dir / "config_resolved.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "engine": "faiss-cpu",
+                "engine_version": "cpu",
+                "metric": "ip",
+                "search_sweep": [{"hnsw_ef": 32}],
+                "top_k": 10,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "run_metadata.json").write_text(
+        json.dumps({"engine": "faiss-cpu", "engine_version": "cpu"}) + "\n",
+        encoding="utf-8",
+    )
+    observation_path = run_dir / "logs" / "observations" / "s3.jsonl"
+    _write_jsonl(
+        observation_path,
+        [
+            {"observation_type": "quality", "evidence_coverage_at_10": 1.0},
+            {"observation_type": "quality", "evidence_coverage_at_10": 0.5},
+        ],
+    )
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 1,
+                "clients_read": 1,
+                "clients_write": 0,
+                "engine": "faiss-cpu",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.82,
+                "evidence_coverage_at_10": 0.82,
+                "p50_ms": 5.0,
+                "p95_ms": 8.0,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 10.0,
+                "retrieval_cost_est": 1.0,
+                "embedding_cost_est": 2.0,
+                "avg_retrieved_input_tokens": 40.0,
+                "c_llm_in": 0.15,
+                "measure_requests": 50,
+                "embedding_dim": 384,
+                "observation_path": str(observation_path),
+                "__run_path": str(run_dir),
+            },
+            {
+                "scenario": "s3_multi_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "rank_within_budget": 2,
+                "clients_read": 1,
+                "clients_write": 0,
+                "engine": "qdrant",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "evidence_coverage@10",
+                "primary_quality_value": 0.80,
+                "evidence_coverage_at_10": 0.80,
+                "p50_ms": 4.0,
+                "p95_ms": 7.0,
+                "p99_ms": 9.0,
+                "qps": 90.0,
+                "task_cost_est": 11.0,
+                "retrieval_cost_est": 1.2,
+                "embedding_cost_est": 2.0,
+                "avg_retrieved_input_tokens": 42.0,
+                "c_llm_in": 0.15,
+                "measure_requests": 50,
+                "embedding_dim": 384,
+                "observation_path": "",
+                "__run_path": "",
+            },
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s3_multi_hop",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 0.2,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+    decision = _portable_decision_table(winners=winners, stability=stability)
+
+    decision_error = _decision_error_ablation_table(decision=decision, stability=stability)
+    cost_formula = _cost_formula_table()
+    cost_sensitivity = _cost_sensitivity_table(winners=winners)
+    latency = _latency_distribution_table(winners=winners, decision=decision)
+    support = pd.DataFrame(
+        [
+            {
+                "engine": "faiss-cpu",
+                "behavior_card": "faiss_cpu.md",
+                "included_in_report": True,
+            }
+        ]
+    )
+    engine_config = _engine_configuration_table(frame=winners, support=support)
+    all_evidence = _s3_all_evidence_hit_table(winners=winners, decision=decision)
+
+    assert {
+        "missing_protocol_component",
+        "wrong_conclusion_caused_by_omission",
+        "manuscript_evidence",
+        "source_path",
+    } <= set(decision_error.columns)
+    assert {"term", "meaning", "unit", "value_source", "source_path"} <= set(cost_formula.columns)
+    assert {
+        "workload",
+        "candidate_role",
+        "c_llm_in_multiplier",
+        "sensitivity_task_cost_est",
+        "selection_changes_from_main",
+        "source_path",
+    } <= set(cost_sensitivity.columns)
+    assert {
+        "workload",
+        "engine",
+        "embedding_model",
+        "clients_read_write",
+        "p50_ms",
+        "p95_ms",
+        "p99_ms",
+        "p99_max_ms",
+        "latency_observations",
+        "boundary",
+        "source_path",
+    } <= set(latency.columns)
+    assert {
+        "engine",
+        "mode",
+        "version",
+        "index_search_configuration",
+        "distance_metric",
+        "embedding_dimension",
+        "process_model",
+        "flush_commit_path",
+        "included_in_reported_matrix",
+        "source_path",
+    } <= set(engine_config.columns)
+    assert {
+        "row_role",
+        "engine",
+        "embedding_model",
+        "evidence_coverage_at_10",
+        "all_evidence_hit_at_10",
+        "query_level_observations",
+        "method",
+        "source_path",
+    } <= set(all_evidence.columns)
+    assert all_evidence.iloc[0]["all_evidence_hit_at_10"] == pytest.approx(0.5)
 
 
 def test_generate_portable_report_bundle_requires_conformance_inputs(tmp_path: Path) -> None:

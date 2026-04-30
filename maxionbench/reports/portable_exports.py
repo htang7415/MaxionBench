@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from .plots import (
     DPI,
@@ -36,6 +37,7 @@ _MVD_P99_MAX_MS_THRESHOLD = 200.0
 _MVD_SENSITIVITY_THRESHOLDS_MS: tuple[float | None, ...] = (100.0, 200.0, 500.0, None)
 _BOOTSTRAP_SEED = 20260428
 _BOOTSTRAP_RESAMPLES = 2000
+_COST_SENSITIVITY_MULTIPLIERS: tuple[float, ...] = (0.1, 1.0, 10.0)
 
 
 def generate_portable_report_bundle(
@@ -96,6 +98,12 @@ def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
     fallback_embedding = _normalized_string_series(working.get("__meta_embedding_model", pd.Series(dtype=object)))
     working.loc[working["embedding_model"] == "", "embedding_model"] = fallback_embedding[working["embedding_model"] == ""]
     working["task_cost_est"] = _coalesced_float_column(working, "task_cost_est")
+    working["embedding_dim"] = _coalesced_float_column(working, "embedding_dim")
+    embedding_dim_from_meta = pd.to_numeric(working.get("__meta_embedding_dim", pd.Series(dtype=float)), errors="coerce")
+    working.loc[working["embedding_dim"].isna(), "embedding_dim"] = embedding_dim_from_meta[working["embedding_dim"].isna()]
+    working["c_llm_in"] = _coalesced_float_column(working, "c_llm_in")
+    c_llm_in_from_meta = pd.to_numeric(working.get("__meta_c_llm_in", pd.Series(dtype=float)), errors="coerce")
+    working.loc[working["c_llm_in"].isna(), "c_llm_in"] = c_llm_in_from_meta[working["c_llm_in"].isna()]
     working["primary_quality_metric"] = working["__search_payload"].map(lambda payload: str(payload.get("primary_quality_metric") or ""))  # type: ignore[union-attr]
     working["primary_quality_value"] = working["__search_payload"].map(lambda payload: _payload_float(payload, "primary_quality_value"))
     working["observation_path"] = working["__search_payload"].map(lambda payload: str(payload.get("observation_path") or ""))  # type: ignore[union-attr]
@@ -201,6 +209,38 @@ def _export_portable_tables(
     neurips_main_tex_path.write_text(_neurips_main_results_latex(table=neurips_main), encoding="utf-8")
     tables.append(neurips_main_tex_path)
 
+    decision_error = _decision_error_ablation_table(decision=decision, stability=stability)
+    decision_error_path = out_dir / "decision_error_ablation.csv"
+    decision_error.to_csv(decision_error_path, index=False)
+    tables.append(decision_error_path)
+    decision_error_tex_path = out_dir / "decision_error_ablation.tex"
+    decision_error_tex_path.write_text(_decision_error_ablation_latex(table=decision_error), encoding="utf-8")
+    tables.append(decision_error_tex_path)
+
+    cost_formula = _cost_formula_table()
+    cost_formula_path = out_dir / "cost_formula.csv"
+    cost_formula.to_csv(cost_formula_path, index=False)
+    tables.append(cost_formula_path)
+    cost_formula_tex_path = out_dir / "cost_formula.tex"
+    cost_formula_tex_path.write_text(_cost_formula_latex(table=cost_formula), encoding="utf-8")
+    tables.append(cost_formula_tex_path)
+
+    cost_sensitivity = _cost_sensitivity_table(winners=winners)
+    cost_sensitivity_path = out_dir / "cost_sensitivity.csv"
+    cost_sensitivity.to_csv(cost_sensitivity_path, index=False)
+    tables.append(cost_sensitivity_path)
+    cost_sensitivity_tex_path = out_dir / "cost_sensitivity.tex"
+    cost_sensitivity_tex_path.write_text(_cost_sensitivity_latex(table=cost_sensitivity), encoding="utf-8")
+    tables.append(cost_sensitivity_tex_path)
+
+    latency_distribution = _latency_distribution_table(winners=winners, decision=decision)
+    latency_distribution_path = out_dir / "latency_distribution.csv"
+    latency_distribution.to_csv(latency_distribution_path, index=False)
+    tables.append(latency_distribution_path)
+    latency_distribution_tex_path = out_dir / "latency_distribution.tex"
+    latency_distribution_tex_path.write_text(_latency_distribution_latex(table=latency_distribution), encoding="utf-8")
+    tables.append(latency_distribution_tex_path)
+
     support = _support_table(
         frame=observed_frame,
         winners=winners,
@@ -210,6 +250,22 @@ def _export_portable_tables(
     support_path = out_dir / "portable_support_table.csv"
     support.to_csv(support_path, index=False)
     tables.append(support_path)
+
+    engine_configuration = _engine_configuration_table(frame=frame, support=support)
+    engine_configuration_path = out_dir / "engine_configuration.csv"
+    engine_configuration.to_csv(engine_configuration_path, index=False)
+    tables.append(engine_configuration_path)
+    engine_configuration_tex_path = out_dir / "engine_configuration.tex"
+    engine_configuration_tex_path.write_text(_engine_configuration_latex(table=engine_configuration), encoding="utf-8")
+    tables.append(engine_configuration_tex_path)
+
+    s3_all_evidence = _s3_all_evidence_hit_table(winners=winners, decision=decision)
+    s3_all_evidence_path = out_dir / "s3_all_evidence_hit.csv"
+    s3_all_evidence.to_csv(s3_all_evidence_path, index=False)
+    tables.append(s3_all_evidence_path)
+    s3_all_evidence_tex_path = out_dir / "s3_all_evidence_hit.tex"
+    s3_all_evidence_tex_path.write_text(_s3_all_evidence_hit_latex(table=s3_all_evidence), encoding="utf-8")
+    tables.append(s3_all_evidence_tex_path)
 
     meta_path = out_dir / "portable_summary.meta.json"
     meta_payload = {
@@ -562,6 +618,672 @@ def _aggregate_decision_candidates(*, preferred: pd.DataFrame) -> pd.DataFrame:
     return preferred.groupby(["engine", "embedding_model"], dropna=False, as_index=False).agg(**agg_cols)
 
 
+def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.DataFrame) -> pd.DataFrame:
+    s3 = decision.loc[decision["scenario"].astype(str) == "s3_multi_hop"]
+    s3_shift = "S3 no-p99 cost choice shifts to LanceDB/bge-small instead of FAISS/bge-small"
+    if not s3.empty:
+        row = s3.iloc[0]
+        s3_shift = (
+            f"S3 no-p99 cost choice shifts to {row['unconstrained_cost_engine']}/"
+            f"{_short_embedding_label(str(row['unconstrained_cost_embedding_model']))} instead of "
+            f"{row['strict_p99_engine']}/{_short_embedding_label(str(row['strict_p99_embedding_model']))}"
+        )
+    changed_quality = []
+    for _, row in decision.iterrows():
+        strict = (str(row["strict_p99_engine"]), str(row["strict_p99_embedding_model"]))
+        quality = (str(row["quality_winner_engine"]), str(row["quality_winner_embedding_model"]))
+        if strict != quality:
+            changed_quality.append(_short_scenario_code(str(row["scenario"])))
+    unstable = []
+    if not stability.empty:
+        b0_b2 = stability.loc[stability["budget_pair"].astype(str) == "b0->b2"]
+        for _, row in b0_b2.iterrows():
+            if _safe_float(row.get("top1_agreement")) < 1.0:
+                unstable.append(_short_scenario_code(str(row["scenario"])))
+
+    rows = [
+        {
+            "missing_protocol_component": "p99 latency gate",
+            "wrong_conclusion_caused_by_omission": s3_shift,
+            "manuscript_evidence": "Table 2 and p99 sensitivity table",
+            "source_path": "portable_decision_table.csv; minimum_viable_deployment_sensitivity.csv",
+        },
+        {
+            "missing_protocol_component": "Objective separation",
+            "wrong_conclusion_caused_by_omission": (
+                "Quality-first decisions differ from strict-latency decisions on "
+                f"{', '.join(changed_quality) if changed_quality else 'no workloads'}"
+            ),
+            "manuscript_evidence": "Table 2",
+            "source_path": "portable_decision_table.csv",
+        },
+        {
+            "missing_protocol_component": "Budget ladder",
+            "wrong_conclusion_caused_by_omission": (
+                "B0 screening fails to preserve B2 top-1 decisions for "
+                f"{', '.join(unstable) if unstable else 'no workloads'}"
+            ),
+            "manuscript_evidence": "Figure 1 and Table 2",
+            "source_path": "portable_stability.csv; portable_mvd_sensitivity.meta.json",
+        },
+        {
+            "missing_protocol_component": "Paired S3 audit",
+            "wrong_conclusion_caused_by_omission": (
+                "pgvector/bge-base appears quality-first, but the matched 5,000-query audit removes the substantive margin"
+            ),
+            "manuscript_evidence": "Table 3",
+            "source_path": "paper/experiments/s3_paired_quality/summary.json",
+        },
+        {
+            "missing_protocol_component": "Paired S2 competitor audit",
+            "wrong_conclusion_caused_by_omission": "Qdrant does not hide a quality or post-insert retrievability win",
+            "manuscript_evidence": "Table 5",
+            "source_path": "paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+        },
+        {
+            "missing_protocol_component": "Conformance gate",
+            "wrong_conclusion_caused_by_omission": (
+                "Engines without passing local conformance rows do not enter paper-facing result tables"
+            ),
+            "manuscript_evidence": "Section 2.1 and artifact audit",
+            "source_path": "artifacts/conformance/conformance_matrix.csv; docs/behavior",
+        },
+    ]
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "missing_protocol_component",
+            "wrong_conclusion_caused_by_omission",
+            "manuscript_evidence",
+            "source_path",
+        ],
+    )
+
+
+def _cost_formula_table() -> pd.DataFrame:
+    rows = [
+        {
+            "term": "C_retrieval",
+            "meaning": "Per-query retrieval cost estimate",
+            "unit": "project-defined normalized cost",
+            "value_source": "run result search_params_json or results.parquet",
+            "source_path": "artifacts/runs/portable/**/results.parquet",
+        },
+        {
+            "term": "C_embedding",
+            "meaning": "Per-query embedding cost estimate",
+            "unit": "project-defined normalized cost",
+            "value_source": "embedding tier cost config recorded in run result payload",
+            "source_path": "artifacts/runs/portable/**/results.parquet",
+        },
+        {
+            "term": "c_llm_in",
+            "meaning": "Input-token cost coefficient",
+            "unit": "project-defined normalized cost per token",
+            "value_source": "resolved run config and run metadata",
+            "source_path": "artifacts/runs/portable/**/config_resolved.yaml",
+        },
+        {
+            "term": "Nretrieved_input_tokens",
+            "meaning": "Retrieved context tokens packed downstream",
+            "unit": "tokens/query",
+            "value_source": "measured top-k output token counts",
+            "source_path": "artifacts/runs/portable/**/results.parquet",
+        },
+        {
+            "term": "task_cost_est",
+            "meaning": "C_retrieval + C_embedding + c_llm_in x Nretrieved_input_tokens",
+            "unit": "normalized task cost/query",
+            "value_source": "computed report table",
+            "source_path": "portable_winners.csv",
+        },
+    ]
+    return pd.DataFrame(rows, columns=["term", "meaning", "unit", "value_source", "source_path"])
+
+
+def _cost_sensitivity_table(*, winners: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for scenario, candidates in _strict_candidate_groups(winners=winners).items():
+        if candidates.empty:
+            continue
+        displayed = candidates.head(2).copy()
+        base_c_llm = _candidate_c_llm_in(candidates.iloc[0])
+        if not math.isfinite(base_c_llm) or base_c_llm == 0.0:
+            base_c_llm = 0.15
+        for multiplier in _COST_SENSITIVITY_MULTIPLIERS:
+            scored = displayed.copy()
+            scored["sensitivity_task_cost_est"] = scored.apply(
+                lambda row: _sensitivity_task_cost(row=row, multiplier=multiplier, base_c_llm=base_c_llm),
+                axis=1,
+            )
+            selected = scored.sort_values(
+                ["sensitivity_task_cost_est", "p99_ms_max", "qps"],
+                ascending=[True, True, False],
+                kind="stable",
+            ).iloc[0]
+            selected_config = _candidate_label(selected)
+            main_config = _candidate_label(candidates.iloc[0])
+            for _, candidate in scored.iterrows():
+                rows.append(
+                    {
+                        "workload": str(scenario),
+                        "candidate_role": "strict choice" if _candidate_label(candidate) == main_config else "nearest strict-cost competitor",
+                        "engine": str(candidate["engine"]),
+                        "embedding_model": str(candidate["embedding_model"]),
+                        "c_llm_in_multiplier": multiplier,
+                        "retrieval_cost_est": _safe_float(candidate.get("retrieval_cost_est")),
+                        "embedding_cost_est": _safe_float(candidate.get("embedding_cost_est")),
+                        "avg_retrieved_input_tokens": _candidate_tokens(row=candidate, base_c_llm=base_c_llm),
+                        "sensitivity_task_cost_est": _safe_float(candidate.get("sensitivity_task_cost_est")),
+                        "selected_config_at_multiplier": selected_config,
+                        "selection_changes_from_main": selected_config != main_config,
+                        "source_path": str(candidate.get("source_path") or ""),
+                    }
+                )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "workload",
+            "candidate_role",
+            "engine",
+            "embedding_model",
+            "c_llm_in_multiplier",
+            "retrieval_cost_est",
+            "embedding_cost_est",
+            "avg_retrieved_input_tokens",
+            "sensitivity_task_cost_est",
+            "selected_config_at_multiplier",
+            "selection_changes_from_main",
+            "source_path",
+        ],
+    )
+
+
+def _latency_distribution_table(*, winners: pd.DataFrame, decision: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for target in _decision_latency_targets(decision=decision, winners=winners):
+        selected = winners.loc[
+            (winners["scenario"].astype(str) == target["scenario"])
+            & (winners["budget_level"].astype(str) == "b2")
+            & (winners["engine"].astype(str) == target["engine"])
+            & (winners["embedding_model"].astype(str) == target["embedding_model"])
+        ].copy()
+        if selected.empty:
+            continue
+        p50_values = pd.to_numeric(selected.get("p50_ms", pd.Series(dtype=float)), errors="coerce").dropna()
+        p95_values = pd.to_numeric(selected.get("p95_ms", pd.Series(dtype=float)), errors="coerce").dropna()
+        p99_values = pd.to_numeric(selected.get("p99_ms", pd.Series(dtype=float)), errors="coerce").dropna()
+        measure_requests = pd.to_numeric(selected.get("measure_requests", pd.Series(dtype=float)), errors="coerce").dropna()
+        clients = sorted(
+            {
+                f"{int(_safe_float(row.get('clients_read')))} / {int(_safe_float(row.get('clients_write')))}"
+                for _, row in selected.iterrows()
+                if math.isfinite(_safe_float(row.get("clients_read"))) and math.isfinite(_safe_float(row.get("clients_write")))
+            }
+        )
+        rows.append(
+            {
+                "workload": str(target["scenario"]),
+                "row_role": str(target["role"]),
+                "engine": str(target["engine"]),
+                "embedding_model": str(target["embedding_model"]),
+                "clients_read_write": ", ".join(clients),
+                "p50_ms": float(p50_values.mean()) if not p50_values.empty else float("nan"),
+                "p95_ms": float(p95_values.mean()) if not p95_values.empty else float("nan"),
+                "p99_ms": float(p99_values.mean()) if not p99_values.empty else float("nan"),
+                "p99_max_ms": float(p99_values.max()) if not p99_values.empty else float("nan"),
+                "latency_observations": int(measure_requests.sum()) if not measure_requests.empty else int(len(selected)),
+                "boundary": _latency_boundary(str(target["scenario"])),
+                "source_path": _source_paths_for_frame(selected),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "workload",
+            "row_role",
+            "engine",
+            "embedding_model",
+            "clients_read_write",
+            "p50_ms",
+            "p95_ms",
+            "p99_ms",
+            "p99_max_ms",
+            "latency_observations",
+            "boundary",
+            "source_path",
+        ],
+    )
+
+
+def _engine_configuration_table(*, frame: pd.DataFrame, support: pd.DataFrame) -> pd.DataFrame:
+    support_by_engine = {
+        str(row["engine"]): row
+        for _, row in support.iterrows()
+    } if support is not None and not support.empty else {}
+    observed = frame.copy()
+    rows: list[dict[str, Any]] = []
+    for engine in sorted(set(REQUIRED_ADAPTERS) | {str(value) for value in observed.get("engine", pd.Series(dtype=object)).tolist()}):
+        engine_rows = observed.loc[observed["engine"].astype(str) == engine].copy()
+        config_payload = _first_config_payload(engine_rows)
+        metadata_payload = _first_metadata_payload(engine_rows)
+        support_row = support_by_engine.get(engine)
+        behavior_card = str(support_row.get("behavior_card") if support_row is not None else BEHAVIOR_CARD_BY_ADAPTER.get(engine, ""))  # type: ignore[union-attr]
+        included = bool(support_row.get("included_in_report")) if support_row is not None else False  # type: ignore[union-attr]
+        dims = sorted(
+            {
+                str(int(value))
+                for value in pd.to_numeric(engine_rows.get("embedding_dim", pd.Series(dtype=float)), errors="coerce").dropna().tolist()
+            }
+        )
+        version = str(metadata_payload.get("engine_version") or config_payload.get("engine_version") or "not run")
+        rows.append(
+            {
+                "engine": engine,
+                "mode": _engine_mode(engine),
+                "version": version,
+                "index_search_configuration": _index_search_configuration(config_payload),
+                "distance_metric": str(config_payload.get("metric") or "ip"),
+                "embedding_dimension": ", ".join(dims) if dims else "",
+                "process_model": _engine_process_model(engine),
+                "flush_commit_path": _engine_flush_path(engine),
+                "included_in_reported_matrix": included,
+                "source_path": _engine_config_source_path(engine_rows=engine_rows, behavior_card=behavior_card),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "engine",
+            "mode",
+            "version",
+            "index_search_configuration",
+            "distance_metric",
+            "embedding_dimension",
+            "process_model",
+            "flush_commit_path",
+            "included_in_reported_matrix",
+            "source_path",
+        ],
+    )
+
+
+def _s3_all_evidence_hit_table(*, winners: pd.DataFrame, decision: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    targets = _s3_all_evidence_targets(winners=winners, decision=decision)
+    for target in targets:
+        selected = winners.loc[
+            (winners["scenario"].astype(str) == "s3_multi_hop")
+            & (winners["budget_level"].astype(str) == "b2")
+            & (winners["engine"].astype(str) == target["engine"])
+            & (winners["embedding_model"].astype(str) == target["embedding_model"])
+        ].copy()
+        observations = [
+            row
+            for row in _load_observations_from_frame(selected=selected, include_run_dir_glob=True)
+            if str(row.get("observation_type") or "") == "quality"
+        ]
+        coverage_values = np.asarray(
+            [
+                _safe_float(row.get("evidence_coverage_at_10"))
+                for row in observations
+                if math.isfinite(_safe_float(row.get("evidence_coverage_at_10")))
+            ],
+            dtype=np.float64,
+        )
+        aggregate_values = pd.to_numeric(selected.get("evidence_coverage_at_10", pd.Series(dtype=float)), errors="coerce").dropna()
+        if coverage_values.size:
+            all_hit_values = np.asarray([1.0 if value >= 1.0 - 1e-12 else 0.0 for value in coverage_values], dtype=np.float64)
+            all_hit = float(np.mean(all_hit_values))
+            coverage = float(np.mean(coverage_values))
+            method = "query-level observations; all_evidence_hit@10 is 1[evidence_coverage_at_10 == 1]"
+            samples = int(coverage_values.size)
+        else:
+            all_hit = float("nan")
+            coverage = float(aggregate_values.mean()) if not aggregate_values.empty else float("nan")
+            method = "query-level observations unavailable; aggregate evidence_coverage@10 retained"
+            samples = 0
+        rows.append(
+            {
+                "row_role": str(target["role"]),
+                "engine": str(target["engine"]),
+                "embedding_model": str(target["embedding_model"]),
+                "evidence_coverage_at_10": coverage,
+                "all_evidence_hit_at_10": all_hit,
+                "query_level_observations": samples,
+                "method": method,
+                "source_path": _source_paths_for_frame(selected),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "row_role",
+            "engine",
+            "embedding_model",
+            "evidence_coverage_at_10",
+            "all_evidence_hit_at_10",
+            "query_level_observations",
+            "method",
+            "source_path",
+        ],
+    )
+
+
+def _strict_candidate_groups(*, winners: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    grouped: dict[str, pd.DataFrame] = {}
+    for scenario, scenario_frame in winners.groupby("scenario", dropna=False):
+        preferred = scenario_frame.loc[scenario_frame["budget_level"].astype(str) == "b2"].copy()
+        if preferred.empty:
+            continue
+        agg_spec: dict[str, Any] = {
+            "primary_quality_value": ("primary_quality_value", "mean"),
+            "primary_quality_metric": ("primary_quality_metric", "first"),
+            "task_cost_est": ("task_cost_est", "mean"),
+            "p99_ms_max": ("p99_ms", "max"),
+            "qps": ("qps", "mean"),
+        }
+        for col in (
+            "retrieval_cost_est",
+            "embedding_cost_est",
+            "llm_context_cost_est",
+            "avg_retrieved_input_tokens",
+            "c_llm_in",
+        ):
+            if col in preferred.columns:
+                agg_spec[col] = (col, "mean")
+        aggregated = preferred.groupby(["engine", "embedding_model"], dropna=False, as_index=False).agg(**agg_spec)
+        source_paths = []
+        for _, row in aggregated.iterrows():
+            selected = preferred.loc[
+                (preferred["engine"].astype(str) == str(row["engine"]))
+                & (preferred["embedding_model"].astype(str) == str(row["embedding_model"]))
+            ]
+            source_paths.append(_source_paths_for_frame(selected))
+        aggregated["source_path"] = source_paths
+        eligible = aggregated.loc[pd.to_numeric(aggregated["primary_quality_value"], errors="coerce") >= _quality_floor(str(scenario))]
+        if eligible.empty:
+            eligible = aggregated
+        fast = eligible.loc[pd.to_numeric(eligible["p99_ms_max"], errors="coerce") <= _MVD_P99_MAX_MS_THRESHOLD]
+        if not fast.empty:
+            eligible = fast
+        grouped[str(scenario)] = eligible.sort_values(
+            ["task_cost_est", "p99_ms_max", "qps"],
+            ascending=[True, True, False],
+            kind="stable",
+        ).reset_index(drop=True)
+    return grouped
+
+
+def _candidate_c_llm_in(row: pd.Series) -> float:
+    configured = _safe_float(row.get("c_llm_in"))
+    if math.isfinite(configured) and configured != 0.0:
+        return configured
+    context_cost = _safe_float(row.get("llm_context_cost_est"))
+    tokens = _safe_float(row.get("avg_retrieved_input_tokens"))
+    if math.isfinite(context_cost) and math.isfinite(tokens) and tokens != 0.0:
+        return context_cost / tokens
+    return float("nan")
+
+
+def _sensitivity_task_cost(*, row: pd.Series, multiplier: float, base_c_llm: float) -> float:
+    retrieval = _safe_float(row.get("retrieval_cost_est"))
+    embedding = _safe_float(row.get("embedding_cost_est"))
+    if not math.isfinite(retrieval):
+        retrieval = 0.0
+    if not math.isfinite(embedding):
+        embedding = 0.0
+    tokens = _candidate_tokens(row=row, base_c_llm=base_c_llm)
+    if not math.isfinite(tokens):
+        archived_cost = _safe_float(row.get("task_cost_est"))
+        return archived_cost if math.isfinite(archived_cost) else float("nan")
+    return retrieval + embedding + (base_c_llm * multiplier * tokens)
+
+
+def _candidate_tokens(*, row: pd.Series, base_c_llm: float) -> float:
+    tokens = _safe_float(row.get("avg_retrieved_input_tokens"))
+    if math.isfinite(tokens):
+        return tokens
+    archived_cost = _safe_float(row.get("task_cost_est"))
+    retrieval = _safe_float(row.get("retrieval_cost_est"))
+    embedding = _safe_float(row.get("embedding_cost_est"))
+    retrieval = retrieval if math.isfinite(retrieval) else 0.0
+    embedding = embedding if math.isfinite(embedding) else 0.0
+    if math.isfinite(archived_cost) and math.isfinite(base_c_llm) and base_c_llm != 0.0:
+        return max(0.0, (archived_cost - retrieval - embedding) / base_c_llm)
+    return float("nan")
+
+
+def _candidate_label(row: pd.Series) -> str:
+    return f"{row['engine']} / {_short_embedding_label(str(row['embedding_model']))}"
+
+
+def _decision_latency_targets(*, decision: pd.DataFrame, winners: pd.DataFrame) -> list[dict[str, str]]:
+    targets: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    def add(*, scenario: str, role: str, engine: str, embedding: str) -> None:
+        key = (scenario, role, engine, embedding)
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append({"scenario": scenario, "role": role, "engine": engine, "embedding_model": embedding})
+
+    for _, row in decision.iterrows():
+        scenario = str(row["scenario"])
+        add(
+            scenario=scenario,
+            role="strict choice",
+            engine=str(row["strict_p99_engine"]),
+            embedding=str(row["strict_p99_embedding_model"]),
+        )
+        add(
+            scenario=scenario,
+            role="no-p99 cost choice",
+            engine=str(row["unconstrained_cost_engine"]),
+            embedding=str(row["unconstrained_cost_embedding_model"]),
+        )
+        add(
+            scenario=scenario,
+            role="quality-first choice",
+            engine=str(row["quality_winner_engine"]),
+            embedding=str(row["quality_winner_embedding_model"]),
+        )
+    for scenario, candidates in _strict_candidate_groups(winners=winners).items():
+        if len(candidates) >= 2:
+            competitor = candidates.iloc[1]
+            add(
+                scenario=scenario,
+                role="nearest strict-cost competitor",
+                engine=str(competitor["engine"]),
+                embedding=str(competitor["embedding_model"]),
+            )
+    return targets
+
+
+def _latency_boundary(scenario: str) -> str:
+    base = "precomputed query vector; timed adapter.query plus top-k materialization; excludes offline embedding"
+    if scenario == "s2_streaming_memory":
+        return base + "; post-insert probes are measured after insert-plus-flush returns"
+    return base
+
+
+def _source_paths_for_frame(frame: pd.DataFrame) -> str:
+    paths: list[str] = []
+    for raw in frame.get("__run_path", pd.Series(dtype=object)).dropna().astype(str).tolist():
+        run_path = Path(raw)
+        for name in ("results.parquet", "config_resolved.yaml", "run_metadata.json"):
+            candidate = run_path / name
+            if candidate.exists():
+                paths.append(_relative_path_string(candidate))
+    return "; ".join(sorted(set(paths)))
+
+
+def _relative_path_string(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except Exception:
+        return str(path)
+
+
+def _first_config_payload(frame: pd.DataFrame) -> dict[str, Any]:
+    for raw in frame.get("__run_path", pd.Series(dtype=object)).dropna().astype(str).tolist():
+        payload = _read_yaml_dict(Path(raw) / "config_resolved.yaml")
+        if payload:
+            return payload
+    return {}
+
+
+def _first_metadata_payload(frame: pd.DataFrame) -> dict[str, Any]:
+    for raw in frame.get("__run_path", pd.Series(dtype=object)).dropna().astype(str).tolist():
+        payload = _read_json_dict(Path(raw) / "run_metadata.json")
+        if payload:
+            return payload
+    return {}
+
+
+def _read_json_dict(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_yaml_dict(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _engine_mode(engine: str) -> str:
+    return {
+        "faiss-cpu": "in-process",
+        "lancedb-inproc": "in-process",
+        "lancedb-service": "service API",
+        "pgvector": "server database",
+        "qdrant": "server API",
+    }.get(engine, "")
+
+
+def _engine_process_model(engine: str) -> str:
+    return {
+        "faiss-cpu": "Python process-local adapter",
+        "lancedb-inproc": "Python in-process library with local LanceDB URI",
+        "lancedb-service": "external HTTP service contract",
+        "pgvector": "PostgreSQL server plus Python adapter",
+        "qdrant": "Qdrant server plus Python adapter",
+    }.get(engine, "")
+
+
+def _engine_flush_path(engine: str) -> str:
+    return {
+        "faiss-cpu": "staged writes become visible after flush_or_commit rebuild/update",
+        "lancedb-inproc": "staged writes become visible after flush_or_commit",
+        "lancedb-service": "depends on service implementation; no passing local row",
+        "pgvector": "writer transaction commit; readers observe committed state",
+        "qdrant": "upsert/update/delete requests use wait=true",
+    }.get(engine, "")
+
+
+def _index_search_configuration(config: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    index_params = config.get("index_params")
+    search_sweep = config.get("search_sweep")
+    if isinstance(index_params, Mapping) and index_params:
+        parts.append(f"index_params={json.dumps(dict(index_params), sort_keys=True)}")
+    if isinstance(search_sweep, list) and search_sweep:
+        parts.append(f"search_sweep={json.dumps(search_sweep, sort_keys=True)}")
+    top_k = config.get("top_k")
+    if top_k is not None:
+        parts.append(f"top_k={top_k}")
+    return "; ".join(parts) if parts else "default adapter configuration"
+
+
+def _engine_config_source_path(*, engine_rows: pd.DataFrame, behavior_card: str) -> str:
+    paths = []
+    if behavior_card:
+        paths.append(str(Path("docs/behavior") / behavior_card))
+    paths.append("artifacts/conformance/conformance_matrix.csv")
+    for raw in engine_rows.get("__run_path", pd.Series(dtype=object)).dropna().astype(str).tolist()[:1]:
+        run_path = Path(raw)
+        for name in ("config_resolved.yaml", "run_metadata.json"):
+            candidate = run_path / name
+            if candidate.exists():
+                paths.append(_relative_path_string(candidate))
+    return "; ".join(sorted(set(paths)))
+
+
+def _s3_all_evidence_targets(*, winners: pd.DataFrame, decision: pd.DataFrame) -> list[dict[str, str]]:
+    targets: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add(role: str, engine: str, embedding: str) -> None:
+        key = (role, engine, embedding)
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append({"role": role, "engine": engine, "embedding_model": embedding})
+
+    s3_decision = decision.loc[decision["scenario"].astype(str) == "s3_multi_hop"]
+    if not s3_decision.empty:
+        row = s3_decision.iloc[0]
+        add("strict choice", str(row["strict_p99_engine"]), str(row["strict_p99_embedding_model"]))
+        add("quality-first archived row", str(row["quality_winner_engine"]), str(row["quality_winner_embedding_model"]))
+        add("no-p99 cost row", str(row["unconstrained_cost_engine"]), str(row["unconstrained_cost_embedding_model"]))
+
+    s3 = winners.loc[(winners["scenario"].astype(str) == "s3_multi_hop") & (winners["budget_level"].astype(str) == "b2")]
+    if not s3.empty:
+        candidates = _aggregate_decision_candidates(preferred=s3)
+        fast = candidates.loc[pd.to_numeric(candidates["p99_ms_max"], errors="coerce") <= _MVD_P99_MAX_MS_THRESHOLD]
+        if not fast.empty:
+            high_quality = fast.sort_values(
+                ["primary_quality_value", "p99_ms_max", "task_cost_est"],
+                ascending=[False, True, True],
+                kind="stable",
+            ).iloc[0]
+            add("high-quality strict-latency row", str(high_quality["engine"]), str(high_quality["embedding_model"]))
+        strict_candidates = _strict_candidate_groups(winners=winners).get("s3_multi_hop", pd.DataFrame())
+        if len(strict_candidates) >= 2:
+            competitor = strict_candidates.iloc[1]
+            add("next strict-cost candidate", str(competitor["engine"]), str(competitor["embedding_model"]))
+    return targets
+
+
+def _load_observations_from_frame(*, selected: pd.DataFrame, include_run_dir_glob: bool) -> list[dict[str, Any]]:
+    paths: set[Path] = set()
+    for raw_path in selected.get("observation_path", pd.Series(dtype=object)).dropna().astype(str).tolist():
+        stripped = raw_path.strip()
+        if stripped:
+            paths.add(Path(stripped))
+    if include_run_dir_glob:
+        for raw in selected.get("__run_path", pd.Series(dtype=object)).dropna().astype(str).tolist():
+            run_path = Path(raw)
+            paths.update(run_path.glob("logs/observations/*.jsonl"))
+    rows: list[dict[str, Any]] = []
+    for path in sorted(paths):
+        if not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    payload = json.loads(stripped)
+                    if isinstance(payload, dict):
+                        rows.append(payload)
+        except Exception:
+            continue
+    return rows
+
+
 def _neurips_main_results_table(*, frame: pd.DataFrame, winners: pd.DataFrame, stability: pd.DataFrame) -> pd.DataFrame:
     deployment = _minimum_viable_deployment_table(winners=winners)
     rows: list[dict[str, Any]] = []
@@ -896,6 +1618,167 @@ def _portable_decision_table_latex(*, table: pd.DataFrame) -> str:
             "",
         ]
     )
+    return "\n".join(lines)
+
+
+def _decision_error_ablation_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{Protocol components whose omission changes or weakens deployment conclusions.}",
+        "\\label{tab:decision-error-ablation}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{lll}",
+        "\\toprule",
+        "Missing component & Wrong conclusion caused by omission & Evidence \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        lines.append(
+            f"{_latex_escape(str(row['missing_protocol_component']))} & "
+            f"{_latex_escape(str(row['wrong_conclusion_caused_by_omission']))} & "
+            f"{_latex_escape(str(row['manuscript_evidence']))} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
+    return "\n".join(lines)
+
+
+def _cost_formula_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{Task-cost estimate terms and deterministic value sources.}",
+        "\\label{tab:cost-formula}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{llll}",
+        "\\toprule",
+        "Term & Meaning & Unit & Value source \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        lines.append(
+            f"{_latex_escape(str(row['term']))} & {_latex_escape(str(row['meaning']))} & "
+            f"{_latex_escape(str(row['unit']))} & {_latex_escape(str(row['value_source']))} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
+    return "\n".join(lines)
+
+
+def _cost_sensitivity_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{Strict-choice cost sensitivity to input-token cost multipliers.}",
+        "\\label{tab:cost-sensitivity}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{lllrrrrl}",
+        "\\toprule",
+        "Workload & Role & Candidate & Mult. & Tokens & Cost & Changes? & Selected \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        candidate = f"{row['engine']} / {_short_embedding_label(str(row['embedding_model']))}"
+        lines.append(
+            f"{_latex_escape(_short_scenario_label(str(row['workload'])))} & "
+            f"{_latex_escape(str(row['candidate_role']))} & {_latex_escape(candidate)} & "
+            f"{_safe_float(row['c_llm_in_multiplier']):.1f} & "
+            f"{_safe_float(row['avg_retrieved_input_tokens']):.0f} & "
+            f"{_safe_float(row['sensitivity_task_cost_est']):.3f} & "
+            f"{'yes' if bool(row['selection_changes_from_main']) else 'no'} & "
+            f"{_latex_escape(str(row['selected_config_at_multiplier']))} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
+    return "\n".join(lines)
+
+
+def _latency_distribution_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{Latency distributions for strict choices and objective-sensitivity rows.}",
+        "\\label{tab:latency-distribution}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{lllrrrrr}",
+        "\\toprule",
+        "Workload & Role & Candidate & p50 & p95 & p99 & p99 max & Obs. \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        candidate = f"{row['engine']} / {_short_embedding_label(str(row['embedding_model']))}"
+        lines.append(
+            f"{_latex_escape(_short_scenario_label(str(row['workload'])))} & {_latex_escape(str(row['row_role']))} & "
+            f"{_latex_escape(candidate)} & {_safe_float(row['p50_ms']):.1f} & {_safe_float(row['p95_ms']):.1f} & "
+            f"{_safe_float(row['p99_ms']):.1f} & {_safe_float(row['p99_max_ms']):.1f} & "
+            f"{int(_safe_float(row['latency_observations']))} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
+    return "\n".join(lines)
+
+
+def _engine_configuration_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{Engine modes and configuration sources for the reported matrix.}",
+        "\\label{tab:engine-configuration}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{llllll}",
+        "\\toprule",
+        "Engine & Mode & Version & Dim. & Process model & Reported? \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        lines.append(
+            f"{_latex_escape(str(row['engine']))} & {_latex_escape(str(row['mode']))} & "
+            f"{_latex_escape(str(row['version']))} & {_latex_escape(str(row['embedding_dimension']))} & "
+            f"{_latex_escape(str(row['process_model']))} & "
+            f"{'yes' if bool(row['included_in_reported_matrix']) else 'no'} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
+    return "\n".join(lines)
+
+
+def _s3_all_evidence_hit_latex(*, table: pd.DataFrame) -> str:
+    lines = [
+        "% Auto-generated by maxionbench.reports.portable_exports.",
+        "\\begin{table}[t]",
+        "\\centering",
+        "\\small",
+        "\\setlength{\\tabcolsep}{3.5pt}",
+        "\\caption{S3 all-evidence hit@10 audit rows. Blank all-evidence cells indicate rows that still require query-level dumps.}",
+        "\\label{tab:s3-all-evidence-hit}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{lllccc}",
+        "\\toprule",
+        "Role & Engine & Embedding & Cov@10 & All-hit@10 & Query rows \\\\",
+        "\\midrule",
+    ]
+    for _, row in table.iterrows():
+        all_hit = _safe_float(row["all_evidence_hit_at_10"])
+        all_hit_cell = "--" if not math.isfinite(all_hit) else f"{all_hit:.3f}"
+        coverage = _safe_float(row["evidence_coverage_at_10"])
+        coverage_cell = "--" if not math.isfinite(coverage) else f"{coverage:.3f}"
+        lines.append(
+            f"{_latex_escape(str(row['row_role']))} & {_latex_escape(str(row['engine']))} & "
+            f"{_latex_escape(_short_embedding_label(str(row['embedding_model'])))} & {coverage_cell} & "
+            f"{all_hit_cell} & {int(_safe_float(row['query_level_observations']))} \\\\"
+        )
+    lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
     return "\n".join(lines)
 
 
