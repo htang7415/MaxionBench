@@ -449,7 +449,7 @@ def _minimum_viable_deployment_table(
         ]
         freshness_val = pd.to_numeric(pd.Series([best.get("freshness_hit_at_5s")]), errors="coerce").iloc[0]
         if not math.isnan(freshness_val):
-            reason_parts.append(f"freshness_hit@5s={float(freshness_val):.3f}")
+            reason_parts.append(f"post_insert_hit@10,5s={float(freshness_val):.3f}")
         reason_parts.append(f"p99_mean={float(best['p99_ms_mean']):.1f}ms")
         reason_parts.append(f"p99_max={float(best['p99_ms_max']):.1f}ms")
         reason_parts.append(f"task_cost={float(best['task_cost_est']):.6f}")
@@ -730,7 +730,7 @@ def _s2_freshness_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
     if observations:
         fields: dict[str, Any] = {
             "freshness_event_count": len(observations),
-            "freshness_ci_method": "Wilson binomial CI from archived per-event freshness observations",
+            "freshness_ci_method": "Wilson binomial CI from archived per-event post-insert observations",
         }
         for col in ("freshness_hit_at_1s", "freshness_hit_at_5s"):
             hits = [
@@ -749,7 +749,7 @@ def _s2_freshness_ci_fields(*, selected: pd.DataFrame) -> dict[str, Any]:
     event_count = int(event_counts.max()) if not event_counts.empty else 0
     fields: dict[str, Any] = {
         "freshness_event_count": event_count,
-        "freshness_ci_method": "Wilson binomial CI from archived hit rate and event_count; repeated runs are not counted as independent events",
+        "freshness_ci_method": "Wilson binomial CI from archived post-insert hit rate and event_count; repeated runs are not counted as independent events",
     }
     for col in ("freshness_hit_at_1s", "freshness_hit_at_5s"):
         rates = pd.to_numeric(selected.get(col, pd.Series(dtype=float)), errors="coerce").dropna()
@@ -809,11 +809,12 @@ def _neurips_main_results_latex(*, table: pd.DataFrame) -> str:
         "\\centering",
         "\\small",
         "\\setlength{\\tabcolsep}{3.5pt}",
-        "\\caption{Portable benchmark main results. Quality and freshness report 95\\% confidence intervals; p99 reports the maximum observed tail latency across selected runs.}",
+        "\\caption{Portable benchmark main results. Quality and S2 post-insert top-10 retrievability report 95\\% confidence intervals; p99 reports the maximum observed tail latency across selected runs.}",
         "\\label{tab:portable-main-results}",
+        "\\resizebox{\\linewidth}{!}{%",
         "\\begin{tabular}{lllcccc}",
         "\\toprule",
-        "Workload & Engine & Emb. & Quality & Fresh@5 & p99 max & Stability \\\\",
+        "Workload & Engine & Emb. & Quality & post\\_insert\\_hit@10,5s & p99 max & Stability \\\\",
         "\\midrule",
     ]
     for _, row in table.iterrows():
@@ -843,6 +844,7 @@ def _neurips_main_results_latex(*, table: pd.DataFrame) -> str:
         [
             "\\bottomrule",
             "\\end{tabular}",
+            "}",
             "\\end{table}",
             "",
         ]
@@ -859,6 +861,7 @@ def _portable_decision_table_latex(*, table: pd.DataFrame) -> str:
         "\\setlength{\\tabcolsep}{3.5pt}",
         "\\caption{Deployment decisions under strict latency, unconstrained cost, and quality-first objectives. Strict latency uses a 200 ms worst-case p99 threshold.}",
         "\\label{tab:portable-decision-table}",
+        "\\resizebox{\\linewidth}{!}{%",
         "\\begin{tabular}{llllcc}",
         "\\toprule",
         "Workload & Strict p99 & No-p99 cost & Quality-first & $\\rho$ B0--B2 & Stability \\\\",
@@ -888,6 +891,7 @@ def _portable_decision_table_latex(*, table: pd.DataFrame) -> str:
         [
             "\\bottomrule",
             "\\end{tabular}",
+            "}",
             "\\end{table}",
             "",
         ]
@@ -918,15 +922,15 @@ def _short_scenario_label(scenario: str) -> str:
     return {
         "s1_single_hop": "S1 single-hop",
         "s2_streaming_memory": "S2 streaming",
-        "s3_multi_hop": "S3 multi-hop",
+        "s3_multi_hop": "S3 multi-evidence",
     }.get(scenario, scenario)
 
 
 def _short_embedding_label(embedding: str) -> str:
     if "bge-small" in embedding:
-        return "bge-small"
+        return "BAAI/bge-small-en-v1.5"
     if "bge-base" in embedding:
-        return "bge-base"
+        return "BAAI/bge-base-en-v1.5"
     return embedding
 
 
@@ -1131,18 +1135,18 @@ def _plot_budget_stability(*, ax: Any, stability: pd.DataFrame) -> None:
 def _plot_s2_freshness(*, ax: Any, winners: pd.DataFrame) -> None:
     s2 = winners.loc[winners["scenario"] == "s2_streaming_memory"].copy()
     if s2.empty:
-        _draw_placeholder(ax=ax, message="No S2 freshness rows available")
+        _draw_placeholder(ax=ax, message="No S2 post-insert rows available")
         return
     s2 = s2.sort_values(["budget_sort", "rank_within_budget", "engine"], kind="stable").groupby("engine", as_index=False).first()
     x = np.arange(len(s2))
     width = 0.30
-    bars_1s = ax.bar(x - width / 2, s2["freshness_hit_at_1s"].astype(float), width=width, label="hit@1s", color=ENGINE_PALETTE[0])
-    bars_5s = ax.bar(x + width / 2, s2["freshness_hit_at_5s"].astype(float), width=width, label="hit@5s", color=ENGINE_PALETTE[1])
+    bars_1s = ax.bar(x - width / 2, s2["freshness_hit_at_1s"].astype(float), width=width, label="post-insert@1s", color=ENGINE_PALETTE[0])
+    bars_5s = ax.bar(x + width / 2, s2["freshness_hit_at_5s"].astype(float), width=width, label="post-insert@5s", color=ENGINE_PALETTE[1])
     for group in (bars_1s, bars_5s):
         ax.bar_label(group, labels=[f"{bar.get_height():.2f}" for bar in group], padding=2, fontsize=8)
     ax.set_xticks(x, labels=s2["engine"].astype(str).tolist(), rotation=20, ha="right")
     ax.set_ylim(0.0, 1.14)
-    ax.set_ylabel("Freshness hit rate")
+    ax.set_ylabel("Top-10 retrievability")
     ax.grid(axis="y", alpha=0.35)
     ax.legend(frameon=False, loc="upper right", ncol=2, handlelength=1.2)
     _style_axis(ax)

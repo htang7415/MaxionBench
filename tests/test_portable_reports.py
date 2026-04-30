@@ -494,7 +494,7 @@ def test_minimum_viable_deployment_table_includes_freshness_for_s2_rows() -> Non
 
     deployment = _minimum_viable_deployment_table(winners=winners)
 
-    assert deployment.iloc[0]["why"] == "answer_f1=0.812, freshness_hit@5s=0.975, p99_mean=84.5ms, p99_max=84.5ms, task_cost=0.456789"
+    assert deployment.iloc[0]["why"] == "answer_f1=0.812, post_insert_hit@10,5s=0.975, p99_mean=84.5ms, p99_max=84.5ms, task_cost=0.456789"
 
 
 def test_minimum_viable_deployment_sensitivity_exposes_latency_threshold_effect() -> None:
