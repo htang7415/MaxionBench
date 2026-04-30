@@ -285,8 +285,12 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     deployment = pd.read_csv(out_dir / "minimum_viable_deployment.csv")
     decision = pd.read_csv(out_dir / "portable_decision_table.csv")
     stability = pd.read_csv(out_dir / "portable_stability.csv")
+    latency = pd.read_csv(out_dir / "latency_distribution.csv")
+    engine_configuration = pd.read_csv(out_dir / "engine_configuration.csv")
     support = pd.read_csv(out_dir / "portable_support_table.csv")
     task_cost_meta = json.loads((out_dir / "portable_task_cost_by_budget.meta.json").read_text(encoding="utf-8"))
+    latency_tex = (out_dir / "latency_distribution.tex").read_text(encoding="utf-8")
+    engine_configuration_tex = (out_dir / "engine_configuration.tex").read_text(encoding="utf-8")
 
     assert not winners.empty
     assert "post_insert_hit_at_10_5s" in summary.columns
@@ -299,6 +303,14 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert not decision.empty
     assert "strict_p99_engine" in decision.columns
     assert "quality_winner_engine" in decision.columns
+    assert {"clients_read_write", "boundary"} <= set(latency.columns)
+    assert "R/W clients" in latency_tex
+    assert "Boundary" in latency_tex
+    assert "adapter.query plus top-k materialization" in latency_tex
+    assert {"index_search_configuration", "distance_metric", "flush_commit_path"} <= set(engine_configuration.columns)
+    assert "Index/search" in engine_configuration_tex
+    assert "Metric" in engine_configuration_tex
+    assert "Flush/commit" in engine_configuration_tex
     assert not support.empty
     assert set(REQUIRED_ADAPTERS) <= set(support["engine"].astype(str))
     assert "reportable" in support.columns
