@@ -10,11 +10,11 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 
 | Engine | Category | Role in portable study | Notes |
 | --- | --- | --- | --- |
-| FAISS CPU | local baseline | exact/strong local baseline | paper matrix engine |
-| LanceDB-inproc | embedded/local | upper-bound local reference | paper matrix engine |
-| LanceDB-service | service wrapper | primary comparable LanceDB mode | paper matrix engine |
-| PostgreSQL + pgvector | DB-first | service-backed portable engine | paper matrix engine |
-| Qdrant | vector-first server | service-backed portable engine | paper matrix engine |
+| FAISS CPU | local baseline | exact/strong local baseline | reported paper engine |
+| LanceDB-inproc | embedded/local | upper-bound local reference | reported paper engine |
+| LanceDB-service | service wrapper | service-mode audit target | excluded from the paper matrix because the archived local conformance table has no passing service row |
+| PostgreSQL + pgvector | DB-first | service-backed portable engine | reported paper engine |
+| Qdrant | vector-first server | service-backed portable engine | reported paper engine |
 
 ## Datasets
 
@@ -23,7 +23,7 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 | `scifact` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
 | `fiqa` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
 | `CRAG-500` | CRAG task 1/2 dev slice | S2 online event stream | one inserted supporting passage per event |
-| `HotpotQA-portable` | frozen local HotpotQA dev distractor preprocessing | S3 multi-hop evidence retrieval | one-time offline preprocessing artifact |
+| `HotpotQA-portable` | frozen local HotpotQA dev distractor preprocessing | S3 multi-evidence retrieval | one-time offline preprocessing artifact |
 
 ## Scenarios
 

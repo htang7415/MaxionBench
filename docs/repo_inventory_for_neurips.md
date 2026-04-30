@@ -45,7 +45,7 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `maxionbench/reports/portable_exports.py::_export_portable_figures` | Writes the figure files used by Figure 1 and Figure 2. |
 | `maxionbench/reports/portable_exports.py::_plot_task_cost_by_budget` | Produces `portable_task_cost_by_budget.*`, the left panel of Figure 1. |
 | `maxionbench/reports/portable_exports.py::_plot_budget_stability` | Produces `portable_budget_stability.*`, the right panel of Figure 1. |
-| `maxionbench/reports/portable_exports.py::_plot_s2_freshness` | Produces `portable_s2_freshness.*`, the left panel of Figure 2. |
+| `maxionbench/reports/portable_exports.py::_plot_s2_post_insert_retrievability` | Produces `portable_s2_post_insert_retrievability.*`, the left panel of Figure 2. |
 | `maxionbench/reports/portable_exports.py::_plot_mvd_sensitivity` | Produces `portable_mvd_sensitivity.*`, the right panel of Figure 2. |
 | `maxionbench/reports/plots.py` | Shared report-result loading and figure style constants used by portable report generation. |
 | `paper/experiments/s2_larger_same_machine/summarize.py` | Summarizes the S2 FAISS-vs-Qdrant rerun that feeds Table 5. |
@@ -58,7 +58,7 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 |---|---|
 | `paper/figures/portable_task_cost_by_budget.pdf` | Figure 1 left panel in the manuscript. |
 | `paper/figures/portable_budget_stability.pdf` | Figure 1 right panel in the manuscript. |
-| `paper/figures/portable_s2_freshness.pdf` | Figure 2 left panel in the manuscript. |
+| `paper/figures/portable_s2_post_insert_retrievability.pdf` | Figure 2 left panel in the manuscript. |
 | `paper/figures/portable_mvd_sensitivity.pdf` | Figure 2 right panel in the manuscript. |
 | `paper/figures/*.meta.json` | Metadata sidecars for paper-facing figures. |
 | `artifacts/figures/final/` | Current report-generation output directory copied into the paper staging area and archived bundle. |
@@ -145,4 +145,3 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `tests/test_portable_reports.py` | Tests for report table/figure generation and reportability filtering. |
 | `tests/test_result_schema.py` | Tests for result schema expectations. |
 | `tests/test_verify_dataset_manifests.py` | Tests for dataset manifest verification. |
-
