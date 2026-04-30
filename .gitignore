@@ -4,6 +4,7 @@ containers/
 artifacts/
 results/
 results_quick_check/
+release/
 logs/
 paper/
 /.*/

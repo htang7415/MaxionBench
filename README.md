@@ -30,8 +30,8 @@ The study reports matched-quality tradeoffs, p99 latency, throughput, robustness
 | Scenario | Dataset | Goal | Concurrency pin | Pinned details |
 | --- | --- | --- | --- | --- |
 | S1 | `scifact`, `fiqa` | single-hop corpus retrieval | clients `{1, 4, 8}` | primary quality `nDCG@10` |
-| S2 | `scifact` + `fiqa` background with `CRAG-500` events | streaming memory | read/write `8 / 2` | freshness probes at `T+1s` and `T+5s` |
-| S3 | `HotpotQA-portable` | multi-hop evidence retrieval | clients `{1, 4, 8}` | primary quality `evidence_coverage@10` |
+| S2 | `scifact` + `fiqa` background with `CRAG-500` events | streaming memory | read/write `8 / 2` | post-insert top-10 retrievability probes at `T+1s` and `T+5s` |
+| S3 | `HotpotQA-portable` | multi-evidence retrieval | clients `{1, 4, 8}` | primary quality `evidence_coverage@10` |
 
 ## Run artifacts
 
@@ -78,5 +78,10 @@ python -m maxionbench.cli submit-portable --budget b0 --json
 
 ```bash
 python -m maxionbench.cli validate --input artifacts/runs --strict-schema --json
-python -m maxionbench.cli report --input artifacts/runs/portable --mode portable-agentic --out artifacts/figures/final
+python -m maxionbench.cli report \
+  --input artifacts/runs/portable \
+  --mode portable-agentic \
+  --out artifacts/figures/final \
+  --conformance-matrix artifacts/conformance/conformance_matrix.csv \
+  --behavior-dir docs/behavior
 ```

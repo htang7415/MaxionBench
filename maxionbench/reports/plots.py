@@ -10,7 +10,7 @@ import pandas as pd
 
 from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_status
 
-FONT_SIZE = 10
+FONT_SIZE = 16
 PANEL_WIDTH_IN = 6.8
 PANEL_HEIGHT_IN = 3.2
 PANEL_PX = 2040

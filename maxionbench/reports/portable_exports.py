@@ -1979,7 +1979,12 @@ def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
     labels = [_scenario_budget_tick_label(str(row["scenario"]), str(row["budget_level"])) for _, row in summary.iterrows()]
     colors = [_engine_color(str(row["engine"])) for _, row in summary.iterrows()]
     bars = ax.bar(np.arange(len(summary)), summary["task_cost_est"].astype(float), color=colors, width=0.72)
-    ax.bar_label(bars, labels=[f"{value:.0f}" for value in summary["task_cost_est"].astype(float)], padding=2, fontsize=8)
+    ax.bar_label(
+        bars,
+        labels=[f"{value:.0f}" for value in summary["task_cost_est"].astype(float)],
+        padding=2,
+        fontsize=max(10, FONT_SIZE - 2),
+    )
     ax.set_xticks(np.arange(len(summary)), labels=labels, rotation=0, ha="center")
     ax.set_ylabel("Task cost estimate")
     ax.set_xlabel("Selected workload-budget winner")
@@ -2005,7 +2010,12 @@ def _plot_budget_stability(*, ax: Any, stability: pd.DataFrame) -> None:
         ax.bar(x + width, ordered["top2_agreement"].astype(float), width=width, label="Top-2", color=ENGINE_PALETTE[2]),
     ]
     for group in bars:
-        ax.bar_label(group, labels=[f"{bar.get_height():.2f}" for bar in group], padding=2, fontsize=8)
+        ax.bar_label(
+            group,
+            labels=[f"{bar.get_height():.2f}" for bar in group],
+            padding=2,
+            fontsize=max(10, FONT_SIZE - 2),
+        )
     labels = ordered["scenario_label"].astype(str).tolist()
     ax.set_xticks(x, labels=labels, rotation=0, ha="center")
     ax.set_ylim(0.0, 1.16)
@@ -2023,10 +2033,27 @@ def _plot_s2_freshness(*, ax: Any, winners: pd.DataFrame) -> None:
     s2 = s2.sort_values(["budget_sort", "rank_within_budget", "engine"], kind="stable").groupby("engine", as_index=False).first()
     x = np.arange(len(s2))
     width = 0.30
-    bars_1s = ax.bar(x - width / 2, s2["freshness_hit_at_1s"].astype(float), width=width, label="post-insert@1s", color=ENGINE_PALETTE[0])
-    bars_5s = ax.bar(x + width / 2, s2["freshness_hit_at_5s"].astype(float), width=width, label="post-insert@5s", color=ENGINE_PALETTE[1])
+    bars_1s = ax.bar(
+        x - width / 2,
+        s2["freshness_hit_at_1s"].astype(float),
+        width=width,
+        label="post-insert@1s",
+        color=ENGINE_PALETTE[0],
+    )
+    bars_5s = ax.bar(
+        x + width / 2,
+        s2["freshness_hit_at_5s"].astype(float),
+        width=width,
+        label="post-insert@5s",
+        color=ENGINE_PALETTE[1],
+    )
     for group in (bars_1s, bars_5s):
-        ax.bar_label(group, labels=[f"{bar.get_height():.2f}" for bar in group], padding=2, fontsize=8)
+        ax.bar_label(
+            group,
+            labels=[f"{bar.get_height():.2f}" for bar in group],
+            padding=2,
+            fontsize=max(10, FONT_SIZE - 2),
+        )
     ax.set_xticks(x, labels=s2["engine"].astype(str).tolist(), rotation=20, ha="right")
     ax.set_ylim(0.0, 1.14)
     ax.set_ylabel("Top-10 retrievability")
@@ -2074,7 +2101,7 @@ def _plot_mvd_sensitivity(*, ax: Any, sensitivity: pd.DataFrame) -> None:
             ha="center",
             va="center",
             color="#ffffff",
-            fontsize=8,
+            fontsize=max(10, FONT_SIZE - 4),
             fontweight="bold",
             zorder=4,
         )
@@ -2089,7 +2116,13 @@ def _plot_mvd_sensitivity(*, ax: Any, sensitivity: pd.DataFrame) -> None:
     ax.grid(axis="x", alpha=0.25)
     for engine in observed_engines:
         ax.scatter([], [], s=110, marker="s", color=_engine_color(engine), label=_short_engine_name(engine))
-    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, 1.10), ncol=3, fontsize=9)
+    ax.legend(
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.10),
+        ncol=3,
+        fontsize=max(10, FONT_SIZE - 3),
+    )
     _style_axis(ax)
 
 
