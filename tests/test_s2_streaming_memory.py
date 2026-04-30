@@ -165,6 +165,88 @@ def test_streaming_memory_skips_overlapping_background_evidence(monkeypatch: pyt
     assert result.overlap_skipped_event_count == 1
 
 
+def test_streaming_memory_can_cap_freshness_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    static = PortableTextResult(
+        recall_at_10=0.0,
+        ndcg_at_10=0.0,
+        mrr_at_10=0.0,
+        evidence_coverage_at_5=0.0,
+        evidence_coverage_at_10=0.0,
+        evidence_coverage_at_20=0.0,
+        avg_retrieved_input_tokens=0.0,
+        p50_ms=0.0,
+        p95_ms=0.0,
+        p99_ms=0.0,
+        qps=0.0,
+        sla_violation_rate=0.0,
+        errors=0,
+        warmup_elapsed_s=0.0,
+        warmup_requests=0,
+        measured_elapsed_s=0.0,
+        measured_requests=0,
+    )
+
+    class _Adapter:
+        def __init__(self) -> None:
+            self.inserted_ids: list[str] = []
+
+        def bulk_upsert(self, records):  # type: ignore[no-untyped-def]
+            return len(records)
+
+        def set_search_params(self, params):  # type: ignore[no-untyped-def]
+            return None
+
+        def insert(self, record) -> None:  # type: ignore[no-untyped-def]
+            self.inserted_ids.append(str(record.id))
+
+        def flush_or_commit(self) -> None:
+            return None
+
+    background = D4RetrievalDataset(
+        doc_ids=["bg"],
+        doc_vectors=np.asarray([[1.0, 0.0]], dtype=np.float32),
+        doc_texts=["background"],
+        doc_token_sets=[{"background"}],
+        query_ids=["bg-query"],
+        query_vectors=np.asarray([[1.0, 0.0]], dtype=np.float32),
+        query_texts=["background"],
+        query_token_sets=[{"background"}],
+        qrels={"bg-query": {"bg": 1}},
+        idf={"background": 1.0},
+    )
+    events = D4RetrievalDataset(
+        doc_ids=["fresh-1", "fresh-2", "fresh-3"],
+        doc_vectors=np.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=np.float32),
+        doc_texts=["fresh one", "fresh two", "fresh three"],
+        doc_token_sets=[{"fresh", "one"}, {"fresh", "two"}, {"fresh", "three"}],
+        query_ids=["q1", "q2", "q3"],
+        query_vectors=np.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=np.float32),
+        query_texts=["fresh one", "fresh two", "fresh three"],
+        query_token_sets=[{"fresh", "one"}, {"fresh", "two"}, {"fresh", "three"}],
+        qrels={"q1": {"fresh-1": 1}, "q2": {"fresh-2": 1}, "q3": {"fresh-3": 1}},
+        idf={"fresh": 1.0, "one": 1.0, "two": 1.0, "three": 1.0},
+    )
+
+    monkeypatch.setattr("maxionbench.scenarios.s2_streaming_memory.evaluate_text_queries", lambda **kwargs: static)
+    monkeypatch.setattr("maxionbench.scenarios.s2_streaming_memory.ingest_text_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr("maxionbench.scenarios.s2_streaming_memory._measure_freshness", lambda **kwargs: (0.5, True, True))
+
+    result = run(
+        adapter=_Adapter(),
+        cfg=StreamingMemoryConfig(
+            top_k=10,
+            clients_read=1,
+            clients_write=1,
+            sla_threshold_ms=10.0,
+            max_freshness_events=2,
+        ),
+        background=background,
+        events=events,
+    )
+
+    assert result.event_count == 2
+
+
 def test_load_portable_s2_datasets_prioritizes_event_qrel_docs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
     background = D4RetrievalDataset(

@@ -28,6 +28,7 @@ class StreamingMemoryConfig:
     steady_state_s: float = 0.0
     phase_timing_mode: str = "bounded"
     phase_max_requests_per_phase: int | None = None
+    max_freshness_events: int | None = None
     search_params: Mapping[str, Any] | None = None
 
 
@@ -81,6 +82,8 @@ def run(
     background_doc_ids = {str(doc_id) for doc_id in background.doc_ids}
     overlap_skipped_event_count = 0
     event_count = min(len(events.query_ids), len(events.query_vectors))
+    if cfg.max_freshness_events is not None:
+        event_count = min(event_count, int(cfg.max_freshness_events))
     for event_idx in range(event_count):
         qid = events.query_ids[event_idx]
         qrels = events.qrels[qid]

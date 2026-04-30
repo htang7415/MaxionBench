@@ -103,6 +103,7 @@ class RunConfig:
     d3_seed: int = 42
     calibration_require_real_data: bool = False
     s2_selectivities: list[float] = field(default_factory=lambda: [0.001, 0.01, 0.1, 0.5])
+    s2_max_freshness_events: int | None = None
     lambda_req_s: float = 1000.0
     s3_read_rate: float = 800.0
     s3_insert_rate: float = 100.0
@@ -224,6 +225,8 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("phase_timing_mode must be bounded or strict")
     if cfg.phase_max_requests_per_phase is not None and cfg.phase_max_requests_per_phase < 1:
         raise ValueError("phase_max_requests_per_phase must be >= 1 when set")
+    if cfg.s2_max_freshness_events is not None and cfg.s2_max_freshness_events < 1:
+        raise ValueError("s2_max_freshness_events must be >= 1 when set")
     if not cfg.no_retry:
         raise ValueError("Retries must be disabled during timed measurements.")
     if not cfg.quality_targets:

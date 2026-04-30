@@ -590,6 +590,7 @@ def _run_portable_s2_rows(*, cfg: RunConfig, config_fingerprint: str, config_pat
                         steady_state_s=cfg.steady_state_s,
                         phase_timing_mode=cfg.phase_timing_mode,
                         phase_max_requests_per_phase=cfg.phase_max_requests_per_phase,
+                        max_freshness_events=cfg.s2_max_freshness_events,
                         search_params=search_params,
                     ),
                     background=background,

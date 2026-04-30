@@ -9,6 +9,22 @@ paper/
 /.*/
 ._*
 
+# NeurIPS/paper submission artifacts
+**/paper/
+**/paper/**
+*paper*
+*Paper*
+*PAPER*
+*neurips*
+*NeurIPS*
+*NEURIPS*
+**/*neurips*/
+**/*NeurIPS*/
+**/*NEURIPS*/
+**/*neurips*/**
+**/*NeurIPS*/**
+**/*NEURIPS*/**
+
 # Python/package build outputs
 build/
 *.egg-info/
