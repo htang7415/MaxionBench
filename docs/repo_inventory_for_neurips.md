@@ -27,6 +27,8 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `paper/tables/neurips_main_results.tex` | Generated LaTeX for Table 1; mirrored into `paper/manuscript/tables/neurips_main_results.tex`. |
 | `paper/tables/portable_decision_table.csv` | CSV source for Table 2 objective-sensitivity decisions. |
 | `paper/tables/portable_decision_table.tex` | Generated LaTeX for Table 2; mirrored into `paper/manuscript/tables/portable_decision_table.tex`. |
+| `paper/tables/portable_support_table.csv` | CSV source for the reportability support table covering conformance rows and behavior cards. |
+| `paper/tables/portable_support_table.tex` | Generated LaTeX for the reportability support table; mirrored into `paper/manuscript/tables/portable_support_table.tex`. |
 | `paper/manuscript/tables/s3_paired_quality.tex` | Table 3 staged LaTeX for the matched S3 pgvector-vs-FAISS quality audit. |
 | `paper/manuscript/tables/strict_decision_margins.tex` | Table 4 staged LaTeX for strict-decision margin interpretation. |
 | `paper/manuscript/tables/s2_competitor_check.tex` | Table 5 staged LaTeX for the larger same-machine S2 FAISS-vs-Qdrant check. |

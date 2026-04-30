@@ -269,6 +269,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "s3_all_evidence_hit.csv").exists()
     assert (out_dir / "s3_all_evidence_hit.tex").exists()
     assert (out_dir / "portable_support_table.csv").exists()
+    assert (out_dir / "portable_support_table.tex").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
     assert (out_dir / "portable_task_cost_by_budget.png").exists()
     assert (out_dir / "portable_task_cost_by_budget.meta.json").exists()
@@ -302,6 +303,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert set(REQUIRED_ADAPTERS) <= set(support["engine"].astype(str))
     assert "reportable" in support.columns
     assert "included_in_report" in support.columns
+    assert "\\label{tab:portable-support}" in (out_dir / "portable_support_table.tex").read_text(encoding="utf-8")
     assert task_cost_meta["mode"] == "portable-agentic"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns
