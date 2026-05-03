@@ -1,4 +1,4 @@
-"""Build the bounded HotpotQA-portable corpus from the official dev distractor set."""
+"""Build the bounded HotpotQA-MaxionBench corpus from the official dev distractor set."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def preprocess_hotpot_portable(
     meta = {
         "schema_version": PROCESSED_SCHEMA_VERSION,
         "preprocess_version": "0.1",
-        "dataset_name": "hotpotqa-portable",
+        "dataset_name": "hotpotqa-maxionbench",
         "family": "D4",
         "task_type": "text_retrieval_strict",
         "metric": "evidence_coverage",
@@ -108,7 +108,7 @@ def preprocess_hotpot_portable(
     write_qrels_tsv(out_dir / "qrels.tsv", qrels_rows)
 
     manifest = {
-        "dataset_name": "hotpotqa-portable",
+        "dataset_name": "hotpotqa-maxionbench",
         "question_count": len(query_rows),
         "doc_count": len(corpus_rows),
         "qrel_count": len(qrels_rows),
@@ -123,7 +123,7 @@ def preprocess_hotpot_portable(
     write_json(out_dir / "checksums.json", checksums)
     return {
         "output_dir": str(out_dir.expanduser().resolve()),
-        "dataset_name": "hotpotqa-portable",
+        "dataset_name": "hotpotqa-maxionbench",
         "num_docs": len(corpus_rows),
         "num_queries": len(query_rows),
         "num_qrels": len(qrels_rows),
@@ -131,7 +131,7 @@ def preprocess_hotpot_portable(
 
 
 def parse_args(argv: list[str] | None = None):
-    parser = ArgumentParser(description="Build the bounded HotpotQA-portable corpus from the official dev distractor set")
+    parser = ArgumentParser(description="Build the bounded HotpotQA-MaxionBench corpus from the official dev distractor set")
     parser.add_argument("--input", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--json", action="store_true")

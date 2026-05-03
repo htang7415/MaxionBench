@@ -21,9 +21,9 @@ def test_portable_setup_runs_services_and_conformance(tmp_path: Path, monkeypatc
 
     summary = workflow_mod.portable_setup(repo_root=tmp_path)
 
-    assert summary["mode"] == "portable-setup"
+    assert summary["mode"] == "maxionbench-setup"
     assert calls == [
-        ("services", ["up", "--profile", "portable", "--wait", "--json"]),
+        ("services", ["up", "--profile", "maxionbench", "--wait", "--json"]),
         (
             "conformance",
             [
@@ -49,7 +49,7 @@ def test_portable_setup_raises_when_services_fail(tmp_path: Path, monkeypatch) -
         workflow_mod.portable_setup(repo_root=tmp_path)
         raise AssertionError("expected portable_setup to fail")
     except RuntimeError as exc:
-        assert str(exc) == "portable services startup failed with exit code 1"
+        assert str(exc) == "MaxionBench services startup failed with exit code 1"
 
 
 def test_portable_data_runs_curated_download_and_embedding_jobs(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -72,7 +72,7 @@ def test_portable_data_runs_curated_download_and_embedding_jobs(tmp_path: Path, 
 
     summary = workflow_mod.portable_data(repo_root=tmp_path)
 
-    assert summary["mode"] == "portable-data"
+    assert summary["mode"] == "maxionbench-data"
     assert calls[0] == ("download", ["--root", "dataset", "--cache-dir", ".cache", "--datasets", "scifact,fiqa,crag,hotpotqa"])
     assert calls[1] == (
         "preprocess_datasets",
@@ -91,7 +91,7 @@ def test_portable_data_runs_curated_download_and_embedding_jobs(tmp_path: Path, 
         ["--input", "dataset/D4/hotpotqa/hotpot_dev_distractor_v1.json", "--out", "dataset/processed/hotpot_portable"],
     )
     assert len([call for call in calls if call[0] == "embed"]) == 4
-    assert summary["hotpot_portable"]["status"] == "processed"
+    assert summary["hotpot_maxionbench"]["status"] == "processed"
     assert len(summary["d4_preprocess_jobs"]) == 3
 
 
@@ -112,7 +112,7 @@ def test_portable_data_fails_when_hotpot_source_is_missing(tmp_path: Path, monke
         workflow_mod.portable_data(repo_root=tmp_path)
         raise AssertionError("expected portable_data to fail")
     except FileNotFoundError as exc:
-        assert "portable HotpotQA source missing" in str(exc)
+        assert "HotpotQA-MaxionBench source missing" in str(exc)
 
 
 def test_portable_finalize_runs_report_archive_and_shutdown(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -130,7 +130,7 @@ def test_portable_finalize_runs_report_archive_and_shutdown(tmp_path: Path, monk
 
     summary = workflow_mod.portable_finalize(repo_root=tmp_path)
 
-    assert summary["mode"] == "portable-finalize"
+    assert summary["mode"] == "maxionbench-finalize"
     assert calls[0] == (
         "report",
         (
@@ -147,13 +147,13 @@ def test_portable_finalize_runs_report_archive_and_shutdown(tmp_path: Path, monk
             "artifacts/runs/portable",
             "--figures-dir",
             "artifacts/figures/final",
-            "--hotpot-portable-dir",
+            "--hotpot-maxionbench-dir",
             "dataset/processed/hotpot_portable",
             "--conformance-dir",
             "artifacts/conformance",
         ],
     )
-    assert calls[2] == ("services", ["down", "--profile", "portable"])
+    assert calls[2] == ("services", ["down", "--profile", "maxionbench"])
 
 
 def test_portable_workflow_main_emits_single_json_error_on_failure(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]

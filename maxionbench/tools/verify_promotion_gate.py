@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, SUPPRESS
 import csv
 import json
 import math
@@ -304,14 +304,14 @@ def verify_portable_promotion_gate(
 
     reasons: list[str] = []
     if not rows:
-        reasons.append(f"no portable-agentic result rows found for budget {budget}")
+        reasons.append(f"no MaxionBench result rows found for budget {budget}")
     if missing_scenarios:
         reasons.append(f"missing portable scenarios for budget {budget}: {missing_scenarios}")
     if missing_survivors:
         reasons.append(f"no promoted survivor for portable scenarios: {missing_survivors}")
 
     summary = {
-        "mode": "portable-agentic-promotion",
+        "mode": "maxionbench-promotion",
         "results_path": str(path),
         "from_budget": budget,
         "to_budget": str(rule["to_budget"]),
@@ -370,7 +370,7 @@ def _portable_candidate_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
     scenario = str(row.get("scenario") or "").strip()
     payload = _json_mapping(row.get("search_params_json"))
     profile = str(payload.get("profile") or row.get("profile") or row.get("__meta_profile") or "").strip()
-    if scenario not in PORTABLE_SCENARIOS and profile != "portable-agentic":
+    if scenario not in PORTABLE_SCENARIOS and profile not in {"maxionbench", "portable-agentic"}:
         return None
     budget_level = str(payload.get("budget_level") or row.get("budget_level") or row.get("__meta_budget_level") or "").strip().lower()
     embedding_model = str(payload.get("embedding_model") or row.get("embedding_model") or row.get("__meta_embedding_model") or "")
@@ -554,12 +554,13 @@ def _read_matrix_status_counts(
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description="Verify strict-readiness artifact for promotion gate")
     parser.add_argument(
-        "--portable-results",
+        "--maxionbench-results",
         default=None,
-        help="Directory or results.parquet file to check against portable B0/B1 promotion rules",
+        help="Directory or results.parquet file to check against MaxionBench B0/B1 promotion rules",
     )
+    parser.add_argument("--portable-results", dest="maxionbench_results", default=None, help=SUPPRESS)
     parser.add_argument("--from-budget", default=None, choices=sorted(PORTABLE_PROMOTION_RULES))
-    parser.add_argument("--out-candidates", default=None, help="Optional JSON path for promoted portable candidates")
+    parser.add_argument("--out-candidates", default=None, help="Optional JSON path for promoted MaxionBench candidates")
     parser.add_argument(
         "--strict-readiness-summary",
         default="artifacts/conformance_strict/engine_readiness_summary.json",
@@ -574,11 +575,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.portable_results:
+        if args.maxionbench_results:
             if args.from_budget is None:
-                parser.error("--from-budget is required with --portable-results")
+                parser.error("--from-budget is required with --maxionbench-results")
             summary = verify_portable_promotion_gate(
-                results_path=Path(args.portable_results),
+                results_path=Path(args.maxionbench_results),
                 from_budget=str(args.from_budget),
                 out_candidates_path=Path(args.out_candidates) if args.out_candidates else None,
             )

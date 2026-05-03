@@ -21,7 +21,7 @@ def test_archive_cli_uses_hotpot_override(tmp_path: Path, monkeypatch, capsys) -
             "archive",
             "--results-dir",
             str(repo_root / "results"),
-            "--hotpot-portable-dir",
+            "--hotpot-maxionbench-dir",
             str(hotpot_dir.relative_to(repo_root)),
             "--json",
             "--no-tar",
@@ -30,5 +30,5 @@ def test_archive_cli_uses_hotpot_override(tmp_path: Path, monkeypatch, capsys) -
     assert code == 0
     parsed = json.loads(capsys.readouterr().out)
     items = {str(item.get("label")): item for item in parsed["items"]}
-    assert "hotpot_portable" in items
-    assert items["hotpot_portable"]["src"].endswith("dataset/processed/hotpot_portable")
+    assert "hotpot_maxionbench" in items
+    assert items["hotpot_maxionbench"]["src"].endswith("dataset/processed/hotpot_portable")

@@ -1,4 +1,4 @@
-"""Submit a portable-agentic budget run on a local Mac host."""
+"""Submit a MaxionBench budget run on a local Mac host."""
 
 from __future__ import annotations
 
@@ -104,9 +104,9 @@ def _preflight_processed_datasets(*, repo_root: Path, rows: list[Any]) -> None:
         if bundle == "HOTPOT_PORTABLE":
             hotpot_root = (repo_root / "dataset" / "D4" / "hotpotqa" / "hotpot_dev_distractor_v1.json").resolve()
             raise FileNotFoundError(
-                "portable HotpotQA dataset missing: "
+                "HotpotQA-MaxionBench dataset missing: "
                 f"{resolved}. `s3_multi_hop` requires the official HotpotQA dev distractor source at {hotpot_root}, "
-                "then rerun `maxionbench portable-workflow data --json`."
+                "then rerun `maxionbench workflow data --json`."
             )
         raise FileNotFoundError(f"processed dataset path not found: {resolved}")
 
@@ -211,7 +211,7 @@ def submit_portable(
     )
 
     summary: dict[str, Any] = {
-        "mode": "portable-submit",
+        "mode": "maxionbench-submit",
         "budget": normalized_budget,
         "matrix_path": str(matrix_path.resolve()),
         "generated_config_dir": str(Path(matrix.generated_config_dir).resolve()),
@@ -259,7 +259,7 @@ def _parse_csv_filter(value: str | None) -> set[str] | None:
 
 
 def parse_args(argv: list[str] | None = None) -> Any:
-    parser = ArgumentParser(description="Submit a portable-agentic budget run for a local Mac host.")
+    parser = ArgumentParser(description="Submit a MaxionBench budget run for a local Mac host.")
     parser.add_argument("--budget", required=True, choices=["b0", "b1", "b2"])
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")

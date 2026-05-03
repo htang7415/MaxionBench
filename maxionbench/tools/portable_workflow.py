@@ -1,4 +1,4 @@
-"""High-level workflow commands for the portable lane."""
+"""High-level workflow commands for the MaxionBench lane."""
 
 from __future__ import annotations
 
@@ -97,11 +97,11 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
     lancedb_uri = ensure_lancedb_inproc_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
         _require_success(
-            "portable services startup",
-            services_main(["up", "--profile", "portable", "--wait", "--json"]),
+            "MaxionBench services startup",
+            services_main(["up", "--profile", "maxionbench", "--wait", "--json"]),
         )
         _require_success(
-            "portable conformance matrix",
+            "MaxionBench conformance matrix",
             conformance_matrix_main(
                 [
                     "--config-dir",
@@ -116,10 +116,10 @@ def portable_setup(*, repo_root: Path) -> dict[str, Any]:
             ),
         )
     return {
-        "mode": "portable-setup",
+        "mode": "maxionbench-setup",
         "repo_root": str(resolved_repo_root),
         "lancedb_inproc_uri": lancedb_uri,
-        "services_profile": "portable",
+        "services_profile": "maxionbench",
         "conformance_out_dir": str((resolved_repo_root / "artifacts/conformance").resolve()),
     }
 
@@ -129,7 +129,7 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
     ensure_lancedb_inproc_uri(repo_root=resolved_repo_root)
     with _pushd(resolved_repo_root):
         _require_success(
-            "portable dataset download",
+            "MaxionBench dataset download",
             download_datasets_main(
                 [
                     "--root",
@@ -144,10 +144,10 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
         d4_jobs = _preprocess_portable_d4()
         hotpot_input = (resolved_repo_root / _DEFAULT_HOTPOTQA_INPUT).resolve()
         if not hotpot_input.exists():
-            raise FileNotFoundError(f"portable HotpotQA source missing: {hotpot_input}")
-        hotpot_portable: dict[str, Any]
+            raise FileNotFoundError(f"HotpotQA-MaxionBench source missing: {hotpot_input}")
+        hotpot_maxionbench: dict[str, Any]
         _require_success(
-            "portable HotpotQA preprocessing",
+            "HotpotQA-MaxionBench preprocessing",
             preprocess_hotpot_portable_main(
                 [
                     "--input",
@@ -157,30 +157,30 @@ def portable_data(*, repo_root: Path) -> dict[str, Any]:
                 ]
             ),
         )
-        hotpot_portable = {
+        hotpot_maxionbench = {
             "status": "processed",
             "input_path": str(hotpot_input),
             "output_dir": str((resolved_repo_root / _DEFAULT_HOTPOT_PORTABLE_OUT).resolve()),
         }
         embedding_jobs: list[dict[str, str]] = []
         embedding_inputs = [_DEFAULT_D4_INPUT]
-        if hotpot_portable["status"] == "processed":
+        if hotpot_maxionbench["status"] == "processed":
             embedding_inputs.append(_DEFAULT_HOTPOT_PORTABLE_OUT)
         for input_path in embedding_inputs:
             for model_id in _EMBEDDING_MODELS:
                 _require_success(
-                    f"portable embedding precompute for {input_path} with {model_id}",
+                    f"MaxionBench embedding precompute for {input_path} with {model_id}",
                     precompute_text_embeddings_main(["--input", input_path, "--model-id", model_id]),
                 )
                 embedding_jobs.append({"input": input_path, "model_id": model_id})
     return {
-        "mode": "portable-data",
+        "mode": "maxionbench-data",
         "repo_root": str(resolved_repo_root),
         "datasets": "scifact,fiqa,crag,hotpotqa",
         "d4_processed_root": str((resolved_repo_root / _DEFAULT_D4_INPUT).resolve()),
         "d4_preprocess_jobs": d4_jobs,
-        "hotpot_portable": hotpot_portable,
-        "hotpot_portable_out": str((resolved_repo_root / _DEFAULT_HOTPOT_PORTABLE_OUT).resolve()),
+        "hotpot_maxionbench": hotpot_maxionbench,
+        "hotpot_maxionbench_out": str((resolved_repo_root / _DEFAULT_HOTPOT_PORTABLE_OUT).resolve()),
         "embedding_jobs": embedding_jobs,
     }
 
@@ -198,14 +198,14 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
             behavior_dir=(resolved_repo_root / "docs" / "behavior").resolve(),
         )
         _require_success(
-            "portable archive build",
+            "MaxionBench archive build",
             archive_main(
                 [
                     "--runs-dir",
                     _DEFAULT_RUNS_DIR,
                     "--figures-dir",
                     _DEFAULT_FIGURES_DIR,
-                    "--hotpot-portable-dir",
+                    "--hotpot-maxionbench-dir",
                     _DEFAULT_HOTPOT_PORTABLE_OUT,
                     "--conformance-dir",
                     "artifacts/conformance",
@@ -213,11 +213,11 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
             ),
         )
         _require_success(
-            "portable services shutdown",
-            services_main(["down", "--profile", "portable"]),
+            "MaxionBench services shutdown",
+            services_main(["down", "--profile", "maxionbench"]),
         )
     return {
-        "mode": "portable-finalize",
+        "mode": "maxionbench-finalize",
         "repo_root": str(resolved_repo_root),
         "runs_dir": str(runs_dir),
         "figures_dir": str(figures_dir),
@@ -225,7 +225,7 @@ def portable_finalize(*, repo_root: Path) -> dict[str, Any]:
 
 
 def parse_args(argv: list[str] | None = None) -> Any:
-    parser = ArgumentParser(description="High-level workflow commands for the portable lane.")
+    parser = ArgumentParser(description="High-level workflow commands for the MaxionBench lane.")
     parser.add_argument("phase", choices=["setup", "data", "finalize"])
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--json", action="store_true")

@@ -1,5 +1,5 @@
 {
-  "dataset_name": "hotpotqa-portable",
+  "dataset_name": "hotpotqa-maxionbench",
   "doc_count": 66635,
   "qrel_count": 14810,
   "question_count": 7405,

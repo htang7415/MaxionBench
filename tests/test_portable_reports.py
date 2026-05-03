@@ -16,16 +16,21 @@ from maxionbench.orchestration.runner import run_from_config
 from maxionbench.reports.portable_exports import (
     _cost_formula_table,
     _cost_sensitivity_table,
+    _decision_surface_table,
     _decision_error_ablation_table,
     _engine_configuration_table,
     _extract_portable_frame,
+    _index_search_configuration,
     _latency_distribution_table,
     _neurips_main_results_table,
     _minimum_viable_deployment_sensitivity_table,
     _minimum_viable_deployment_table,
     _portable_decision_table,
+    _quality_floor_survivor_table,
     _s3_all_evidence_hit_table,
+    _s2_write_diagnostic_table,
     _spearman_rank_correlation,
+    _strict_decision_margin_table,
     _winner_rows,
     generate_portable_report_bundle,
 )
@@ -135,7 +140,7 @@ def _portable_cfg(
     cfg_path.write_text(
         yaml.safe_dump(
             {
-                "profile": "portable-agentic",
+                "profile": "maxionbench",
                 "budget_level": budget_level,
                 "engine": "mock",
                 "engine_version": "0.1.0",
@@ -236,7 +241,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
             "--input",
             str(tmp_path / "runs"),
             "--mode",
-            "portable-agentic",
+            "maxionbench",
             "--out",
             str(out_dir),
             "--conformance-matrix",
@@ -254,16 +259,24 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "minimum_viable_deployment_sensitivity.csv").exists()
     assert (out_dir / "portable_decision_table.csv").exists()
     assert (out_dir / "portable_decision_table.tex").exists()
+    assert (out_dir / "decision_surface.csv").exists()
+    assert (out_dir / "decision_surface.tex").exists()
+    assert (out_dir / "s2_write_diagnostics.csv").exists()
+    assert (out_dir / "s2_write_diagnostics.tex").exists()
     assert (out_dir / "neurips_main_results.csv").exists()
     assert (out_dir / "neurips_main_results.tex").exists()
     assert (out_dir / "decision_error_ablation.csv").exists()
     assert (out_dir / "decision_error_ablation.tex").exists()
+    assert (out_dir / "quality_floor_survivors.csv").exists()
+    assert (out_dir / "quality_floor_survivors.tex").exists()
     assert (out_dir / "cost_formula.csv").exists()
     assert (out_dir / "cost_formula.tex").exists()
     assert (out_dir / "cost_sensitivity.csv").exists()
     assert (out_dir / "cost_sensitivity.tex").exists()
     assert (out_dir / "latency_distribution.csv").exists()
     assert (out_dir / "latency_distribution.tex").exists()
+    assert (out_dir / "strict_decision_margins.csv").exists()
+    assert (out_dir / "strict_decision_margins.tex").exists()
     assert (out_dir / "engine_configuration.csv").exists()
     assert (out_dir / "engine_configuration.tex").exists()
     assert (out_dir / "s3_all_evidence_hit.csv").exists()
@@ -284,8 +297,11 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     winners = pd.read_csv(out_dir / "portable_winners.csv")
     deployment = pd.read_csv(out_dir / "minimum_viable_deployment.csv")
     decision = pd.read_csv(out_dir / "portable_decision_table.csv")
+    decision_surface = pd.read_csv(out_dir / "decision_surface.csv")
+    s2_write_diagnostics = pd.read_csv(out_dir / "s2_write_diagnostics.csv")
     stability = pd.read_csv(out_dir / "portable_stability.csv")
     latency = pd.read_csv(out_dir / "latency_distribution.csv")
+    strict_margins = pd.read_csv(out_dir / "strict_decision_margins.csv")
     engine_configuration = pd.read_csv(out_dir / "engine_configuration.csv")
     support = pd.read_csv(out_dir / "portable_support_table.csv")
     task_cost_meta = json.loads((out_dir / "portable_task_cost_by_budget.meta.json").read_text(encoding="utf-8"))
@@ -303,7 +319,19 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert not decision.empty
     assert "strict_p99_engine" in decision.columns
     assert "quality_winner_engine" in decision.columns
+    assert {"workload", "role", "strict_p99_pass", "p99_max_ms"} <= set(decision_surface.columns)
+    assert "B2 decision-surface rows" in (out_dir / "decision_surface.tex").read_text(encoding="utf-8")
+    assert {"post_insert_hit_at_10_1s", "p95_visibility_latency_ms", "event_count"} <= set(s2_write_diagnostics.columns)
+    assert "not a separate insert-ack latency" in (out_dir / "s2_write_diagnostics.tex").read_text(encoding="utf-8")
     assert {"clients_read_write", "boundary"} <= set(latency.columns)
+    assert {
+        "workload",
+        "strict_choice",
+        "next_strict_candidate",
+        "delta_quality",
+        "delta_task_cost_est",
+        "delta_p99_ms",
+    } <= set(strict_margins.columns)
     assert "R/W clients" in latency_tex
     assert "Boundary" in latency_tex
     assert "adapter.query plus top-k materialization" in latency_tex
@@ -311,12 +339,18 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert "Index/search" in engine_configuration_tex
     assert "Metric" in engine_configuration_tex
     assert "Flush/commit" in engine_configuration_tex
+    faiss_config = engine_configuration.loc[engine_configuration["engine"].astype(str) == "faiss-cpu"].iloc[0]
+    assert "exact IndexFlatIP" in str(faiss_config["index_search_configuration"])
+    assert "ignored by flat index" in _index_search_configuration(
+        engine="faiss-cpu",
+        config={"metric": "ip", "index_params": {}, "search_sweep": [{"hnsw_ef": 32}], "top_k": 10},
+    )
     assert not support.empty
     assert set(REQUIRED_ADAPTERS) <= set(support["engine"].astype(str))
     assert "reportable" in support.columns
     assert "included_in_report" in support.columns
     assert "\\label{tab:portable-support}" in (out_dir / "portable_support_table.tex").read_text(encoding="utf-8")
-    assert task_cost_meta["mode"] == "portable-agentic"
+    assert task_cost_meta["mode"] == "maxionbench"
     assert "rows_used" in task_cost_meta
     assert "spearman_rho" in stability.columns
 
@@ -381,6 +415,183 @@ def test_neurips_main_results_table_includes_quality_and_post_insert_ci_fields()
     assert row["post_insert_hit_at_10_5s_ci95_low"] < row["post_insert_hit_at_10_5s_ci95_high"]
     assert row["post_insert_event_count"] == 500
     assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
+
+
+def test_neurips_main_results_p99_matches_latency_distribution_strict_choice() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 1,
+                "clients_write": 0,
+                "rank_within_budget": 1,
+                "engine": "engine-s1",
+                "embedding_model": "emb-s1",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "p50_ms": 4.0,
+                "p95_ms": 6.0,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 4,
+                "clients_write": 0,
+                "rank_within_budget": 1,
+                "engine": "engine-s1",
+                "embedding_model": "emb-s1",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.52,
+                "p50_ms": 5.0,
+                "p95_ms": 7.0,
+                "p99_ms": 12.0,
+                "qps": 90.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.1,
+            },
+        ]
+    )
+    broader_frame = pd.concat(
+        [
+            winners,
+            pd.DataFrame(
+                [
+                    {
+                        **winners.iloc[0].to_dict(),
+                        "clients_read": 8,
+                        "p99_ms": 99.0,
+                        "task_cost_est": 1.2,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 1.0,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+
+    main = _neurips_main_results_table(frame=broader_frame, winners=winners, stability=stability)
+    decision = _portable_decision_table(winners=winners, stability=stability)
+    latency = _latency_distribution_table(winners=winners, decision=decision)
+    strict_latency = latency.loc[latency["row_role"] == "strict choice"].iloc[0]
+
+    assert main.iloc[0]["p99_ms_max"] == pytest.approx(strict_latency["p99_max_ms"])
+    assert main.iloc[0]["p99_ms_max"] == pytest.approx(12.0)
+
+
+def test_strict_decision_margin_p99_delta_uses_latency_distribution() -> None:
+    winners = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 1,
+                "clients_write": 0,
+                "rank_within_budget": 1,
+                "engine": "faiss-cpu",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "p50_ms": 4.0,
+                "p95_ms": 6.0,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 4,
+                "clients_write": 0,
+                "rank_within_budget": 1,
+                "engine": "faiss-cpu",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "p50_ms": 5.0,
+                "p95_ms": 7.0,
+                "p99_ms": 12.0,
+                "qps": 90.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 1,
+                "clients_write": 0,
+                "rank_within_budget": 2,
+                "engine": "lancedb-inproc",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "p50_ms": 14.0,
+                "p95_ms": 26.0,
+                "p99_ms": 30.0,
+                "qps": 80.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 4,
+                "clients_write": 0,
+                "rank_within_budget": 2,
+                "engine": "lancedb-inproc",
+                "embedding_model": "BAAI/bge-small-en-v1.5",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "p50_ms": 15.0,
+                "p95_ms": 36.0,
+                "p99_ms": 40.0,
+                "qps": 70.0,
+                "measure_requests": 10,
+                "task_cost_est": 1.0,
+            },
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 1.0,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+
+    decision = _portable_decision_table(winners=winners, stability=stability)
+    latency = _latency_distribution_table(winners=winners, decision=decision)
+    margins = _strict_decision_margin_table(winners=winners, latency_distribution=latency)
+    row = margins.iloc[0]
+
+    assert row["delta_p99_ms"] == pytest.approx(28.0)
+    assert row["delta_p99_ms"] == pytest.approx(row["candidate_p99_max_ms"] - row["strict_p99_max_ms"])
+    assert row["interpretation"] == "cost/quality tie; p99 tie-break"
 
 
 def test_neurips_main_results_table_prefers_archived_observations(tmp_path: Path) -> None:
@@ -496,7 +707,7 @@ def test_extract_portable_frame_falls_back_when_string_columns_are_none() -> Non
                 ),
                 "budget_level": None,
                 "embedding_model": None,
-                "__meta_profile": "portable-agentic",
+                "__meta_profile": "maxionbench",
                 "__meta_budget_level": "b0",
                 "__meta_embedding_model": "fallback-embedding",
             }
@@ -739,11 +950,15 @@ def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> 
         ]
     )
     decision = _portable_decision_table(winners=winners, stability=stability)
+    decision_surface = _decision_surface_table(winners=winners, decision=decision)
+    s2_write = _s2_write_diagnostic_table(winners=winners, decision=decision)
 
     decision_error = _decision_error_ablation_table(decision=decision, stability=stability)
+    quality_floor = _quality_floor_survivor_table(winners=winners)
     cost_formula = _cost_formula_table()
     cost_sensitivity = _cost_sensitivity_table(winners=winners)
     latency = _latency_distribution_table(winners=winners, decision=decision)
+    strict_margins = _strict_decision_margin_table(winners=winners, latency_distribution=latency)
     support = pd.DataFrame(
         [
             {
@@ -757,11 +972,45 @@ def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> 
     all_evidence = _s3_all_evidence_hit_table(winners=winners, decision=decision)
 
     assert {
+        "workload",
+        "role",
+        "engine",
+        "embedding_model",
+        "quality_metric",
+        "quality_value",
+        "post_insert_hit_at_10_5s",
+        "task_cost_est",
+        "p99_max_ms",
+        "strict_p99_pass",
+        "source_path",
+    } <= set(decision_surface.columns)
+    assert {
+        "role",
+        "engine",
+        "embedding_model",
+        "ndcg_at_10",
+        "post_insert_hit_at_10_1s",
+        "post_insert_hit_at_10_5s",
+        "p95_visibility_latency_ms",
+        "event_count",
+        "errors",
+        "p99_max_ms",
+        "source_path",
+    } <= set(s2_write.columns)
+    assert {
         "missing_protocol_component",
         "wrong_conclusion_caused_by_omission",
         "manuscript_evidence",
         "source_path",
     } <= set(decision_error.columns)
+    assert {
+        "workload",
+        "quality_metric",
+        "quality_floor_source",
+        "floor_value",
+        "strict_p99_survivor_count_b2",
+        "source_path",
+    } <= set(quality_floor.columns)
     assert {"term", "meaning", "unit", "value_source", "source_path"} <= set(cost_formula.columns)
     assert {
         "workload",
@@ -784,6 +1033,23 @@ def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> 
         "boundary",
         "source_path",
     } <= set(latency.columns)
+    assert {
+        "workload",
+        "strict_choice",
+        "strict_engine",
+        "strict_embedding_model",
+        "next_strict_candidate",
+        "candidate_engine",
+        "candidate_embedding_model",
+        "quality_metric",
+        "delta_quality",
+        "delta_task_cost_est",
+        "strict_p99_max_ms",
+        "candidate_p99_max_ms",
+        "delta_p99_ms",
+        "interpretation",
+        "source_path",
+    } <= set(strict_margins.columns)
     assert {
         "engine",
         "mode",
@@ -832,7 +1098,7 @@ def test_generate_portable_report_bundle_requires_conformance_inputs(tmp_path: P
                 "clients_read": 1,
                 "repeat_idx": 0,
                 "search_params_json": "{}",
-                "__meta_profile": "portable-agentic",
+                "__meta_profile": "maxionbench",
             }
         ]
     ).to_parquet(run_dir / "results.parquet", index=False)
@@ -874,7 +1140,7 @@ def test_support_table_filters_non_reportable_engines_from_report(tmp_path: Path
                 "clients_read": 1,
                 "repeat_idx": 0,
                 "search_params_json": "{}",
-                "__meta_profile": "portable-agentic",
+                "__meta_profile": "maxionbench",
             },
             {
                 "run_id": "pgvector-run",
@@ -894,7 +1160,7 @@ def test_support_table_filters_non_reportable_engines_from_report(tmp_path: Path
                 "clients_read": 1,
                 "repeat_idx": 0,
                 "search_params_json": "{}",
-                "__meta_profile": "portable-agentic",
+                "__meta_profile": "maxionbench",
             },
         ]
     )

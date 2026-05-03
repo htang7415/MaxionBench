@@ -252,7 +252,7 @@ def test_submit_portable_fails_early_when_hotpot_portable_dataset_is_missing(tmp
     monkeypatch.setattr(submit_mod, "services_up", lambda **kwargs: (_ for _ in ()).throw(AssertionError("services should not start")))
     monkeypatch.setattr(submit_mod, "execute_run_matrix", lambda **kwargs: (_ for _ in ()).throw(AssertionError("execution should not start")))
 
-    with pytest.raises(FileNotFoundError, match="portable HotpotQA dataset missing"):
+    with pytest.raises(FileNotFoundError, match="HotpotQA-MaxionBench dataset missing"):
         submit_mod.submit_portable(
             budget="b0",
             repo_root=tmp_path,

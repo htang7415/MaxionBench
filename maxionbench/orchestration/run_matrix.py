@@ -211,7 +211,7 @@ def _load_templates(root: Path, *, skip_s6: bool) -> list[tuple[str, dict[str, A
 
 
 def _expand_template_variants(*, template_name: str, payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    if str(payload.get("profile", "")).strip().lower() != "portable-agentic":
+    if str(payload.get("profile", "")).strip().lower() not in {"maxionbench", "portable-agentic"}:
         return [(template_name, dict(payload))]
     stem = Path(template_name).stem
     variants: list[tuple[str, dict[str, Any]]] = []
@@ -307,7 +307,7 @@ def _slug(value: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description="Build a portable-agentic run matrix from scenario and engine configs")
+    parser = ArgumentParser(description="Build a MaxionBench run matrix from scenario and engine configs")
     parser.add_argument("--scenario-config-dir", default="configs/scenarios_portable")
     parser.add_argument("--engine-config-dir", default="configs/engines_portable")
     parser.add_argument("--out-dir", required=True)

@@ -1,4 +1,4 @@
-"""Verify portable-agentic scenario config pins."""
+"""Verify MaxionBench scenario config pins."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def verify_scenario_config_dir(config_dir: Path) -> dict[str, Any]:
 
 def _verify_common(path: Path, cfg: RunConfig) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
-    _expect_equal(errors, path, "profile", cfg.profile, "portable-agentic")
+    _expect_equal(errors, path, "profile", cfg.profile, "maxionbench")
     if cfg.scenario == "s3_multi_hop":
         _expect_equal(errors, path, "dataset_bundle", cfg.dataset_bundle, "HOTPOT_PORTABLE")
     else:
@@ -107,7 +107,7 @@ def _error(errors: list[dict[str, Any]], path: Path, field: str, expected: Any, 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description="Verify portable-agentic scenario config pins.")
+    parser = ArgumentParser(description="Verify MaxionBench scenario config pins.")
     parser.add_argument("--config-dir", default="configs/scenarios_portable")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)

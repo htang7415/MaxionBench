@@ -196,7 +196,7 @@ def test_download_datasets_writes_portable_manifest(tmp_path: Path, monkeypatch:
     manifest_path = root / "manifest.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["profile"] == "portable-agentic-bootstrap"
+    assert manifest["profile"] == "maxionbench-bootstrap"
     assert "D1" not in manifest
     assert "D2" not in manifest
     assert "D3" not in manifest

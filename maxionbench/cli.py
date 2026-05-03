@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, SUPPRESS
 from pathlib import Path
 import re
+import sys
 
 from maxionbench.conformance.run import main as conformance_main
 
 _MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
+_LEGACY_COMMAND_ALIASES = {
+    "preprocess-hotpot-portable": "preprocess-hotpot-maxionbench",
+    "submit-portable": "submit",
+    "portable-workflow": "workflow",
+}
+_LEGACY_VALUE_ALIASES = {
+    "--mode": {"portable-agentic": "maxionbench"},
+    "--profile": {"portable": "maxionbench"},
+}
+
+
+def _normalize_argv(argv: list[str] | None) -> list[str]:
+    normalized = list(sys.argv[1:] if argv is None else argv)
+    if normalized and normalized[0] in _LEGACY_COMMAND_ALIASES:
+        normalized[0] = _LEGACY_COMMAND_ALIASES[normalized[0]]
+    for idx, token in enumerate(normalized[:-1]):
+        aliases = _LEGACY_VALUE_ALIASES.get(token)
+        if aliases and normalized[idx + 1] in aliases:
+            normalized[idx + 1] = aliases[normalized[idx + 1]]
+    return normalized
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = _normalize_argv(argv)
     parser = ArgumentParser(prog="maxionbench")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -72,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
     download_datasets_parser = subparsers.add_parser(
         "download-datasets",
-        help="Download the portable-agentic dataset tree under dataset/",
+        help="Download the MaxionBench dataset tree under dataset/",
     )
     download_datasets_parser.add_argument("--root", default="dataset")
     download_datasets_parser.add_argument("--cache-dir", default=".cache")
@@ -107,8 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     preprocess_datasets_parser.add_argument("--json", action="store_true")
 
     preprocess_hotpot_portable_parser = subparsers.add_parser(
-        "preprocess-hotpot-portable",
-        help="Build the bounded HotpotQA-portable corpus from the official dev distractor set",
+        "preprocess-hotpot-maxionbench",
+        help="Build the bounded HotpotQA-MaxionBench corpus from the official dev distractor set",
     )
     preprocess_hotpot_portable_parser.add_argument("--input", required=True)
     preprocess_hotpot_portable_parser.add_argument("--out", required=True)
@@ -162,8 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     execute_run_matrix_parser.add_argument("--json", action="store_true")
 
     submit_portable_parser = subparsers.add_parser(
-        "submit-portable",
-        help="Generate and execute a portable-agentic budget run for a local Mac host",
+        "submit",
+        help="Generate and execute a MaxionBench budget run for a local Mac host",
     )
     submit_portable_parser.add_argument("--budget", required=True, choices=["b0", "b1", "b2"])
     submit_portable_parser.add_argument("--repo-root", default=".")
@@ -188,8 +210,8 @@ def main(argv: list[str] | None = None) -> int:
     submit_portable_parser.add_argument("--json", action="store_true")
 
     portable_workflow_parser = subparsers.add_parser(
-        "portable-workflow",
-        help="Run one high-level portable workflow phase",
+        "workflow",
+        help="Run one high-level MaxionBench workflow phase",
     )
     portable_workflow_parser.add_argument("phase", choices=["setup", "data", "finalize"])
     portable_workflow_parser.add_argument("--repo-root", default=".")
@@ -236,7 +258,8 @@ def main(argv: list[str] | None = None) -> int:
         "verify-promotion-gate",
         help="Verify strict-readiness artifact before promotion",
     )
-    verify_promotion_gate_parser.add_argument("--portable-results", default=None)
+    verify_promotion_gate_parser.add_argument("--maxionbench-results", default=None)
+    verify_promotion_gate_parser.add_argument("--portable-results", dest="maxionbench_results", default=None, help=SUPPRESS)
     verify_promotion_gate_parser.add_argument("--from-budget", default=None, choices=["b0", "b1"])
     verify_promotion_gate_parser.add_argument("--out-candidates", default=None)
     verify_promotion_gate_parser.add_argument(
@@ -260,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report_parser = subparsers.add_parser("report", help="Generate report artifacts")
     report_parser.add_argument("--input", required=True)
-    report_parser.add_argument("--mode", required=True, choices=["portable-agentic"])
+    report_parser.add_argument("--mode", required=True, choices=["maxionbench"])
     report_parser.add_argument("--out", required=False)
     report_parser.add_argument("--milestone-id", default=None, help="Milestone ID (for example M3)")
     report_parser.add_argument("--conformance-matrix", default="artifacts/conformance/conformance_matrix.csv")
@@ -301,9 +324,9 @@ def main(argv: list[str] | None = None) -> int:
     services_parser.add_argument("action", choices=["up", "down", "status", "wait"])
     services_parser.add_argument(
         "--profile",
-        choices=["portable"],
-        default="portable",
-        help="Service group to target (portable = qdrant, pgvector)",
+        choices=["maxionbench"],
+        default="maxionbench",
+        help="Service group to target (maxionbench = qdrant, pgvector)",
     )
     services_parser.add_argument(
         "--services",
@@ -334,7 +357,8 @@ def main(argv: list[str] | None = None) -> int:
     archive_parser.add_argument("--results-dir", default="results")
     archive_parser.add_argument("--runs-dir", default=None)
     archive_parser.add_argument("--figures-dir", default=None)
-    archive_parser.add_argument("--hotpot-portable-dir", default=None)
+    archive_parser.add_argument("--hotpot-maxionbench-dir", default=None)
+    archive_parser.add_argument("--hotpot-portable-dir", dest="hotpot_maxionbench_dir", default=None, help=SUPPRESS)
     archive_parser.add_argument("--conformance-dir", default=None)
     archive_parser.add_argument("--docs", default=None)
     archive_parser.add_argument("--no-tar", action="store_true")
@@ -487,7 +511,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             preprocess_argv.append("--json")
         return preprocess_datasets_main(preprocess_argv)
-    if args.command == "preprocess-hotpot-portable":
+    if args.command == "preprocess-hotpot-maxionbench":
         from maxionbench.tools.preprocess_hotpot_portable import main as preprocess_hotpot_portable_main
 
         preprocess_argv: list[str] = [
@@ -581,7 +605,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             execute_argv.append("--json")
         return execute_run_matrix_main(execute_argv)
-    if args.command == "submit-portable":
+    if args.command == "submit":
         from maxionbench.tools.submit_portable import main as submit_portable_main
 
         submit_argv = [
@@ -629,7 +653,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             submit_argv.append("--json")
         return submit_portable_main(submit_argv)
-    if args.command == "portable-workflow":
+    if args.command == "workflow":
         from maxionbench.tools.portable_workflow import main as portable_workflow_main
 
         workflow_argv = [args.phase, "--repo-root", args.repo_root]
@@ -692,8 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         from maxionbench.tools.verify_promotion_gate import main as verify_promotion_gate_main
 
         verify_argv: list[str] = []
-        if args.portable_results:
-            verify_argv.extend(["--portable-results", args.portable_results])
+        if args.maxionbench_results:
+            verify_argv.extend(["--maxionbench-results", args.maxionbench_results])
             if args.from_budget:
                 verify_argv.extend(["--from-budget", args.from_budget])
             if args.out_candidates:
@@ -726,13 +750,13 @@ def main(argv: list[str] | None = None) -> int:
             snapshot_argv.append("--json")
         return snapshot_required_checks_main(snapshot_argv)
     if args.command == "report":
-        if args.mode == "portable-agentic":
+        if args.mode == "maxionbench":
             from maxionbench.reports.portable_exports import generate_portable_report_bundle
 
             if args.milestone_id:
-                raise ValueError("--milestone-id is not valid when --mode portable-agentic")
+                raise ValueError("--milestone-id is not valid when --mode maxionbench")
             if not args.out:
-                raise ValueError("--out is required when --mode portable-agentic")
+                raise ValueError("--out is required when --mode maxionbench")
             generate_portable_report_bundle(
                 input_dir=Path(args.input).resolve(),
                 out_dir=Path(args.out).resolve(),
@@ -816,8 +840,8 @@ def main(argv: list[str] | None = None) -> int:
             archive_argv.extend(["--runs-dir", args.runs_dir])
         if args.figures_dir:
             archive_argv.extend(["--figures-dir", args.figures_dir])
-        if args.hotpot_portable_dir:
-            archive_argv.extend(["--hotpot-portable-dir", args.hotpot_portable_dir])
+        if args.hotpot_maxionbench_dir:
+            archive_argv.extend(["--hotpot-maxionbench-dir", args.hotpot_maxionbench_dir])
         if args.conformance_dir:
             archive_argv.extend(["--conformance-dir", args.conformance_dir])
         if args.docs:

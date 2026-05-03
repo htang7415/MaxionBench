@@ -53,7 +53,7 @@ def _portable_row(
     measure_requests: int = 100,
 ) -> dict:
     payload = {
-        "profile": "portable-agentic",
+        "profile": "maxionbench",
         "budget_level": budget,
         "embedding_model": "BAAI/bge-small-en-v1.5",
         "primary_quality_metric": "evidence_coverage@10" if scenario == "s3_multi_hop" else "ndcg_at_10",
@@ -213,7 +213,7 @@ def test_verify_portable_promotion_gate_cli_dispatch(tmp_path: Path, capsys: pyt
     code = cli_main(
         [
             "verify-promotion-gate",
-            "--portable-results",
+            "--maxionbench-results",
             str(results_path),
             "--from-budget",
             "b0",
@@ -223,5 +223,5 @@ def test_verify_portable_promotion_gate_cli_dispatch(tmp_path: Path, capsys: pyt
 
     assert code == 0
     parsed = json.loads(capsys.readouterr().out)
-    assert parsed["mode"] == "portable-agentic-promotion"
+    assert parsed["mode"] == "maxionbench-promotion"
     assert parsed["pass"] is True

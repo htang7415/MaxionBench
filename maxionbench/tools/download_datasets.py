@@ -1,4 +1,4 @@
-"""Bootstrap the portable-agentic dataset tree under ``dataset/``."""
+"""Bootstrap the MaxionBench dataset tree under ``dataset/``."""
 
 from __future__ import annotations
 
@@ -177,9 +177,9 @@ def download_hotpotqa(*, root: Path, timeout_s: float, force: bool) -> dict[str,
 
 def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[str] | None = None) -> Path:
     payload = {
-        "profile": "portable-agentic-bootstrap",
+        "profile": "maxionbench-bootstrap",
         "note": (
-            "Portable-agentic dataset bootstrap for the Apple Silicon paper path. "
+            "MaxionBench dataset bootstrap for the Apple Silicon paper path. "
             "This manifest tracks the local text corpora and one-time manual workspaces required by project.md."
         ),
         "requested_datasets": list(requested_datasets or []),
@@ -217,9 +217,9 @@ def download_datasets(
         "root": str(root),
         "cache_dir": str(cache_dir),
         "requested_datasets": sorted(selected),
-        "portable_agentic_bootstrap": True,
+        "maxionbench_bootstrap": True,
         "warning": (
-            "This downloader populates the portable-agentic text datasets and portable S3 source files only. "
+            "This downloader populates the MaxionBench text datasets and S3 source files only. "
             "The source-of-truth scope is project.md."
         ),
         "fetched": {},
@@ -251,7 +251,7 @@ def download_datasets(
 
 
 def parse_args(argv: list[str] | None = None):
-    parser = ArgumentParser(description="Download the portable-agentic dataset tree under dataset/")
+    parser = ArgumentParser(description="Download the MaxionBench dataset tree under dataset/")
     parser.add_argument("--root", type=Path, default=Path("dataset"))
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache"))
     parser.add_argument("--datasets", default="", help="Optional comma-separated dataset selection")

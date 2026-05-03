@@ -11,10 +11,11 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-# Services that run as Docker containers in the portable profile
-_PORTABLE_SERVICES: list[str] = ["qdrant", "pgvector"]
+# Services that run as Docker containers in the MaxionBench profile
+_MAXIONBENCH_SERVICES: list[str] = ["qdrant", "pgvector"]
 _PROFILE_MAP: dict[str, list[str]] = {
-    "portable": _PORTABLE_SERVICES,
+    "maxionbench": _MAXIONBENCH_SERVICES,
+    "portable": _MAXIONBENCH_SERVICES,
 }
 
 # Host-side ports exposed by docker-compose.yml for each service
@@ -49,7 +50,15 @@ def _find_compose_file(compose_file: str | None) -> Path:
 def _resolve_services(*, profile: str | None, services_csv: str | None) -> list[str]:
     if services_csv:
         return [s.strip() for s in services_csv.split(",") if s.strip()]
-    return _PROFILE_MAP.get(profile or "portable", _PORTABLE_SERVICES)
+    return _PROFILE_MAP.get(profile or "maxionbench", _MAXIONBENCH_SERVICES)
+
+
+def _normalize_argv(argv: list[str] | None) -> list[str]:
+    normalized = list(sys.argv[1:] if argv is None else argv)
+    for idx, token in enumerate(normalized[:-1]):
+        if token == "--profile" and normalized[idx + 1] == "portable":
+            normalized[idx + 1] = "maxionbench"
+    return normalized
 
 
 def _compose_cmd(compose_file: Path) -> list[str]:
@@ -334,13 +343,14 @@ def _print_summary(summary: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = _normalize_argv(argv)
     parser = ArgumentParser(description="Manage benchmark service containers")
     parser.add_argument("action", choices=["up", "down", "status", "wait"])
     parser.add_argument(
         "--profile",
-        choices=["portable"],
-        default="portable",
-        help="Service group to target (portable = qdrant, pgvector)",
+        choices=["maxionbench"],
+        default="maxionbench",
+        help="Service group to target (maxionbench = qdrant, pgvector)",
     )
     parser.add_argument(
         "--services",

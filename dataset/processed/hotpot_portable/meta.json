@@ -1,5 +1,5 @@
 {
-  "dataset_name": "hotpotqa-portable",
+  "dataset_name": "hotpotqa-maxionbench",
   "extra": {
     "retrieval_unit": "context_paragraph",
     "source_family": "HotpotQA",

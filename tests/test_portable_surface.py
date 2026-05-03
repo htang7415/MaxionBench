@@ -120,7 +120,7 @@ def _portable_cfg(
     cfg_path.write_text(
         yaml.safe_dump(
             {
-                "profile": "portable-agentic",
+                "profile": "maxionbench",
                 "budget_level": budget_level,
                 "engine": "mock",
                 "engine_version": "0.1.0",
@@ -164,7 +164,7 @@ def test_portable_configs_load_with_new_schema_fields() -> None:
         ("configs/scenarios_portable/s3_multi_hop.yaml", "s3_multi_hop"),
     ]:
         cfg = load_run_config(Path(rel_path))
-        assert cfg.profile == "portable-agentic"
+        assert cfg.profile == "maxionbench"
         assert cfg.budget_level == "b1"
         assert cfg.embedding_model == "BAAI/bge-small-en-v1.5"
         assert cfg.embedding_dim == 384
@@ -353,11 +353,10 @@ def test_preprocess_hotpot_portable_builds_processed_dataset(tmp_path: Path) -> 
 
     summary = preprocess_hotpot_portable(input_path=input_path, out_dir=out_dir)
 
-    assert summary["dataset_name"] == "hotpotqa-portable"
+    assert summary["dataset_name"] == "hotpotqa-maxionbench"
     assert (out_dir / "meta.json").exists()
     assert (out_dir / "corpus.jsonl").exists()
     assert (out_dir / "queries.jsonl").exists()
     assert (out_dir / "qrels.tsv").exists()
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "checksums.json").exists()
-

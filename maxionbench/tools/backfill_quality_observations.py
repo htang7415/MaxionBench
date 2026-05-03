@@ -1,4 +1,4 @@
-"""Backfill per-query quality observations for archived portable runs."""
+"""Backfill per-query quality observations for archived MaxionBench runs."""
 
 from __future__ import annotations
 

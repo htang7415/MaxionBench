@@ -57,8 +57,8 @@ def _validate_run_dir(run_dir: Path) -> list[dict[str, Any]]:
         profile = str(metadata.get("profile") or "")
         if scenario not in PORTABLE_SCENARIOS:
             errors.append({"path": str(run_dir), "message": f"unsupported portable scenario {scenario!r}"})
-        if profile != "portable-agentic":
-            errors.append({"path": str(run_dir), "message": f"metadata profile must be portable-agentic, got {profile!r}"})
+        if profile not in {"maxionbench", "portable-agentic"}:
+            errors.append({"path": str(run_dir), "message": f"metadata profile must be maxionbench, got {profile!r}"})
     try:
         frame = pd.read_parquet(run_dir / "results.parquet")
     except Exception as exc:

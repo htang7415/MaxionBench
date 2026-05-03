@@ -26,7 +26,7 @@ _LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RunConfig:
-    profile: str = "portable-agentic"
+    profile: str = "maxionbench"
     budget_level: str | None = None
     engine: str = "mock"
     engine_version: str = "0.1.0"

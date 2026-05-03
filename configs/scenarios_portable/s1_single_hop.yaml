@@ -1,4 +1,4 @@
-profile: portable-agentic
+profile: maxionbench
 budget_level: b1
 engine: mock
 engine_version: 0.1.0

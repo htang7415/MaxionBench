@@ -156,7 +156,7 @@ _PORTABLE_BUDGETS: dict[str, dict[str, int]] = {
 def parse_args(argv: list[str] | None = None) -> Namespace:
     parser = ArgumentParser(description="Run a MaxionBench scenario.")
     parser.add_argument("--config", required=True, help="Path to scenario YAML config")
-    parser.add_argument("--budget", default=None, help="Portable benchmark budget level (b0, b1, or b2)")
+    parser.add_argument("--budget", default=None, help="MaxionBench budget level (b0, b1, or b2)")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--no-retry", action="store_true", default=None)
@@ -393,7 +393,7 @@ def _create_benchmark_adapter(*, cfg: RunConfig, metric: str = "ip") -> Any:
 
 
 def _apply_portable_budget(*, cfg: RunConfig, cli_overrides: Mapping[str, Any]) -> RunConfig:
-    if cfg.profile != "portable-agentic" and cfg.scenario not in {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}:
+    if cfg.profile not in {"maxionbench", "portable-agentic"} and cfg.scenario not in {"s1_single_hop", "s2_streaming_memory", "s3_multi_hop"}:
         return cfg
     budget = str(cfg.budget_level or "").strip().lower()
     if budget not in _PORTABLE_BUDGETS:
@@ -2393,7 +2393,7 @@ def _load_portable_s1_dataset(cfg: RunConfig, *, config_path: Path) -> D4Retriev
     beir_root = _resolve_optional_config_value_path(value=cfg.d4_beir_root, config_path=config_path)
     if beir_root is None:
         raise FileNotFoundError(
-            "portable S1 requires processed_dataset_path or d4_beir_root pointing at local text bundles"
+            "S1 requires processed_dataset_path or d4_beir_root pointing at local text bundles"
         )
     return load_d4_from_local_bundles(
         vector_dim=cfg.vector_dim,
@@ -2414,7 +2414,7 @@ def _load_portable_s2_datasets(cfg: RunConfig, *, config_path: Path) -> tuple[D4
         config_path=config_path,
     )
     if processed_dataset_path is None:
-        raise FileNotFoundError("portable S2 requires processed_dataset_path pointing at the processed D4 root")
+        raise FileNotFoundError("S2 requires processed_dataset_path pointing at the processed D4 root")
     background = load_processed_d4_bundle(
         processed_dataset_path,
         vector_dim=cfg.vector_dim,
@@ -2450,7 +2450,7 @@ def _load_portable_s3_dataset(cfg: RunConfig, *, config_path: Path) -> D4Retriev
         config_path=config_path,
     )
     if processed_dataset_path is None:
-        raise FileNotFoundError("portable S3 requires processed_dataset_path pointing at the HotpotQA-portable dataset")
+        raise FileNotFoundError("S3 requires processed_dataset_path pointing at the HotpotQA-MaxionBench dataset")
     return load_processed_text_dataset(
         processed_dataset_path,
         vector_dim=cfg.vector_dim,

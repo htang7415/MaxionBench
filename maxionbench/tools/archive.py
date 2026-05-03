@@ -6,7 +6,7 @@ import hashlib
 import json
 import shutil
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, SUPPRESS
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ _DEFAULT_DOCS: list[str] = ["command.md", "project.md", "prompt.md", "document.m
 _DEFAULT_ARTIFACT_DIRS: dict[str, str] = {
     "runs": "artifacts/runs/portable",
     "figures": "artifacts/figures/final",
-    "hotpot_portable": "dataset/processed/hotpot_portable",
+    "hotpot_maxionbench": "dataset/processed/hotpot_portable",
     "conformance": "artifacts/conformance",
 }
 
@@ -160,10 +160,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Override source for figures (default: artifacts/figures/final)",
     )
     parser.add_argument(
-        "--hotpot-portable-dir",
+        "--hotpot-maxionbench-dir",
         default=None,
-        help="Override source for HotpotQA-portable processed data",
+        help="Override source for HotpotQA-MaxionBench processed data",
     )
+    parser.add_argument("--hotpot-portable-dir", dest="hotpot_maxionbench_dir", default=None, help=SUPPRESS)
     parser.add_argument(
         "--conformance-dir",
         default=None,
@@ -186,8 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         artifact_dirs["runs"] = args.runs_dir
     if args.figures_dir:
         artifact_dirs["figures"] = args.figures_dir
-    if args.hotpot_portable_dir:
-        artifact_dirs["hotpot_portable"] = args.hotpot_portable_dir
+    if args.hotpot_maxionbench_dir:
+        artifact_dirs["hotpot_maxionbench"] = args.hotpot_maxionbench_dir
     if args.conformance_dir:
         artifact_dirs["conformance"] = args.conformance_dir
 
