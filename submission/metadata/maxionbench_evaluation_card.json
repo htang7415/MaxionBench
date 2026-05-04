@@ -8,38 +8,38 @@
     {
       "claim": "Strict 200 ms max-row p99 deployment selects FAISS CPU with bge-small for S1, S2, and S3 in the archived local run bundle.",
       "evidence": [
-        "paper/figures/portable_decision_surface.pdf",
-        "paper/tables/neurips_main_results.csv",
-        "paper/tables/portable_decision_table.csv",
-        "paper/manuscript/tables/strict_decision_margins.tex",
-        "paper/manuscript/tables/strict_faiss_repeat_audit.tex"
+        "submission/figures/portable_decision_surface.pdf",
+        "submission/tables/neurips_main_results.csv",
+        "submission/tables/portable_decision_table.csv",
+        "submission/manuscript/tables/strict_decision_margins.tex",
+        "submission/manuscript/tables/strict_faiss_repeat_audit.tex"
       ],
       "scope": "single local machine, archived MaxionBench bundle"
     },
     {
       "claim": "Objective choice changes conclusions.",
       "evidence": [
-        "paper/tables/portable_decision_table.csv",
-        "paper/figures/portable_mvd_sensitivity.pdf"
+        "submission/tables/portable_decision_table.csv",
+        "submission/figures/portable_mvd_sensitivity.pdf"
       ],
       "scope": "reported MaxionBench objectives and budget rows"
     },
     {
       "claim": "The S3 pgvector quality-first edge is not substantive under matched-query audit.",
       "evidence": [
-        "paper/figures/s3_paired_audit_forest.pdf",
-        "paper/experiments/s3_paired_quality/summary.json",
-        "paper/manuscript/tables/s3_paired_quality.tex"
+        "submission/figures/s3_paired_audit_forest.pdf",
+        "submission/evidence/experiments/s3_paired_quality/summary.json",
+        "submission/manuscript/tables/s3_paired_quality.tex"
       ],
       "scope": "5,000 matched S3 bge-base queries"
     },
     {
       "claim": "S2 Qdrant does not hide a quality or post-insert retrievability win in the paired checks.",
       "evidence": [
-        "paper/experiments/s2_standard_competitor/paired_faiss_qdrant_summary.json",
-        "paper/experiments/s2_mini_bundle/s2_b2_deadline_mini_bundle_summary.json",
-        "paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
-        "paper/manuscript/tables/s2_competitor_check.tex"
+        "submission/evidence/experiments/s2_standard_competitor/paired_faiss_qdrant_summary.json",
+        "submission/evidence/experiments/s2_mini_bundle/s2_b2_deadline_mini_bundle_summary.json",
+        "submission/evidence/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+        "submission/manuscript/tables/s2_competitor_check.tex"
       ],
       "scope": "standard Qdrant paired check, bounded same-orchestration mini-bundle, and larger same-machine two-repeat paired check"
     }
@@ -50,18 +50,18 @@
     "end-to-end agent task success",
     "claims about managed vector database deployments",
     "second-machine, distributed, GPU, or managed-service robustness claims",
-    "high-probe/high-ef service-engine sweep claims beyond the targeted checks in paper/experiments"
+    "high-probe/high-ef service-engine sweep claims beyond the targeted checks in submission/evidence/experiments"
   ],
   "datasets": [
     {
       "name": "D4 MaxionBench S1/S2 processed text bundles",
       "role": "single-hop retrieval and streaming-memory background/events",
-      "metadata": "paper tables and run configs"
+      "metadata": "submission tables and run configs"
     },
     {
       "name": "HotpotQA-MaxionBench",
       "role": "S3 multi-evidence retrieval",
-      "metadata": "paper/metadata/hotpotqa_portable_croissant.jsonld"
+      "metadata": "submission/metadata/hotpotqa_portable_croissant.jsonld"
     }
   ],
   "engines": [

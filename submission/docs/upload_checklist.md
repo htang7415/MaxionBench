@@ -13,6 +13,7 @@
 - Rebuild `submission/manuscript/main.pdf` from a clean LaTeX state.
 - Confirm page accounting against the active NeurIPS Evaluations & Datasets instructions.
 - Confirm the anonymous artifact URL in `submission/metadata/hotpotqa_portable_croissant.jsonld`.
+- Fix the current anonymous artifact URL before upload if it still returns HTTP 401/404 to unauthenticated reviewers.
 - Confirm final repository/data licenses, especially inherited HotpotQA terms.
 - Confirm no interrupted or partial runs are cited as paper evidence.
 - Confirm all public GitHub submission-facing documents live under `submission/`.

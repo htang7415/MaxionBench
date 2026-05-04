@@ -12,6 +12,6 @@ matrix.
 Run commands:
 
 ```bash
-python -c "from pathlib import Path; from maxionbench.orchestration.runner import run_from_config; run_from_config(Path('paper/experiments/s3_all_evidence/lancedb_small.yaml'))"
-python -c "from pathlib import Path; from maxionbench.orchestration.runner import run_from_config; run_from_config(Path('paper/experiments/s3_all_evidence/qdrant_small.yaml'))"
+python -c "from pathlib import Path; from maxionbench.orchestration.runner import run_from_config; run_from_config(Path('submission/evidence/experiments/s3_all_evidence/lancedb_small.yaml'))"
+python -c "from pathlib import Path; from maxionbench.orchestration.runner import run_from_config; run_from_config(Path('submission/evidence/experiments/s3_all_evidence/qdrant_small.yaml'))"
 ```

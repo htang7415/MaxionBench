@@ -40,7 +40,7 @@
       "query_level_observations": 5000,
       "role": "quality-first matched-audit row",
       "source_paths": [
-        "paper/experiments/s3_paired_quality/observations/pgvector_ivf32.jsonl"
+        "submission/evidence/experiments/s3_paired_quality/observations/pgvector_ivf32.jsonl"
       ]
     },
     {
@@ -64,7 +64,7 @@
       "query_level_observations": 5000,
       "role": "high-quality strict-latency matched-audit row",
       "source_paths": [
-        "paper/experiments/s3_paired_quality/observations/faiss_hnsw32.jsonl"
+        "submission/evidence/experiments/s3_paired_quality/observations/faiss_hnsw32.jsonl"
       ]
     },
     {

@@ -10,7 +10,7 @@ Current validation command:
 ```bash
 python - <<'PY'
 import mlcroissant as mlc
-dataset = mlc.Dataset("paper/metadata/hotpotqa_portable_croissant.jsonld")
+dataset = mlc.Dataset("submission/metadata/hotpotqa_portable_croissant.jsonld")
 print(dataset.metadata.name)
 print([record_set.name for record_set in dataset.metadata.record_sets])
 PY

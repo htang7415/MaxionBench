@@ -19,7 +19,7 @@ This run is larger than the bounded replication bundle (`250` static requests an
 
 - Matrix: `artifacts/run_matrix/neurips_s2_larger_same_machine_b2/run_matrix.json`
 - Output root: `artifacts/runs/neurips_rerun/s2_larger_same_machine_b2`
-- Summary: `paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json`
+- Summary: `submission/evidence/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json`
 - Validation: `python -m maxionbench.cli validate --input artifacts/runs/neurips_rerun/s2_larger_same_machine_b2 --strict-schema --json` passed with 2 run directories and 0 errors.
 
 Main result:

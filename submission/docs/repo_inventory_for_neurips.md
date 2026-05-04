@@ -22,31 +22,31 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 
 | Path | Purpose |
 |---|---|
-| `paper/manuscript/main.tex` | Main NeurIPS LaTeX entry point; includes the abstract, section files, bibliography, appendix, and checklist. |
-| `paper/manuscript/sections/01_introduction.tex` | Introduction and contribution framing. |
-| `paper/manuscript/sections/02_benchmark.tex` | Benchmark design, systems under test, workloads, metrics, and budget ladder. |
-| `paper/manuscript/sections/03_experiments.tex` | Main experimental narrative and table/figure includes. |
-| `paper/manuscript/sections/04_limitations.tex` | Limitations and broader-impact discussion. |
-| `paper/manuscript/sections/05_conclusion.tex` | Conclusion. |
-| `paper/manuscript/sections/appendix.tex` | Reproducibility details and appendix claim-evidence map. |
-| `paper/manuscript/references.bib` | Bibliography used by the manuscript. |
-| `paper/manuscript/checklist.tex` | NeurIPS checklist included after the appendix. |
-| `paper/manuscript/main.pdf` | Current built PDF artifact. |
+| `submission/manuscript/main.tex` | Main NeurIPS LaTeX entry point; includes the abstract, section files, bibliography, appendix, and checklist. |
+| `submission/manuscript/sections/01_introduction.tex` | Introduction and contribution framing. |
+| `submission/manuscript/sections/02_benchmark.tex` | Benchmark design, systems under test, workloads, metrics, and budget ladder. |
+| `submission/manuscript/sections/03_experiments.tex` | Main experimental narrative and table/figure includes. |
+| `submission/manuscript/sections/04_limitations.tex` | Limitations and broader-impact discussion. |
+| `submission/manuscript/sections/05_conclusion.tex` | Conclusion. |
+| `submission/manuscript/sections/appendix.tex` | Reproducibility details and appendix claim-evidence map. |
+| `submission/manuscript/references.bib` | Bibliography used by the manuscript. |
+| `submission/manuscript/checklist.tex` | NeurIPS checklist included after the appendix. |
+| `submission/manuscript/main.pdf` | Current built PDF artifact. |
 
 ## Generated paper tables
 
 | Path | Purpose |
 |---|---|
-| `paper/tables/neurips_main_results.csv` | CSV source for Table 1 strict-latency main results. |
-| `paper/tables/neurips_main_results.tex` | Generated LaTeX for Table 1; mirrored into `paper/manuscript/tables/neurips_main_results.tex`. |
-| `paper/tables/portable_decision_table.csv` | CSV source for Table 2 objective-sensitivity decisions. |
-| `paper/tables/portable_decision_table.tex` | Generated LaTeX for Table 2; mirrored into `paper/manuscript/tables/portable_decision_table.tex`. |
-| `paper/tables/portable_support_table.csv` | CSV source for the reportability support table covering conformance rows and behavior cards. |
-| `paper/tables/portable_support_table.tex` | Generated LaTeX for the reportability support table; mirrored into `paper/manuscript/tables/portable_support_table.tex`. |
-| `paper/manuscript/tables/s3_paired_quality.tex` | Table 3 staged LaTeX for the matched S3 pgvector-vs-FAISS quality audit. |
-| `paper/manuscript/tables/strict_decision_margins.tex` | Table 4 staged LaTeX for strict-decision margin interpretation. |
-| `paper/manuscript/tables/s2_competitor_check.tex` | Table 5 staged LaTeX for the larger same-machine S2 FAISS-vs-Qdrant check. |
-| `paper/manuscript/tables/evidence_strength.tex` | Reviewer-facing claim/evidence/risk map currently included in the appendix. |
+| `submission/tables/neurips_main_results.csv` | CSV source for Table 1 strict-latency main results. |
+| `submission/tables/neurips_main_results.tex` | Generated LaTeX for Table 1; mirrored into `submission/manuscript/tables/neurips_main_results.tex`. |
+| `submission/tables/portable_decision_table.csv` | CSV source for Table 2 objective-sensitivity decisions. |
+| `submission/tables/portable_decision_table.tex` | Generated LaTeX for Table 2; mirrored into `submission/manuscript/tables/portable_decision_table.tex`. |
+| `submission/tables/portable_support_table.csv` | CSV source for the reportability support table covering conformance rows and behavior cards. |
+| `submission/tables/portable_support_table.tex` | Generated LaTeX for the reportability support table; mirrored into `submission/manuscript/tables/portable_support_table.tex`. |
+| `submission/manuscript/tables/s3_paired_quality.tex` | Table 3 staged LaTeX for the matched S3 pgvector-vs-FAISS quality audit. |
+| `submission/manuscript/tables/strict_decision_margins.tex` | Table 4 staged LaTeX for strict-decision margin interpretation. |
+| `submission/manuscript/tables/s2_competitor_check.tex` | Table 5 staged LaTeX for the larger same-machine S2 FAISS-vs-Qdrant check. |
+| `submission/manuscript/tables/evidence_strength.tex` | Reviewer-facing claim/evidence/risk map currently included in the appendix. |
 
 ## Table and figure generation code
 
@@ -64,19 +64,19 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `maxionbench/reports/portable_exports.py::_plot_s2_post_insert_retrievability` | Produces `portable_s2_post_insert_retrievability.*`, the left panel of Figure 2. |
 | `maxionbench/reports/portable_exports.py::_plot_mvd_sensitivity` | Produces `portable_mvd_sensitivity.*`, the right panel of Figure 2. |
 | `maxionbench/reports/plots.py` | Shared report-result loading and figure style constants used by portable report generation. |
-| `paper/experiments/s3_paired_quality/summary.json` | Staged summary source for Table 3 matched S3 quality-audit values. |
-| `paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json` | Staged summary source for Table 5 larger same-machine S2 values. |
-| `paper/experiments/strict_faiss_repeats/strict_faiss_repeat_summary.json` | Staged summary source for the strict FAISS same-machine repeat audit. |
+| `submission/evidence/experiments/s3_paired_quality/summary.json` | Staged summary source for Table 3 matched S3 quality-audit values. |
+| `submission/evidence/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json` | Staged summary source for Table 5 larger same-machine S2 values. |
+| `submission/evidence/experiments/strict_faiss_repeats/strict_faiss_repeat_summary.json` | Staged summary source for the strict FAISS same-machine repeat audit. |
 
 ## Generated figure artifacts
 
 | Path | Purpose |
 |---|---|
-| `paper/figures/portable_task_cost_by_budget.pdf` | Figure 1 left panel in the manuscript. |
-| `paper/figures/portable_budget_stability.pdf` | Figure 1 right panel in the manuscript. |
-| `paper/figures/portable_s2_post_insert_retrievability.pdf` | Figure 2 left panel in the manuscript. |
-| `paper/figures/portable_mvd_sensitivity.pdf` | Figure 2 right panel in the manuscript. |
-| `paper/figures/*.meta.json` | Metadata sidecars for paper-facing figures. |
+| `submission/figures/portable_task_cost_by_budget.pdf` | Figure 1 left panel in the manuscript. |
+| `submission/figures/portable_budget_stability.pdf` | Figure 1 right panel in the manuscript. |
+| `submission/figures/portable_s2_post_insert_retrievability.pdf` | Figure 2 left panel in the manuscript. |
+| `submission/figures/portable_mvd_sensitivity.pdf` | Figure 2 right panel in the manuscript. |
+| `submission/figures/*.meta.json` | Metadata sidecars for paper-facing figures. |
 | `artifacts/figures/final/` | Current report-generation output directory copied into the paper staging area and archived bundle. |
 
 ## Run artifacts and archive
@@ -94,7 +94,7 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `results/20260429T033427Z` | Archived portable run directory used by the manuscript. |
 | `results/20260429T033427Z.tar.gz` | Compressed archive for the manuscript's primary result bundle. |
 | `results/20260429T033427Z/archive_manifest.json` | Archive manifest listing copied docs, runs, figures, HotpotQA-portable files, and conformance artifacts. |
-| `paper/archive/archive_manifest.json` | Paper-staged copy of the archive manifest. |
+| `submission/evidence/archive/archive_manifest.json` | Paper-staged copy of the archive manifest. |
 
 ## Conformance artifacts
 
@@ -105,7 +105,7 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `artifacts/conformance/conformance_matrix.provenance.json` | Provenance for conformance execution. |
 | `artifacts/conformance/adapter_logs/` | Per-adapter stdout/stderr logs from conformance runs. |
 | `results/20260429T033427Z/conformance/` | Archived conformance artifacts bundled with the primary result archive. |
-| `paper/results/conformance_matrix.csv` | Paper-staged conformance matrix. |
+| `submission/evidence/results/conformance_matrix.csv` | Paper-staged conformance matrix. |
 | `docs/behavior/` | Behavior cards required for an engine to be reportable. |
 
 ## Dataset manifests and checksums
@@ -135,16 +135,16 @@ Scope: inventory only. This file records where the paper, generated evidence, ru
 | `maxionbench/metrics/cost_rhu.py` | RHU normalization helpers and default RHU references/weights. |
 | `artifacts/runs/portable/**/config_resolved.yaml` | Per-run resolved cost coefficients and RHU reference values. |
 | `artifacts/runs/portable/**/run_metadata.json` | Per-run recorded `c_llm_in`, resource profile, RHU references, and RHU weights. |
-| `paper/tables/portable_summary.csv` | Paper-staged per-run summary including task-cost fields used by current reports. |
+| `submission/tables/portable_summary.csv` | Paper-staged per-run summary including task-cost fields used by current reports. |
 
 ## Croissant and reviewer metadata
 
 | Path | Purpose |
 |---|---|
-| `paper/metadata/hotpotqa_portable_croissant.jsonld` | Croissant-style metadata for HOTPOTQA-PORTABLE. |
-| `paper/metadata/maxionbench_evaluation_card.json` | Evaluation-card metadata for the benchmark artifact. |
-| `paper/metadata/README.md` | Notes for reviewer-facing metadata files. |
-| `paper/artifact_card.md` | Reviewer-facing artifact card with claim boundary and reproducibility summary. |
+| `submission/metadata/hotpotqa_portable_croissant.jsonld` | Croissant-style metadata for HOTPOTQA-PORTABLE. |
+| `submission/metadata/maxionbench_evaluation_card.json` | Evaluation-card metadata for the benchmark artifact. |
+| `submission/metadata/README.md` | Notes for reviewer-facing metadata files. |
+| `submission/docs/artifact_card.md` | Reviewer-facing artifact card with claim boundary and reproducibility summary. |
 | `submission/docs/artifact_card.md` | Public artifact card with claim boundary and reproducibility summary. |
 
 ## Reproduction and validation entry points

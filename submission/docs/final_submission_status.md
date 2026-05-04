@@ -24,4 +24,4 @@ The abstract and full-paper upload are performed through the conference submissi
 
 ## Git State Note
 
-The local `paper/` tree remains ignored. Public NeurIPS-facing documents intended to be visible on GitHub are mirrored under `submission/`.
+Public NeurIPS-facing documents intended to be visible on GitHub are mirrored under `submission/`.

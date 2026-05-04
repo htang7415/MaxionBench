@@ -15,8 +15,8 @@ Commands:
 
 ```bash
 python -m maxionbench.cli run-matrix \
-  --scenario-config-dir paper/experiments/s1_s2_lancedb_paired/scenarios \
-  --engine-config-dir paper/experiments/s1_s2_lancedb_paired/engines \
+  --scenario-config-dir submission/evidence/experiments/s1_s2_lancedb_paired/scenarios \
+  --engine-config-dir submission/evidence/experiments/s1_s2_lancedb_paired/engines \
   --out-dir artifacts/run_matrix/neurips_s1_s2_lancedb_paired \
   --output-root artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2 \
   --budget b2 --lane cpu --json

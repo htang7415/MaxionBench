@@ -10,7 +10,7 @@ Inputs:
 
 Outputs:
 
-- `paper/experiments/strict_faiss_repeats/strict_faiss_repeat_summary.json`
-- `paper/tables/strict_faiss_repeat_audit.csv`
-- `paper/tables/strict_faiss_repeat_audit.tex`
-- `paper/manuscript/tables/strict_faiss_repeat_audit.tex`
+- `submission/evidence/experiments/strict_faiss_repeats/strict_faiss_repeat_summary.json`
+- `submission/tables/strict_faiss_repeat_audit.csv`
+- `submission/tables/strict_faiss_repeat_audit.tex`
+- `submission/manuscript/tables/strict_faiss_repeat_audit.tex`

@@ -2,7 +2,7 @@
 
 This directory is the public GitHub handoff location for NeurIPS-facing submission documents.
 
-It mirrors the current upload-facing materials from the local `paper/` staging tree while avoiding paper-preparation scripts, local build logs, editor state, reviewer-package scratch directories, and machine-identifying details.
+It contains the current upload-facing materials while avoiding paper-preparation scripts, local build logs, editor state, reviewer-package scratch directories, and machine-identifying details.
 
 ## Layout
 

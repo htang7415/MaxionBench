@@ -1,5 +1,5 @@
 {
-  "config": "paper/experiments/s2_single_sweep/qdrant_hnsw64.yaml",
+  "config": "submission/evidence/experiments/s2_single_sweep/qdrant_hnsw64.yaml",
   "elapsed_at_interrupt": "42:11",
   "engine": "qdrant",
   "embedding_model": "BAAI/bge-small-en-v1.5",
