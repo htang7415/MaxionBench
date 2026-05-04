@@ -1,7 +1,7 @@
 """Adapter contract for MaxionBench engines.
 
 This module is the single typed source of truth for adapter methods required by
-project.md + prompt.md.
+the benchmark scenarios.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ class QueryResult:
 
 @dataclass(frozen=True)
 class AdapterStats:
-    """Minimum stats fields required by prompt.md Section 5."""
+    """Minimum stats fields required by the adapter contract."""
 
     vector_count: int
     deleted_count: int

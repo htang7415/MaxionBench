@@ -1,10 +1,10 @@
 # MaxionBench
 
-MaxionBench is a reproducible single-node benchmark study for retrieval infrastructure used in agentic applications.
+MaxionBench is a reproducible single-node decision-audit benchmark for retrieval infrastructure used as agentic operational memory.
 
 ## Benchmark study
 
-The study reports matched-quality tradeoffs, p99 latency, throughput, robustness inflation, and RHU-normalized cost.
+The study reports conformance-gated workload quality, post-insert top-10 retrievability, max-row p99 latency, throughput, budget stability, paired audits, and a normalized context-cost proxy. Max-row p99 is the maximum archived p99 across configured B2 client rows and repeats for a candidate.
 
 ## Engines
 
@@ -42,15 +42,29 @@ Each run writes:
 - `config_resolved.yaml`
 - logs
 
-## Operator Constraints
+## Repository Layout
 
-- The operator machine is an Apple Silicon Mac mini; it is the execution host, not part of the study storyline.
-- The local operator workflow is controlled to fit within one day wall clock.
+| Path | Purpose |
+| --- | --- |
+| `maxionbench/` | Benchmark package, engine adapters, orchestration, reports, runtime metadata, schemas, and CLI tools. |
+| `configs/` | Pinned scenario, engine, and conformance configurations. |
+| `docs/` | Public behavior cards, migration notes, CI notes, and NeurIPS artifact inventory. |
+| `tests/` | CI checks for configs, schemas, reports, workflows, and repository hygiene. |
+| `dataset/processed/hotpot_portable/` | Lightweight tracked HotpotQA-MaxionBench manifest and checksum fixtures. |
+| `artifacts/`, `results/`, `paper/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
+
+## Scope Constraints
+
+- The local workflow is controlled to fit within one day wall clock on a single node.
 - `submit` defaults to a 24-hour benchmark-execution deadline; lower `--deadline-hours` if setup, data, or embedding work consumes part of the day.
 - GPU-required scenarios and distributed topologies are out of scope.
 - The primary S3 paper path is `HotpotQA-MaxionBench`, prepared from the official HotpotQA dev distractor release before timed execution.
 
 MaxionBench figures are written to `artifacts/figures/final/`.
+
+## Public Artifact Hygiene
+
+The GitHub repository tracks source, configs, tests, lightweight dataset manifests, and public docs. Local benchmark outputs, paper build products, release bundles, caches, editor state, and reviewer-package staging directories are ignored by default so host paths, usernames, and machine-local metadata do not enter commits.
 
 ## How to run this benchmark study
 

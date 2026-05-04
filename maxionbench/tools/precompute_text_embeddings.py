@@ -428,7 +428,7 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument(
         "--require-device",
         default=None,
-        help="Fail before model loading unless the resolved torch device matches this value, e.g. mps on Apple Silicon.",
+        help="Fail before model loading unless the resolved torch device matches this value, e.g. mps.",
     )
     parser.add_argument("--no-normalize", action="store_true")
     parser.add_argument("--force", action="store_true")

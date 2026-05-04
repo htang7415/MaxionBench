@@ -9,7 +9,8 @@ from maxionbench.cli import main as cli_main
 def test_archive_cli_uses_hotpot_override(tmp_path: Path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    for name in ("command.md", "project.md", "prompt.md", "document.md"):
+    for name in ("README.md", "docs/repo_inventory_for_neurips.md"):
+        (repo_root / name).parent.mkdir(parents=True, exist_ok=True)
         (repo_root / name).write_text(f"# {name}\n", encoding="utf-8")
     hotpot_dir = repo_root / "dataset" / "processed" / "hotpot_portable"
     hotpot_dir.mkdir(parents=True)

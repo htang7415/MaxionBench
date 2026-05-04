@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import os
 from pathlib import Path
-import socket
-import sys
 from typing import Any
 
 
@@ -18,15 +17,31 @@ def conformance_provenance_path(matrix_path: Path) -> Path:
 
 def build_conformance_provenance(*, config_dir: Path, matrix_path: Path) -> dict[str, Any]:
     container_image = str(os.environ.get("MAXIONBENCH_CONTAINER_IMAGE", "")).strip()
-    resolved_container_image = ""
-    if container_image:
-        resolved_container_image = str(Path(container_image).expanduser().resolve())
     return {
         "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
-        "config_dir": str(config_dir.expanduser().resolve()),
-        "matrix_path": str(matrix_path.expanduser().resolve()),
-        "python_executable": sys.executable,
+        "config_dir": _public_path(config_dir),
+        "matrix_path": _public_path(matrix_path),
+        "python_executable": "redacted",
         "container_runtime": str(os.environ.get("MAXIONBENCH_CONTAINER_RUNTIME", "")).strip().lower(),
-        "container_image": resolved_container_image,
-        "hostname": socket.gethostname(),
+        "container_image": _public_container_image(container_image),
+        "hostname": "redacted",
     }
+
+
+def _public_path(path: Path) -> str:
+    resolved = path.expanduser().resolve()
+    try:
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return resolved.name
+
+
+def _public_container_image(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        return ""
+    if value.startswith(("/", "~", ".")):
+        resolved = str(Path(value).expanduser().resolve())
+        digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:16]
+        return f"local-path-sha256:{digest}"
+    return value

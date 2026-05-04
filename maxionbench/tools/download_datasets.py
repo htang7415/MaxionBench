@@ -179,8 +179,8 @@ def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[s
     payload = {
         "profile": "maxionbench-bootstrap",
         "note": (
-            "MaxionBench dataset bootstrap for the Apple Silicon paper path. "
-            "This manifest tracks the local text corpora and one-time manual workspaces required by project.md."
+            "MaxionBench dataset bootstrap for the portable paper path. "
+            "This manifest tracks local text corpora and one-time preprocessing workspaces."
         ),
         "requested_datasets": list(requested_datasets or []),
         "D4": {
@@ -220,7 +220,7 @@ def download_datasets(
         "maxionbench_bootstrap": True,
         "warning": (
             "This downloader populates the MaxionBench text datasets and S3 source files only. "
-            "The source-of-truth scope is project.md."
+            "The source-of-truth scope is the portable benchmark configuration."
         ),
         "fetched": {},
     }

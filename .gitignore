@@ -11,6 +11,13 @@ reviewer_artifact_maxionbench/
 reviewer_artifact_maxionbench_portable/
 /.*/
 ._*
+.DS_Store
+.AppleDouble/
+.codex
+.agents/
+.claude/
+.vscode/
+home/
 
 # NeurIPS/paper submission artifacts
 **/paper/

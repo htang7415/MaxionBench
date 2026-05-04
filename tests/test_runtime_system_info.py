@@ -20,6 +20,7 @@ def test_collect_system_info_has_expected_keys() -> None:
         "gpu_count",
     }
     assert required.issubset(set(info.keys()))
+    assert info["hostname"] == "redacted"
     assert isinstance(info["cpu_count_logical"], int)
     assert isinstance(info["total_memory_bytes"], int)
     assert isinstance(info["gpu_count"], int)

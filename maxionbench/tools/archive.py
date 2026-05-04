@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_DEFAULT_DOCS: list[str] = ["command.md", "project.md", "prompt.md", "document.md"]
+_DEFAULT_DOCS: list[str] = ["README.md", "docs/repo_inventory_for_neurips.md"]
 
 # Relative paths from repo root → label in the archive directory
 _DEFAULT_ARTIFACT_DIRS: dict[str, str] = {
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--docs",
         default=None,
-        help="Comma-separated doc filenames to include (default: command.md,project.md,prompt.md,document.md)",
+        help="Comma-separated doc filenames to include (default: README.md,docs/repo_inventory_for_neurips.md)",
     )
     parser.add_argument("--no-tar", action="store_true", help="Skip tar.gz creation")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be archived without copying")

@@ -57,7 +57,9 @@ def test_conformance_matrix_smoke_with_mock_only(tmp_path: Path) -> None:
     provenance_path = conformance_provenance_path(out_dir / "conformance_matrix.csv")
     assert provenance_path.exists()
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
-    assert provenance["matrix_path"] == str((out_dir / "conformance_matrix.csv").resolve())
+    assert provenance["matrix_path"] == "conformance_matrix.csv"
+    assert provenance["hostname"] == "redacted"
+    assert provenance["python_executable"] == "redacted"
 
 
 def test_conformance_matrix_invalid_config_is_recorded(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -72,7 +73,7 @@ def evaluate_pre_run_gate(
 
 def _evaluate_conformance_provenance(conformance_matrix_path: Path) -> dict[str, Any] | None:
     expected_runtime = str(os.environ.get("MAXIONBENCH_CONTAINER_RUNTIME", "")).strip().lower()
-    expected_image = _normalized_path_str(os.environ.get("MAXIONBENCH_CONTAINER_IMAGE"))
+    expected_image = _public_container_image(os.environ.get("MAXIONBENCH_CONTAINER_IMAGE"))
     if not expected_runtime:
         return None
 
@@ -102,11 +103,11 @@ def _evaluate_conformance_provenance(conformance_matrix_path: Path) -> dict[str,
         return summary
 
     actual_runtime = str(payload.get("container_runtime", "")).strip().lower()
-    actual_image = _normalized_path_str(payload.get("container_image"))
+    actual_image = _public_container_image(payload.get("container_image"))
     summary["actual_container_runtime"] = actual_runtime
     summary["actual_container_image"] = actual_image
-    summary["python_executable"] = str(payload.get("python_executable", "")).strip()
-    summary["hostname"] = str(payload.get("hostname", "")).strip()
+    summary["python_executable"] = "redacted" if payload.get("python_executable") else ""
+    summary["hostname"] = "redacted" if payload.get("hostname") else ""
     summary["generated_at_utc"] = str(payload.get("generated_at_utc", "")).strip()
 
     if actual_runtime != expected_runtime:
@@ -122,14 +123,20 @@ def _evaluate_conformance_provenance(conformance_matrix_path: Path) -> dict[str,
     return summary
 
 
-def _normalized_path_str(raw: object) -> str:
+def _public_container_image(raw: object) -> str:
     value = str(raw or "").strip()
     if not value:
         return ""
-    try:
-        return str(Path(value).expanduser().resolve())
-    except Exception:
+    if value.startswith("local-path-sha256:"):
         return value
+    if value.startswith(("/", "~", ".")):
+        try:
+            resolved = str(Path(value).expanduser().resolve())
+        except Exception:
+            resolved = value
+        digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:16]
+        return f"local-path-sha256:{digest}"
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import os
 import platform
-import socket
 import subprocess
 from typing import Any
 
 
 def collect_system_info() -> dict[str, Any]:
     info = {
-        "hostname": socket.gethostname(),
+        "hostname": "redacted",
         "platform": platform.platform(),
         "apple_silicon_model": _apple_silicon_model(),
         "macos_version": _macos_version(),

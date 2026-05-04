@@ -28,6 +28,7 @@ from maxionbench.reports.portable_exports import (
     _portable_decision_table,
     _quality_floor_survivor_table,
     _s3_all_evidence_hit_table,
+    _s2_post_insert_examples_table,
     _s2_write_diagnostic_table,
     _spearman_rank_correlation,
     _strict_decision_margin_table,
@@ -284,6 +285,12 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_support_table.csv").exists()
     assert (out_dir / "portable_support_table.tex").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
+    assert (out_dir / "maxionbench_decision_audit_conceptual.png").exists()
+    assert (out_dir / "maxionbench_decision_audit_conceptual.meta.json").exists()
+    assert (out_dir / "portable_decision_surface.png").exists()
+    assert (out_dir / "portable_decision_surface.meta.json").exists()
+    assert (out_dir / "s3_paired_audit_forest.png").exists()
+    assert (out_dir / "s3_paired_audit_forest.meta.json").exists()
     assert (out_dir / "portable_task_cost_by_budget.png").exists()
     assert (out_dir / "portable_task_cost_by_budget.meta.json").exists()
     assert (out_dir / "portable_budget_stability.png").exists()
@@ -299,6 +306,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     decision = pd.read_csv(out_dir / "portable_decision_table.csv")
     decision_surface = pd.read_csv(out_dir / "decision_surface.csv")
     s2_write_diagnostics = pd.read_csv(out_dir / "s2_write_diagnostics.csv")
+    s2_post_insert_examples = pd.read_csv(out_dir / "s2_post_insert_examples.csv")
     stability = pd.read_csv(out_dir / "portable_stability.csv")
     latency = pd.read_csv(out_dir / "latency_distribution.csv")
     strict_margins = pd.read_csv(out_dir / "strict_decision_margins.csv")
@@ -322,7 +330,9 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert {"workload", "role", "strict_p99_pass", "p99_max_ms"} <= set(decision_surface.columns)
     assert "B2 decision-surface rows" in (out_dir / "decision_surface.tex").read_text(encoding="utf-8")
     assert {"post_insert_hit_at_10_1s", "p95_visibility_latency_ms", "event_count"} <= set(s2_write_diagnostics.columns)
-    assert "not a separate insert-ack latency" in (out_dir / "s2_write_diagnostics.tex").read_text(encoding="utf-8")
+    assert "not a direct insert-index visibility-latency measurement" in (out_dir / "s2_write_diagnostics.tex").read_text(encoding="utf-8")
+    assert {"category", "event_count", "event_rate", "example_query_id", "interpretation"} <= set(s2_post_insert_examples.columns)
+    assert "post-insert example outcomes" in (out_dir / "s2_post_insert_examples.tex").read_text(encoding="utf-8")
     assert {"clients_read_write", "boundary"} <= set(latency.columns)
     assert {
         "workload",
@@ -415,6 +425,89 @@ def test_neurips_main_results_table_includes_quality_and_post_insert_ci_fields()
     assert row["post_insert_hit_at_10_5s_ci95_low"] < row["post_insert_hit_at_10_5s_ci95_high"]
     assert row["post_insert_event_count"] == 500
     assert row["decision_stability_note"] == "top-1 stable despite full-rank noise"
+
+
+def test_s2_post_insert_examples_table_counts_archived_outcomes(tmp_path: Path) -> None:
+    observation_path = tmp_path / "s2_freshness.jsonl"
+    _write_jsonl(
+        observation_path,
+        [
+            {
+                "observation_type": "freshness",
+                "event_index": 1,
+                "query_id": "crag_small_slice::q::hit",
+                "target_doc_id": "crag_small_slice::doc::hit_p0_c0",
+                "freshness_hit_at_1s": 1,
+                "freshness_hit_at_5s": 1,
+                "visibility_latency_ms": 0.1,
+            },
+            {
+                "observation_type": "freshness",
+                "event_index": 2,
+                "query_id": "crag_small_slice::q::late",
+                "target_doc_id": "crag_small_slice::doc::late_p0_c0",
+                "freshness_hit_at_1s": 0,
+                "freshness_hit_at_5s": 1,
+                "visibility_latency_ms": 1000.0,
+            },
+            {
+                "observation_type": "freshness",
+                "event_index": 3,
+                "query_id": "crag_small_slice::q::miss",
+                "target_doc_id": "crag_small_slice::doc::miss_p0_c0",
+                "freshness_hit_at_1s": 0,
+                "freshness_hit_at_5s": 0,
+                "visibility_latency_ms": 5000.0,
+            },
+        ],
+    )
+    frame = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 8,
+                "clients_write": 2,
+                "rank_within_budget": 1,
+                "engine": "engine-s2",
+                "embedding_model": "emb-s2",
+                "primary_quality_metric": "ndcg_at_10",
+                "primary_quality_value": 0.50,
+                "freshness_hit_at_1s": 2 / 3,
+                "freshness_hit_at_5s": 2 / 3,
+                "event_count": 3,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "task_cost_est": 1.0,
+                "observation_path": str(observation_path),
+                "__run_path": str(tmp_path),
+            }
+        ]
+    )
+    stability = pd.DataFrame(
+        [
+            {
+                "scenario": "s2_streaming_memory",
+                "budget_pair": "b0->b2",
+                "spearman_rho": 1.0,
+                "top1_agreement": 1.0,
+                "top2_agreement": 1.0,
+            }
+        ]
+    )
+    decision = _portable_decision_table(winners=frame, stability=stability)
+
+    table = _s2_post_insert_examples_table(frame=frame, decision=decision)
+    counts = dict(zip(table["category"], table["event_count"], strict=True))
+
+    assert counts["retrieved by 1s"] == 1
+    assert counts["recovered between 1s and 5s"] == 1
+    assert counts["missed by 5s"] == 1
+    assert table["event_rate"].sum() == pytest.approx(1.0)
+    missed = table.loc[table["category"] == "missed by 5s"].iloc[0]
+    assert missed["example_query_id"] == "crag_small_slice::q::miss"
+    assert "censored at 5s" in str(missed["interpretation"])
 
 
 def test_neurips_main_results_p99_matches_latency_distribution_strict_choice() -> None:
@@ -682,6 +775,55 @@ def test_winner_rows_keeps_clients_read_dimension() -> None:
     winners = _winner_rows(frame=frame)
 
     assert sorted(winners["clients_read"].astype(int).tolist()) == [1, 8]
+
+
+def test_winner_rows_aggregates_latency_across_repeat_rows() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 1,
+                "engine": "engine-a",
+                "embedding_model": "emb",
+                "task_cost_est": 1.0,
+                "p50_ms": 2.0,
+                "p95_ms": 4.0,
+                "p99_ms": 10.0,
+                "qps": 100.0,
+                "measure_requests": 20,
+                "repeat_idx": 0,
+            },
+            {
+                "scenario": "s1_single_hop",
+                "budget_level": "b2",
+                "budget_sort": 2,
+                "clients_read": 1,
+                "engine": "engine-a",
+                "embedding_model": "emb",
+                "task_cost_est": 1.0,
+                "p50_ms": 4.0,
+                "p95_ms": 8.0,
+                "p99_ms": 250.0,
+                "qps": 50.0,
+                "measure_requests": 30,
+                "repeat_idx": 1,
+            },
+        ]
+    )
+
+    winners = _winner_rows(frame=frame)
+    row = winners.iloc[0]
+
+    assert row["p50_ms"] == pytest.approx(3.0)
+    assert row["p95_ms"] == pytest.approx(6.0)
+    assert row["p99_min_ms"] == pytest.approx(10.0)
+    assert row["p99_ms"] == pytest.approx(250.0)
+    assert row["qps"] == pytest.approx(75.0)
+    assert int(row["measure_requests"]) == 50
+    assert int(row["latency_row_count"]) == 2
+    assert int(row["latency_repeat_count"]) == 2
 
 
 def test_spearman_rank_correlation_is_nan_for_single_observation() -> None:
@@ -1028,7 +1170,10 @@ def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> 
         "p50_ms",
         "p95_ms",
         "p99_ms",
+        "p99_min_ms",
         "p99_max_ms",
+        "latency_row_count",
+        "latency_repeat_count",
         "latency_observations",
         "boundary",
         "source_path",
