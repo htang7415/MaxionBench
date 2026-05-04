@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4.5pt}
+\caption{S2 larger same-machine competitor check with \texttt{BAAI/bge-small-en-v1.5}, \texttt{clients\_read=8}, \texttt{clients\_write=2}, two repeats per engine, 1{,}788 matched quality queries, and 200 matched post-insert events. Paired deltas are Qdrant minus FAISS with 95\% paired bootstrap intervals.}
+\label{tab:s2-competitor-check}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrrrr}
+\toprule
+Engine / search & \ndcg{} & Paired $\Delta$ \ndcg{} & \postinsertfive{} & Mean / max p99 (ms) & Errors \\
+\midrule
+FAISS CPU / ef64 & 0.5055 & reference & 0.840 & 47.8 / 74.1 & 0 \\
+Qdrant / ef64 & 0.5028 & $-0.0027$ [$-0.0052$, $-0.0006$] & 0.840 & 17.1 / 20.7 & 0 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

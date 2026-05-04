@@ -1,0 +1,69 @@
+\section{Reproducibility details}
+\suppressfloats[t]
+
+The MaxionBench workflow is run from the repository root. The main commands are:
+\begin{verbatim}
+maxionbench workflow setup --json
+maxionbench workflow data --json
+maxionbench submit --budget b0 --json
+maxionbench submit --budget b1 --json
+maxionbench submit --budget b2 --json
+maxionbench workflow finalize --json
+\end{verbatim}
+The archived bundle used by this manuscript is \texttt{results/20260429T033427Z}. It contains 972 run-artifact files, 42 generated figure files, 27 \hotpotmaxionbench{} files, and 27 conformance files. The strict-schema validation command used during manuscript preparation was:
+\begin{verbatim}
+python -m maxionbench.cli validate --input artifacts/runs/portable \
+  --strict-schema --json
+\end{verbatim}
+It returned \texttt{"pass": true}, \texttt{"error\_count": 0}, and \texttt{"run\_dirs\_checked": 72}.
+
+The archived MaxionBench matrix contains 72 \texttt{results.parquet} files, including 24 B2 result files with matching \texttt{run\_metadata.json} files. The public submission records a single-node CPU-only local runtime profile; host, OS, username, and machine-local path details are intentionally omitted from the repository copy. No accelerator-backed benchmark row is reported. \hotpotmaxionbench{} contains 66{,}635 documents, 7{,}405 questions, and 14{,}810 qrels; the verified manifest fields are \texttt{doc\_count=66635}, \texttt{question\_count=7405}, and \texttt{qrel\_count=14810}. The archived S3 run configuration records \texttt{d4\_max\_queries: 5000} and \texttt{s3\_max\_events: 5000}; these fields define the matched-audit subset cap and are not the full \hotpotmaxionbench{} question count. The HotpotQA-MaxionBench checksum manifest stores SHA-256 checksums for the corpus, queries, qrels, metadata, and manifest.
+
+The reviewer artifact also includes an artifact card, a local readiness verifier, and Croissant-style metadata for \hotpotmaxionbench{}. The verifier checks that the manuscript, archive manifest, paper-facing tables, paired-audit summaries, and metadata files are present and internally consistent; the Croissant metadata records the corpus, query, and qrel files, their intended evaluation use, and the license/provenance boundary inherited from HotpotQA.
+
+\section{Audit tables}
+\suppressfloats[t]
+
+\input{tables/cost_formula}
+\input{tables/cost_sensitivity}
+\input{tables/latency_distribution}
+\input{tables/strict_faiss_repeat_audit}
+\input{tables/decision_error_ablation}
+\input{tables/decision_surface}
+\input{tables/strict_decision_margins}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.70\linewidth]{../figures/portable_s2_post_insert_retrievability.pdf}
+  \caption{S2 post-insert top-10 retrievability for B2 strict survivors. One- and five-second probes overlap in the archived rows, showing no additional recoveries between the fixed probes.}
+  \label{fig:s2-postinsert}
+\end{figure}
+\input{tables/s2_write_diagnostics}
+\input{tables/s2_post_insert_examples}
+\input{tables/portable_support_table}
+\input{tables/engine_configuration}
+\input{tables/s3_paired_quality}
+\input{tables/s3_all_evidence_hit}
+\input{tables/s1_s2_lancedb_paired}
+\input{tables/s2_competitor_check}
+\input{tables/quality_floor_survivors}
+
+\FloatBarrier
+
+\section{Claim-evidence map}
+
+\input{tables/evidence_strength}
+
+\begin{itemize}[leftmargin=*]
+  \item Claim: \sys is conformance-gated. Evidence: Table~\ref{tab:portable-support} reports passing conformance and behavior cards for all included engines, and the report excludes LanceDB service because conformance is missing.
+  \item Claim: the paper contributes a reusable decision-audit protocol rather than only a benchmark implementation. Evidence: the decision-card protocol in Section~2.3 defines the conformance gate, workload evaluation, objective-specific ranking, budget-stability check, paired audit, and emitted card fields.
+  \item Claim: strict 200 ms \maxrowp{} deployment selects FAISS CPU with \texttt{BAAI/bge-small-en-v1.5} for S1, S2, and S3. Evidence: Table~\ref{tab:portable-main-results} and Table~\ref{tab:portable-decision-table}.
+  \item Claim: supplementary same-machine repeat evidence does not contradict the strict FAISS CPU/bge-small decisions. Evidence: Table~\ref{tab:strict-faiss-repeat-audit} summarizes completed local repeat rows for S1, S2, and S3.
+  \item Claim: the selected rows are not cherry-picked from a hidden surface. Evidence: Figure~\ref{fig:decision-surface} and Table~\ref{tab:decision-surface} show all B2 strict survivors plus objective winners outside the strict survivor set.
+  \item Claim: strict decisions have different margins across workloads. Evidence: Table~\ref{tab:strict-decision-margins} shows S1/S2 as cost/quality ties resolved by latency and S3 as lower-cost and higher-quality than the next strict-cost candidate.
+  \item Claim: objective choice changes deployment conclusions. Evidence: Table~\ref{tab:portable-decision-table} shows different quality-first winners for all workloads and a cost-only/no-p99 shift for S3.
+  \item Claim: the S3 quality-first pgvector result is indistinguishable from FAISS under matched queries. Evidence: Figure~\ref{fig:s3-paired-audit} and Table~\ref{tab:s3-paired-quality} report a matched-query audit over the 5{,}000-query S3 matched-audit subset in which pgvector trails the FAISS exact FlatIP baseline by 0.0001 \ecov{} with paired 95\% interval [-0.0003, 0.0000].
+  \item Claim: the S2 strict decision is not hiding a Qdrant quality or post-insert retrievability win. Evidence: Table~\ref{tab:s2-write-diagnostics} summarizes B2 post-insert diagnostics, Table~\ref{tab:s2-post-insert-examples} gives archived strict-choice success/miss examples and counts, and Table~\ref{tab:s2-competitor-check} reports a larger same-machine paired check with 1{,}788 matched quality observations and 200 matched post-insert events.
+  \item Claim: budget stability is workload-dependent. Evidence: Figure~\ref{fig:budget-effects}; B0-to-B2 top-1 agreement is 0 for S1/S2 and 1 for S3, with Spearman correlations 0.79, 0.43, and 0.31.
+\end{itemize}
+
+\FloatBarrier

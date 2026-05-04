@@ -1,0 +1,89 @@
+{
+  "name": "MaxionBench evaluation card",
+  "version": "0.1",
+  "track_target": "NeurIPS 2026 Evaluations & Datasets",
+  "evaluation_object": "Agentic retrieval infrastructure under conformance-gated, single-node local deployment assumptions.",
+  "primary_claim": "Agentic retrieval systems require decision-audit evaluation across conformance, quality, post-insert top-10 retrievability, max-row p99 latency, normalized context-cost proxy, budget stability, and objective sensitivity.",
+  "supported_claims": [
+    {
+      "claim": "Strict 200 ms max-row p99 deployment selects FAISS CPU with bge-small for S1, S2, and S3 in the archived local run bundle.",
+      "evidence": [
+        "paper/figures/portable_decision_surface.pdf",
+        "paper/tables/neurips_main_results.csv",
+        "paper/tables/portable_decision_table.csv",
+        "paper/manuscript/tables/strict_decision_margins.tex",
+        "paper/manuscript/tables/strict_faiss_repeat_audit.tex"
+      ],
+      "scope": "single local machine, archived MaxionBench bundle"
+    },
+    {
+      "claim": "Objective choice changes conclusions.",
+      "evidence": [
+        "paper/tables/portable_decision_table.csv",
+        "paper/figures/portable_mvd_sensitivity.pdf"
+      ],
+      "scope": "reported MaxionBench objectives and budget rows"
+    },
+    {
+      "claim": "The S3 pgvector quality-first edge is not substantive under matched-query audit.",
+      "evidence": [
+        "paper/figures/s3_paired_audit_forest.pdf",
+        "paper/experiments/s3_paired_quality/summary.json",
+        "paper/manuscript/tables/s3_paired_quality.tex"
+      ],
+      "scope": "5,000 matched S3 bge-base queries"
+    },
+    {
+      "claim": "S2 Qdrant does not hide a quality or post-insert retrievability win in the paired checks.",
+      "evidence": [
+        "paper/experiments/s2_standard_competitor/paired_faiss_qdrant_summary.json",
+        "paper/experiments/s2_mini_bundle/s2_b2_deadline_mini_bundle_summary.json",
+        "paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+        "paper/manuscript/tables/s2_competitor_check.tex"
+      ],
+      "scope": "standard Qdrant paired check, bounded same-orchestration mini-bundle, and larger same-machine two-repeat paired check"
+    }
+  ],
+  "not_supported": [
+    "universal engine ranking",
+    "production-cluster latency claims",
+    "end-to-end agent task success",
+    "claims about managed vector database deployments",
+    "second-machine, distributed, GPU, or managed-service robustness claims",
+    "high-probe/high-ef service-engine sweep claims beyond the targeted checks in paper/experiments"
+  ],
+  "datasets": [
+    {
+      "name": "D4 MaxionBench S1/S2 processed text bundles",
+      "role": "single-hop retrieval and streaming-memory background/events",
+      "metadata": "paper tables and run configs"
+    },
+    {
+      "name": "HotpotQA-MaxionBench",
+      "role": "S3 multi-evidence retrieval",
+      "metadata": "paper/metadata/hotpotqa_portable_croissant.jsonld"
+    }
+  ],
+  "engines": [
+    "FAISS CPU",
+    "LanceDB in-process",
+    "pgvector",
+    "Qdrant"
+  ],
+  "compute_scope": {
+    "profile": "single-node local CPU-only host",
+    "accelerator_use": "no accelerator-backed benchmark row is reported",
+    "public_repository_note": "Host identifiers, OS patch level, user names, and machine-local paths are intentionally omitted from public files."
+  },
+  "reviewer_checks": [
+    "python -m pytest -q",
+    "python -m maxionbench.cli validate --input artifacts/runs/portable --strict-schema --json"
+  ],
+  "known_limitations": [
+    "Only one local hardware profile is included.",
+    "Max-row p99 is computed from the archived configured B2 client rows and repeats; it is not a hardware-population interval.",
+    "The S2 same-machine reruns cap post-insert retrievability events for bounded turnaround.",
+    "The artifact evaluates retrieval infrastructure, not generated answer quality.",
+    "Dataset hosting URLs must be anonymized and finalized before submission."
+  ]
+}

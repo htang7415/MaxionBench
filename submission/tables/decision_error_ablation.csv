@@ -1,0 +1,7 @@
+missing_protocol_component,wrong_conclusion_caused_by_omission,manuscript_evidence,source_path
+p99 latency gate,S3 cost-only/no-p99 choice shifts to lancedb-inproc/bge-small instead of faiss-cpu/bge-small,decision table and threshold-sensitivity panel,portable_decision_table.csv; minimum_viable_deployment_sensitivity.csv
+Objective separation,"Quality-first decisions differ from strict-latency decisions on S1, S2, S3",decision table,portable_decision_table.csv
+Budget ladder,"B0 screening fails to preserve B2 top-1 decisions for S1, S2",budget-stability figure and decision table,portable_stability.csv; portable_mvd_sensitivity.meta.json
+Paired S3 audit,"pgvector/bge-base appears quality-first, but the matched 5,000-query audit removes the substantive margin",S3 paired audit table,paper/experiments/s3_paired_quality/summary.json
+Paired S2 competitor audit,Qdrant does not hide a quality or post-insert retrievability win,S2 competitor audit table,paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json
+Conformance gate,Engines without passing local conformance rows do not enter paper-facing result tables,"benchmark scope, support table, and artifact audit",artifacts/conformance/conformance_matrix.csv; docs/behavior

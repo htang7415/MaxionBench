@@ -1,0 +1,81 @@
+{
+  "comparison": "qdrant_hnsw64 - faiss_exact_flatip",
+  "faiss_effective_index": "FAISS IndexFlatIP; index_params is empty, so recorded hnsw_ef is ignored by the flat adapter path",
+  "freshness": {
+    "hit_at_1s_delta": {
+      "changed_events": 0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_delta": 0.0,
+      "paired_count": 500
+    },
+    "hit_at_5s_delta": {
+      "changed_events": 0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_delta": 0.0,
+      "paired_count": 500
+    },
+    "visibility_latency_ms_delta": {
+      "ci95_mean": [
+        -0.008483024756424129,
+        -0.007466466183541343
+      ],
+      "mean_delta": -0.007967304904013872,
+      "median_delta": -0.008041446562856436
+    }
+  },
+  "latency_summary": {
+    "faiss_p95_ms": 13.2343856501393,
+    "faiss_p99_ms": 15.12935659848153,
+    "qdrant_p95_ms": 13.46041065407916,
+    "qdrant_p99_ms": 44.534454151289516,
+    "quality_latency_observations": 894
+  },
+  "paths": {
+    "faiss": "artifacts/runs/neurips_rerun/s2_strict_competitors/s2_streaming_memory__bge-small-en-v1-5/faiss_cpu/logs/observations/s2_streaming_memory_r0_c8_s0.jsonl",
+    "qdrant": "artifacts/runs/neurips_rerun/s2_standard_competitor/qdrant_hnsw64/logs/observations/s2_streaming_memory_r0_c8_s0.jsonl"
+  },
+  "protocol": "Matched S2 observation logs: 894 static quality queries and 500 post-insert events, BAAI/bge-small-en-v1.5, clients_read=8, clients_write=2.",
+  "quality": {
+    "faiss_mean_ndcg_at_10": 0.5055062099023669,
+    "mrr_at_10": {
+      "ci95": [
+        -0.007208550832711907,
+        0.000633855331841909
+      ],
+      "mean_delta": -0.002734277902063137,
+      "median_delta": 0.0,
+      "paired_count": 894,
+      "probability_delta_positive": 0.0044742729306487695,
+      "zero_delta_fraction": 0.9921700223713646
+    },
+    "ndcg_at_10": {
+      "ci95": [
+        -0.007267605464427878,
+        0.0005743342271482491
+      ],
+      "mean_delta": -0.0027799486754501446,
+      "median_delta": 0.0,
+      "paired_count": 894,
+      "probability_delta_positive": 0.005592841163310962,
+      "zero_delta_fraction": 0.9910514541387024
+    },
+    "qdrant_mean_ndcg_at_10": 0.5027262612269168,
+    "recall_at_10": {
+      "ci95": [
+        -0.007606263982102908,
+        0.00022371364653243843
+      ],
+      "mean_delta": -0.0031319910514541385,
+      "median_delta": 0.0,
+      "paired_count": 894,
+      "probability_delta_positive": 0.0011185682326621924,
+      "zero_delta_fraction": 0.9955257270693513
+    }
+  }
+}

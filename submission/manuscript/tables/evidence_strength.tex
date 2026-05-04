@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Reviewer-facing evidence map. The main claims are framed as benchmark and decision-audit claims rather than universal engine rankings.}
+\label{tab:evidence-strength}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llll}
+\toprule
+Claim & Main evidence & Residual risk & Paper stance \\
+\midrule
+Conformance-gated reporting & 72 strict-schema run dirs; support table & Adapter coverage is local & Supported protocol claim \\
+Strict-latency decisions & Figure~\ref{fig:decision-surface}; main and decision tables; margin table & One hardware profile & Local deployment evidence \\
+Strict FAISS repeat evidence & Same-machine repeat audit in Table~\ref{tab:strict-faiss-repeat-audit} & Repeats are local and not hardware-population intervals & Supplementary robustness check \\
+Decision surface is visible & B2 strict survivors and objective rows in Figure~\ref{fig:decision-surface} and Table~\ref{tab:decision-surface} & Full matrix remains appendix/artifact material & Anti-cherry-picking evidence \\
+S2 has no hidden Qdrant quality/post-insert retrievability win & S2 diagnostics in Tables~\ref{tab:s2-write-diagnostics}--\ref{tab:s2-post-insert-examples}; larger same-machine paired S2 check in Table~\ref{tab:s2-competitor-check} & Post-insert probes remain capped and observations lack ranked-list text & Sanity check, not universal latency evidence \\
+S3 pgvector quality edge is not substantive & 5{,}000-query paired audit against FAISS exact FlatIP in Figure~\ref{fig:s3-paired-audit} and Table~\ref{tab:s3-paired-quality} & No high-ef/probe service sweep beyond 64 & Objective sensitivity, not quality win \\
+Budget stability is workload-dependent & Figure~\ref{fig:budget-effects}; B0-to-B2 top-1 and Spearman stats & Lower ranks remain noisy & Report budgets explicitly \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

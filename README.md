@@ -49,6 +49,7 @@ Each run writes:
 | `maxionbench/` | Benchmark package, engine adapters, orchestration, reports, runtime metadata, schemas, and CLI tools. |
 | `configs/` | Pinned scenario, engine, and conformance configurations. |
 | `docs/` | Public behavior cards, migration notes, CI notes, and NeurIPS artifact inventory. |
+| `submission/` | Public NeurIPS submission handoff bundle: PDF/source, figures, tables, metadata, and submission-facing docs. |
 | `tests/` | CI checks for configs, schemas, reports, workflows, and repository hygiene. |
 | `dataset/processed/hotpot_portable/` | Lightweight tracked HotpotQA-MaxionBench manifest and checksum fixtures. |
 | `artifacts/`, `results/`, `paper/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
@@ -65,6 +66,8 @@ MaxionBench figures are written to `artifacts/figures/final/`.
 ## Public Artifact Hygiene
 
 The GitHub repository tracks source, configs, tests, lightweight dataset manifests, and public docs. Local benchmark outputs, paper build products, release bundles, caches, editor state, and reviewer-package staging directories are ignored by default so host paths, usernames, and machine-local metadata do not enter commits.
+
+NeurIPS-facing public documents that should be visible on GitHub are mirrored under `submission/`. The ignored `paper/` tree remains a local staging area and should not be assumed to be part of a normal push.
 
 ## How to run this benchmark study
 

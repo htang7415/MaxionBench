@@ -1,0 +1,79 @@
+{
+  "interpretation": [
+    "Use this table as supplementary local-repeat evidence for strict choices.",
+    "Do not interpret the p99 range as a hardware-population latency interval.",
+    "The table does not replace the archived main decision tables."
+  ],
+  "name": "strict_faiss_repeat_audit",
+  "rows": [
+    {
+      "clients_read": "1,4,8",
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "engine": "faiss-cpu",
+      "error_sum": 0,
+      "p99_ms_max": 27.66300046350803,
+      "p99_ms_median": 8.904862682102227,
+      "p99_ms_min": 2.4403301673009987,
+      "post_insert_hit_at_10_5s_mean": null,
+      "quality_label": "nDCG@10",
+      "quality_max": 0.5055062099023669,
+      "quality_mean": 0.5055062099023669,
+      "quality_metric": "ndcg_at_10",
+      "quality_min": 0.5055062099023669,
+      "repeat_count": 3,
+      "repeats": "0,1,2",
+      "row_count": 9,
+      "scenario": "s1_single_hop",
+      "source_path": "artifacts/runs/neurips_rerun/strict_faiss_small/s1_single_hop__bge-small-en-v1-5/faiss_cpu/results.parquet",
+      "workload": "S1"
+    },
+    {
+      "clients_read": "8",
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "engine": "faiss-cpu",
+      "error_sum": 0,
+      "p99_ms_max": 74.14763249689683,
+      "p99_ms_median": 47.76291388086959,
+      "p99_ms_min": 21.37819526484235,
+      "post_insert_hit_at_10_5s_mean": 0.84,
+      "quality_label": "nDCG@10",
+      "quality_max": 0.5055062099023669,
+      "quality_mean": 0.5055062099023669,
+      "quality_metric": "ndcg_at_10",
+      "quality_min": 0.5055062099023669,
+      "repeat_count": 2,
+      "repeats": "0,1",
+      "row_count": 2,
+      "scenario": "s2_streaming_memory",
+      "source_path": "artifacts/runs/neurips_rerun/s2_larger_same_machine_b2/s2_streaming_memory__bge-small-en-v1-5/faiss_cpu/results.parquet",
+      "workload": "S2"
+    },
+    {
+      "clients_read": "1,4,8",
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "engine": "faiss-cpu",
+      "error_sum": 0,
+      "p99_ms_max": 20.63790789456108,
+      "p99_ms_median": 9.603018228663132,
+      "p99_ms_min": 3.608790914295261,
+      "post_insert_hit_at_10_5s_mean": null,
+      "quality_label": "Cov@10",
+      "quality_max": 0.8515,
+      "quality_mean": 0.8515,
+      "quality_metric": "evidence_coverage_at_10",
+      "quality_min": 0.8515,
+      "repeat_count": 3,
+      "repeats": "0,1,2",
+      "row_count": 9,
+      "scenario": "s3_multi_hop",
+      "source_path": "artifacts/runs/neurips_rerun/s3_faiss_small/s3_multi_hop__bge-small-en-v1-5/faiss_cpu/results.parquet",
+      "workload": "S3"
+    }
+  ],
+  "scope": "same-machine repeat audit for strict FAISS CPU/bge-small choices",
+  "status": "completed",
+  "validation": {
+    "error_count": 0,
+    "errors": []
+  }
+}

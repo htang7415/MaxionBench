@@ -1,0 +1,19 @@
+% Auto-generated from strict-repeat artifacts.
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Same-machine repeat audit for the strict FAISS CPU/bge-small choices. The p99 range is over completed local repeat/configured-client rows and is supplementary evidence, not a hardware-population interval.}
+\label{tab:strict-faiss-repeat-audit}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Workload & Rows & Repeats & Quality & post@5s & p99 min/med/max ms & Errors \\
+\midrule
+S1 & 9 & 3 & nDCG@10=0.506 & -- & 2.4/8.9/27.7 & 0 \\
+S2 & 2 & 2 & nDCG@10=0.506 & 0.840 & 21.4/47.8/74.1 & 0 \\
+S3 & 9 & 3 & Cov@10=0.852 & -- & 3.6/9.6/20.6 & 0 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

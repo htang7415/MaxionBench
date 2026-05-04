@@ -1,0 +1,63 @@
+{
+  "archive_dir": "results/20260429T033427Z",
+  "dry_run": false,
+  "items": [
+    {
+      "dest": "results/20260429T033427Z/command.md",
+      "label": "doc:command.md",
+      "sha256": "8102f8994aac6cb9a5714b01ba1a271f66bd0bf40617a4e64ee048b9d11be3cd",
+      "src": "command.md",
+      "type": "file"
+    },
+    {
+      "dest": "results/20260429T033427Z/project.md",
+      "label": "doc:project.md",
+      "sha256": "adf68854de4305135c700f6d07a12f69f7e8ca5075794338e7ace9f913e99beb",
+      "src": "project.md",
+      "type": "file"
+    },
+    {
+      "dest": "results/20260429T033427Z/prompt.md",
+      "label": "doc:prompt.md",
+      "sha256": "f3fb8d5a3d3f4b2d8149bc526cab63094e48ef97ef11d6cbc2b09f0aa8ed11c6",
+      "src": "prompt.md",
+      "type": "file"
+    },
+    {
+      "dest": "results/20260429T033427Z/document.md",
+      "label": "doc:document.md",
+      "sha256": "cff0412bff9e7605b687fec7fa4d12b41aedb21a7a38685df04fe7b5f6666e11",
+      "src": "document.md",
+      "type": "file"
+    },
+    {
+      "dest": "results/20260429T033427Z/runs",
+      "files": 972,
+      "label": "runs",
+      "src": "artifacts/runs/portable",
+      "type": "dir"
+    },
+    {
+      "dest": "results/20260429T033427Z/figures",
+      "files": 42,
+      "label": "figures",
+      "src": "artifacts/figures/final",
+      "type": "dir"
+    },
+    {
+      "dest": "results/20260429T033427Z/hotpot_portable",
+      "files": 27,
+      "label": "hotpot_portable",
+      "src": "dataset/processed/hotpot_portable",
+      "type": "dir"
+    },
+    {
+      "dest": "results/20260429T033427Z/conformance",
+      "files": 27,
+      "label": "conformance",
+      "src": "artifacts/conformance",
+      "type": "dir"
+    }
+  ],
+  "run_id": "20260429T033427Z"
+}

@@ -1,0 +1,192 @@
+{
+  "name": "s1_s2_lancedb_paired",
+  "output_root": "artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2",
+  "protocol": {
+    "budget_level": "b2",
+    "clients_read": {
+      "s1_single_hop": 8,
+      "s2_streaming_memory": 8
+    },
+    "clients_write": {
+      "s1_single_hop": 0,
+      "s2_streaming_memory": 2
+    },
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "engines": [
+      "faiss-cpu",
+      "lancedb-inproc"
+    ],
+    "phase_max_requests_per_phase": 1000,
+    "repeats": 2,
+    "s2_max_post_insert_events": 20,
+    "search_sweep": [
+      {
+        "hnsw_ef": 32
+      }
+    ]
+  },
+  "status": "completed",
+  "table_rows": [
+    {
+      "comparison": "lancedb-inproc minus faiss-cpu",
+      "conclusion": "tail-latency tie-break; paired quality interval contains zero",
+      "matched_post_insert_events": null,
+      "matched_quality_observations": 1788,
+      "p99_direction": "FAISS lower p99",
+      "paired_delta_post_insert_hit@10,5s": null,
+      "paired_delta_quality": 0.0,
+      "post_insert_ci95": null,
+      "quality_ci95": [
+        0.0,
+        0.0
+      ],
+      "workload": "s1_single_hop"
+    },
+    {
+      "comparison": "lancedb-inproc minus faiss-cpu",
+      "conclusion": "tail-latency tie-break; paired quality interval contains zero",
+      "matched_post_insert_events": 40,
+      "matched_quality_observations": 1788,
+      "p99_direction": "FAISS lower p99",
+      "paired_delta_post_insert_hit@10,5s": 0.0,
+      "paired_delta_quality": 0.0,
+      "post_insert_ci95": [
+        0.0,
+        0.0
+      ],
+      "quality_ci95": [
+        0.0,
+        0.0
+      ],
+      "workload": "s2_streaming_memory"
+    }
+  ],
+  "validation": {
+    "error_count": 0,
+    "errors": []
+  },
+  "workloads": {
+    "s1_single_hop": {
+      "aggregate": {
+        "faiss-cpu": {
+          "p50_ms_mean": 9.61240622564219,
+          "p95_ms_mean": 22.515588600072068,
+          "p99_ms_max": 60.95916250953431,
+          "p99_ms_mean": 39.827687300275905,
+          "post_insert_observations": 0,
+          "quality_observations": 1788,
+          "result_path": "artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2/s1_single_hop__bge-small-en-v1-5/faiss_cpu/results.parquet",
+          "rows": 2
+        },
+        "lancedb-inproc": {
+          "p50_ms_mean": 111.14006250863895,
+          "p95_ms_mean": 137.4350124504417,
+          "p99_ms_max": 164.6615956397723,
+          "p99_ms_mean": 159.2465315741717,
+          "post_insert_observations": 0,
+          "quality_observations": 1788,
+          "result_path": "artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2/s1_single_hop__bge-small-en-v1-5/lancedb_inproc/results.parquet",
+          "rows": 2
+        }
+      },
+      "conclusion": "tail-latency tie-break; paired quality interval contains zero",
+      "p99_direction": "FAISS lower p99",
+      "paired_latency": {
+        "latency_ms": {
+          "ci95": [
+            99.73362118683832,
+            101.39208766564556
+          ],
+          "mean_delta_lancedb_minus_faiss": 100.57850952194566,
+          "median_delta": 99.98152049956843,
+          "paired_count": 1788,
+          "probability_delta_positive": 0.9994407158836689,
+          "zero_delta_fraction": 0.0
+        }
+      },
+      "paired_post_insert": {
+        "post_insert_hit@10,5s": {
+          "paired_count": 0
+        }
+      },
+      "paired_quality": {
+        "ndcg_at_10": {
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "mean_delta_lancedb_minus_faiss": 0.0,
+          "median_delta": 0.0,
+          "paired_count": 1788,
+          "probability_delta_positive": 0.0,
+          "zero_delta_fraction": 1.0
+        }
+      }
+    },
+    "s2_streaming_memory": {
+      "aggregate": {
+        "faiss-cpu": {
+          "p50_ms_mean": 8.708916750038043,
+          "p95_ms_mean": 18.732781382277604,
+          "p99_ms_max": 34.39400724600994,
+          "p99_ms_mean": 28.272817871184046,
+          "post_insert_observations": 40,
+          "quality_observations": 1788,
+          "result_path": "artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2/s2_streaming_memory__bge-small-en-v1-5/faiss_cpu/results.parquet",
+          "rows": 2
+        },
+        "lancedb-inproc": {
+          "p50_ms_mean": 115.05922902142629,
+          "p95_ms_mean": 145.42568777396806,
+          "p99_ms_max": 200.01725063775666,
+          "p99_ms_mean": 183.80060350580607,
+          "post_insert_observations": 40,
+          "quality_observations": 1788,
+          "result_path": "artifacts/runs/neurips_rerun/s1_s2_lancedb_paired_b2/s2_streaming_memory__bge-small-en-v1-5/lancedb_inproc/results.parquet",
+          "rows": 2
+        }
+      },
+      "conclusion": "tail-latency tie-break; paired quality interval contains zero",
+      "p99_direction": "FAISS lower p99",
+      "paired_latency": {
+        "latency_ms": {
+          "ci95": [
+            105.42039626293902,
+            107.21931875042628
+          ],
+          "mean_delta_lancedb_minus_faiss": 106.33007929242639,
+          "median_delta": 105.31331249512732,
+          "paired_count": 1788,
+          "probability_delta_positive": 1.0,
+          "zero_delta_fraction": 0.0
+        }
+      },
+      "paired_post_insert": {
+        "post_insert_hit@10,5s": {
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "mean_delta_lancedb_minus_faiss": 0.0,
+          "median_delta": 0.0,
+          "paired_count": 40,
+          "probability_delta_positive": 0.0,
+          "zero_delta_fraction": 1.0
+        }
+      },
+      "paired_quality": {
+        "ndcg_at_10": {
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "mean_delta_lancedb_minus_faiss": 0.0,
+          "median_delta": 0.0,
+          "paired_count": 1788,
+          "probability_delta_positive": 0.0,
+          "zero_delta_fraction": 1.0
+        }
+      }
+    }
+  }
+}

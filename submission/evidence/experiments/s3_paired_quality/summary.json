@@ -1,0 +1,93 @@
+{
+  "created_utc_source": "local run during manuscript preparation",
+  "paired_differences": [
+    {
+      "ci95_high": 0.0,
+      "ci95_low": -0.0003,
+      "ci95_median_bootstrap": -0.0001,
+      "comparison": "pgvector_ivf32 - faiss_exact_flatip",
+      "mean_delta_evidence_coverage_at_10": -0.0001,
+      "median_delta_evidence_coverage_at_10": 0.0,
+      "paired_queries": 5000,
+      "probability_delta_positive": 0.0
+    },
+    {
+      "ci95_high": 0.0,
+      "ci95_low": -0.0003,
+      "ci95_median_bootstrap": -0.0001,
+      "comparison": "pgvector_ivf64 - faiss_exact_flatip",
+      "mean_delta_evidence_coverage_at_10": -0.0001,
+      "median_delta_evidence_coverage_at_10": 0.0,
+      "paired_queries": 5000,
+      "probability_delta_positive": 0.0
+    }
+  ],
+  "protocol": "The 5,000-query S3 matched-audit subset evaluated exactly once per setting with clients_read=4, warmup_s=0, steady_state_s=0, bounded phase mode.",
+  "settings": [
+    {
+      "clients_read": 4,
+      "docs": 66635,
+      "embedding_model": "BAAI/bge-base-en-v1.5",
+      "engine": "faiss-cpu",
+      "errors": 0,
+      "eval_elapsed_s": 41.51445391692687,
+      "ingest_elapsed_s": 4.027512624976225,
+      "mean_evidence_coverage_at_10": 0.8712,
+      "archived_label": "faiss_hnsw32",
+      "effective_index": "FAISS IndexFlatIP; index_params is empty, so recorded hnsw_ef is ignored by the flat adapter path",
+      "name": "faiss_exact_flatip",
+      "observation_path": "paper/experiments/s3_paired_quality/observations/faiss_hnsw32.jsonl",
+      "p50_ms": 10.860187059734017,
+      "p95_ms": 16.274802421685308,
+      "p99_ms": 17.645666453754533,
+      "qps": 247.59585661184937,
+      "queries": 5000,
+      "search_params": {
+        "hnsw_ef": 32
+      },
+      "total_elapsed_s": 49.54053929192014
+    },
+    {
+      "clients_read": 4,
+      "docs": 66635,
+      "embedding_model": "BAAI/bge-base-en-v1.5",
+      "engine": "pgvector",
+      "errors": 0,
+      "eval_elapsed_s": 644.0707321660593,
+      "ingest_elapsed_s": 31.351478999946266,
+      "mean_evidence_coverage_at_10": 0.8711,
+      "name": "pgvector_ivf32",
+      "observation_path": "paper/experiments/s3_paired_quality/observations/pgvector_ivf32.jsonl",
+      "p50_ms": 177.9579585418105,
+      "p95_ms": 268.91895384178497,
+      "p99_ms": 306.04366933344863,
+      "qps": 15.213965772467438,
+      "queries": 5000,
+      "search_params": {
+        "ivfflat_probes": 32
+      },
+      "total_elapsed_s": 679.4781590000493
+    },
+    {
+      "clients_read": 4,
+      "docs": 66635,
+      "embedding_model": "BAAI/bge-base-en-v1.5",
+      "engine": "pgvector",
+      "errors": 0,
+      "eval_elapsed_s": 677.9172882080311,
+      "ingest_elapsed_s": 24.18311712506693,
+      "mean_evidence_coverage_at_10": 0.8711,
+      "name": "pgvector_ivf64",
+      "observation_path": "paper/experiments/s3_paired_quality/observations/pgvector_ivf64.jsonl",
+      "p50_ms": 191.91564549691975,
+      "p95_ms": 284.86838519456796,
+      "p99_ms": 346.16891576210054,
+      "qps": 14.584186930334269,
+      "queries": 5000,
+      "search_params": {
+        "ivfflat_probes": 64
+      },
+      "total_elapsed_s": 702.3554648329737
+    }
+  ]
+}

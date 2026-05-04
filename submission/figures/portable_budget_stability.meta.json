@@ -1,0 +1,48 @@
+{
+  "dpi": 300,
+  "figure_name": "portable_budget_stability",
+  "font_size": 9,
+  "generated_at_utc": "2026-05-03T23:55:50.288488+00:00",
+  "mode": "maxionbench",
+  "panel_pixels": 1035,
+  "rows_used": 9,
+  "scenario_budget_pairs": [
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s1_single_hop"
+    },
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s2_streaming_memory"
+    },
+    {
+      "budget_pair": "b0->b1",
+      "scenario": "s3_multi_hop"
+    },
+    {
+      "budget_pair": "b0->b2",
+      "scenario": "s3_multi_hop"
+    },
+    {
+      "budget_pair": "b1->b2",
+      "scenario": "s3_multi_hop"
+    }
+  ],
+  "style_version": "portable_v5_neurips_decision_audit"
+}

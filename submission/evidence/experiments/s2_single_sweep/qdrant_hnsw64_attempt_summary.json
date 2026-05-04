@@ -1,0 +1,14 @@
+{
+  "config": "paper/experiments/s2_single_sweep/qdrant_hnsw64.yaml",
+  "elapsed_at_interrupt": "42:11",
+  "engine": "qdrant",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "name": "qdrant_hnsw64_attempt",
+  "output_dir": "artifacts/runs/neurips_rerun/s2_qdrant_hnsw64_single/qdrant",
+  "result_files": [],
+  "search_params": {
+    "hnsw_ef": 64
+  },
+  "status": "interrupted_after_quick_run_budget_without_result_or_observation_files",
+  "use_in_manuscript": "Do not use as empirical evidence; record only as an attempted quick competitor check."
+}

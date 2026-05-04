@@ -1,0 +1,22 @@
+{
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "engine": "faiss-cpu",
+  "errors": 0,
+  "freshness_hit_at_1s": 0.83,
+  "freshness_hit_at_5s": 0.83,
+  "freshness_observations": 500,
+  "archived_label": "faiss_hnsw32_salvaged_observation_summary",
+  "effective_index": "FAISS IndexFlatIP; index_params is empty, so recorded hnsw_ef is ignored by the flat adapter path",
+  "name": "faiss_exact_flatip_salvaged_observation_summary",
+  "ndcg_at_10": 0.5055062099023669,
+  "p50_ms": 7.0945629850029945,
+  "p95_ms": 13.2343856501393,
+  "p99_ms": 15.12935659848153,
+  "quality_observations": 894,
+  "recall_at_10": 0.6007523702993501,
+  "search_params": {
+    "hnsw_ef": 32
+  },
+  "source": "artifacts/runs/neurips_rerun/s2_strict_competitors/s2_streaming_memory__bge-small-en-v1-5/faiss_cpu/logs/observations/s2_streaming_memory_r0_c8_s0.jsonl",
+  "status": "complete observation file from interrupted overbroad official run; no results.parquet was produced"
+}

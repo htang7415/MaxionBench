@@ -1,0 +1,65 @@
+\documentclass{article}
+
+\usepackage[eandd]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\hypersetup{
+  colorlinks=false,
+  pdfborder={0 0 0},
+}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{xspace}
+\usepackage{placeins}
+\usepackage{tabularx}
+
+\newcommand{\sys}{MaxionBench\xspace}
+\newcommand{\hotpotmaxionbench}{HOTPOTQA-MAXIONBENCH\xspace}
+\newcommand{\ndcg}{nDCG@10}
+\newcommand{\ecov}{evidence\_coverage@10}
+\newcommand{\postinsertone}{post\_insert\_hit@10,1s}
+\newcommand{\postinsertfive}{post\_insert\_hit@10,5s}
+\newcommand{\maxrowp}{max-row p99\xspace}
+
+\title{\sys: Conformance-Gated Decision Audits for Agentic Retrieval Memory}
+
+\author{Anonymous Authors}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Agentic AI systems increasingly use retrieval stores as mutable operational memory: agents insert evidence, query it under interaction-latency budgets, and pay downstream context costs for retrieved passages. Existing evaluations split these concerns across static information-retrieval benchmarks and vector-database performance tests. We present \sys, a conformance-gated benchmark that evaluates retrieval infrastructure as a deployment decision audit rather than as a single leaderboard. A fixed adapter contract gates engines before scoring; three workloads test static retrieval, streaming post-insert retrievability, and multi-evidence retrieval; and each decision card reports quality, a normalized context-cost proxy, \maxrowp latency, budget stability, objective sensitivity, and paired audits. On a commodity single-node evaluation of FAISS CPU, LanceDB in-process, pgvector, and Qdrant, a strict 200 ms \maxrowp policy selects FAISS CPU with \texttt{BAAI/bge-small-en-v1.5} for S1, S2, and S3. The margins reveal different mechanisms: S1 and S2 are cost-quality ties resolved by tail latency, while S3 has lower cost and higher evidence coverage than the nearest strict-cost alternative. Removing the p99 cap or optimizing quality changes selected configurations, paired audits show that an aggregate S3 pgvector edge is indistinguishable from FAISS under matched queries, and short B0 screening runs fail to preserve full-budget B2 top-1 decisions for S1 and S2. \sys therefore reports auditable local deployment evidence, not universal vector-database rankings.
+\end{abstract}
+
+\input{sections/01_introduction}
+\input{sections/02_benchmark}
+\input{sections/03_related_work}
+\FloatBarrier
+\input{sections/03_experiments}
+\FloatBarrier
+\input{sections/04_limitations}
+\input{sections/05_conclusion}
+
+\FloatBarrier
+\clearpage
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\clearpage
+\appendix
+\input{sections/appendix}
+
+\input{checklist}
+
+\end{document}

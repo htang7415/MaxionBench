@@ -1,0 +1,216 @@
+{
+  "aggregate": {
+    "faiss-cpu": {
+      "errors_sum": 0,
+      "freshness_hit_at_1s_mean": 0.825,
+      "freshness_hit_at_5s_mean": 0.825,
+      "freshness_observations": 80,
+      "ndcg_at_10_mean": 0.45440436782716637,
+      "ndcg_at_10_std": 0.0,
+      "p99_ms_max": 9.87080478691496,
+      "p99_ms_mean": 9.85388912667986,
+      "p99_ms_min": 9.83697346644476,
+      "quality_observations": 500,
+      "recall_at_10_mean": 0.5423650793650793,
+      "repeats": [
+        0,
+        1
+      ],
+      "result_path": "artifacts/runs/neurips_rerun/s2_mini_bundle_b2_deadline/s2_streaming_memory__bge-small-en-v1-5/faiss_cpu/results.parquet",
+      "rows": 2,
+      "task_cost_est_mean": 244.85100000892606
+    },
+    "qdrant": {
+      "errors_sum": 0,
+      "freshness_hit_at_1s_mean": 0.825,
+      "freshness_hit_at_5s_mean": 0.825,
+      "freshness_observations": 80,
+      "ndcg_at_10_mean": 0.45367082068925957,
+      "ndcg_at_10_std": 0.0008836199911336218,
+      "p99_ms_max": 8.807691658148542,
+      "p99_ms_mean": 8.737384524429217,
+      "p99_ms_min": 8.66707739070989,
+      "quality_observations": 500,
+      "recall_at_10_mean": 0.5402650793650794,
+      "repeats": [
+        0,
+        1
+      ],
+      "result_path": "artifacts/runs/neurips_rerun/s2_mini_bundle_b2_deadline/s2_streaming_memory__bge-small-en-v1-5/qdrant/results.parquet",
+      "rows": 2,
+      "task_cost_est_mean": 245.3184000075567
+    }
+  },
+  "interpretation": [
+    "Both engines complete two repeated S2 rows under the same matrix/orchestration with zero errors.",
+    "The bounded mini-bundle reproduces the no-hidden-Qdrant-quality-win story: paired nDCG delta is near zero and the confidence interval includes zero.",
+    "Latency values are useful as a bounded-run sanity check only because the run caps static requests and post-insert events for turnaround."
+  ],
+  "latency": {
+    "faiss_p99_ms_mean": 9.85388912667986,
+    "faiss_p99_ms_values": [
+      9.87080478691496,
+      9.83697346644476
+    ],
+    "qdrant_p99_ms_mean": 8.737384524429217,
+    "qdrant_p99_ms_values": [
+      8.66707739070989,
+      8.807691658148542
+    ]
+  },
+  "matrix_path": "artifacts/run_matrix/neurips_s2_mini_bundle_b2_deadline/run_matrix.json",
+  "name": "s2_b2_deadline_mini_bundle_faiss_qdrant",
+  "output_root": "artifacts/runs/neurips_rerun/s2_mini_bundle_b2_deadline",
+  "paired_freshness": {
+    "freshness_hit_at_1s": {
+      "changed_events": 0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_delta_qdrant_minus_faiss": 0.0,
+      "paired_count": 80
+    },
+    "freshness_hit_at_5s": {
+      "changed_events": 0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_delta_qdrant_minus_faiss": 0.0,
+      "paired_count": 80
+    }
+  },
+  "paired_quality": {
+    "mrr_at_10": {
+      "ci95": [
+        -0.001,
+        0.00019365079365079357
+      ],
+      "mean_delta_qdrant_minus_faiss": -0.0002476190476190476,
+      "median_delta": 0.0,
+      "paired_count": 500,
+      "probability_delta_positive": 0.004,
+      "zero_delta_fraction": 0.994
+    },
+    "ndcg_at_10": {
+      "ci95": [
+        -0.002609133925289007,
+        0.0004836337298497401
+      ],
+      "mean_delta_qdrant_minus_faiss": -0.0007335471379068417,
+      "median_delta": 0.0,
+      "paired_count": 500,
+      "probability_delta_positive": 0.008,
+      "zero_delta_fraction": 0.988
+    },
+    "recall_at_10": {
+      "ci95": [
+        -0.007,
+        0.0007999999999999998
+      ],
+      "mean_delta_qdrant_minus_faiss": -0.0021000000000000003,
+      "median_delta": 0.0,
+      "paired_count": 500,
+      "probability_delta_positive": 0.002,
+      "zero_delta_fraction": 0.994
+    }
+  },
+  "protocol": {
+    "budget_level": "b2",
+    "clients_read": 8,
+    "clients_write": 2,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "engines": [
+      "faiss-cpu",
+      "qdrant"
+    ],
+    "machine_scope": "same local machine as the rest of the project",
+    "phase_max_requests_per_phase": 250,
+    "purpose": "deadline repeatability mini-bundle; not a replacement for full standard S2 latency evidence",
+    "repeats": 2,
+    "s2_max_freshness_events": 40,
+    "scenario": "s2_streaming_memory",
+    "search_sweep": [
+      {
+        "hnsw_ef": 64
+      }
+    ]
+  },
+  "runs": [
+    {
+      "engine": "faiss-cpu",
+      "errors": 0,
+      "freshness_hit_at_1s": 0.825,
+      "freshness_hit_at_5s": 0.825,
+      "measure_requests": 250,
+      "mrr_at_10": 0.4847904761904762,
+      "ndcg_at_10": 0.45440436782716637,
+      "p50_ms": 5.525291431695223,
+      "p95_ms": 9.650093567324802,
+      "p99_ms": 9.87080478691496,
+      "qps": 810.237077177764,
+      "recall_at_10": 0.5423650793650793,
+      "repeat_idx": 0,
+      "task_cost_est": 244.85100000894127,
+      "warmup_requests": 250
+    },
+    {
+      "engine": "faiss-cpu",
+      "errors": 0,
+      "freshness_hit_at_1s": 0.825,
+      "freshness_hit_at_5s": 0.825,
+      "measure_requests": 250,
+      "mrr_at_10": 0.4847904761904762,
+      "ndcg_at_10": 0.45440436782716637,
+      "p50_ms": 5.422875517979264,
+      "p95_ms": 9.664401930058375,
+      "p99_ms": 9.83697346644476,
+      "qps": 813.0017397283175,
+      "recall_at_10": 0.5423650793650793,
+      "repeat_idx": 1,
+      "task_cost_est": 244.85100000891086,
+      "warmup_requests": 250
+    },
+    {
+      "engine": "qdrant",
+      "errors": 0,
+      "freshness_hit_at_1s": 0.825,
+      "freshness_hit_at_5s": 0.825,
+      "measure_requests": 250,
+      "mrr_at_10": 0.48412380952380957,
+      "ndcg_at_10": 0.45278720069812595,
+      "p50_ms": 6.188999977894127,
+      "p95_ms": 8.016612200299278,
+      "p99_ms": 8.66707739070989,
+      "qps": 949.2440747646381,
+      "recall_at_10": 0.5381650793650794,
+      "repeat_idx": 0,
+      "task_cost_est": 245.3526000076206,
+      "warmup_requests": 250
+    },
+    {
+      "engine": "qdrant",
+      "errors": 0,
+      "freshness_hit_at_1s": 0.825,
+      "freshness_hit_at_5s": 0.825,
+      "measure_requests": 250,
+      "mrr_at_10": 0.48496190476190476,
+      "ndcg_at_10": 0.4545544406803932,
+      "p50_ms": 6.180478492751718,
+      "p95_ms": 8.127778751077129,
+      "p99_ms": 8.807691658148542,
+      "qps": 965.4345469381566,
+      "recall_at_10": 0.5423650793650793,
+      "repeat_idx": 1,
+      "task_cost_est": 245.28420000749279,
+      "warmup_requests": 250
+    }
+  ],
+  "status": "completed",
+  "validation": {
+    "error_count": 0,
+    "run_dirs_checked": 2,
+    "strict_schema_pass": true
+  }
+}

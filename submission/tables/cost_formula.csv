@@ -1,0 +1,6 @@
+term,meaning,unit,value_source,source_path
+C_retrieval,Per-query retrieval cost estimate,project-defined normalized cost,"retrieval_cost_est = rhu_h / max(measured_requests, 1)",maxionbench/orchestration/runner.py::_portable_payload; artifacts/runs/portable/**/results.parquet
+C_embedding,Per-query embedding cost estimate,project-defined normalized cost,embedding_cost_est = 0.0 for archived offline local embeddings,maxionbench/orchestration/runner.py::_portable_payload; artifacts/runs/portable/**/results.parquet
+c_llm_in,Input-token cost coefficient,project-defined normalized cost per token,0.15 from RunConfig.c_llm_in,artifacts/runs/portable/**/config_resolved.yaml; artifacts/runs/portable/**/run_metadata.json
+Nretrieved_input_tokens,Retrieved context tokens packed downstream,tokens/query,avg_retrieved_input_tokens measured from top-k outputs,maxionbench/orchestration/runner.py::_portable_payload; artifacts/runs/portable/**/results.parquet
+task_cost_est,C_retrieval + C_embedding + c_llm_in x Nretrieved_input_tokens,normalized context-cost/query,retrieval_cost_est + embedding_cost_est + llm_context_cost_est,maxionbench/orchestration/runner.py::_portable_payload; paper/tables/portable_winners.csv

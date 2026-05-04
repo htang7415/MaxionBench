@@ -1,0 +1,13 @@
+p99_max_threshold_ms,workload_type,minimum_engine,recommended_embedding_tier,why
+100.0,s1_single_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, p99_mean=6.3ms, p99_max=11.2ms, task_cost=262.759228"
+200.0,s1_single_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, p99_mean=6.3ms, p99_max=11.2ms, task_cost=262.759228"
+500.0,s1_single_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, p99_mean=6.3ms, p99_max=11.2ms, task_cost=262.759228"
+none,s1_single_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, p99_mean=6.3ms, p99_max=11.2ms, task_cost=262.759228"
+100.0,s2_streaming_memory,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, post_insert_hit@10,5s=0.830, p99_mean=10.0ms, p99_max=10.0ms, task_cost=262.759228"
+200.0,s2_streaming_memory,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, post_insert_hit@10,5s=0.830, p99_mean=10.0ms, p99_max=10.0ms, task_cost=262.759228"
+500.0,s2_streaming_memory,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, post_insert_hit@10,5s=0.830, p99_mean=10.0ms, p99_max=10.0ms, task_cost=262.759228"
+none,s2_streaming_memory,faiss-cpu,BAAI/bge-small-en-v1.5,"ndcg_at_10=0.506, post_insert_hit@10,5s=0.830, p99_mean=10.0ms, p99_max=10.0ms, task_cost=262.759228"
+100.0,s3_multi_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"evidence_coverage@10=0.852, p99_mean=11.6ms, p99_max=22.8ms, task_cost=129.324900"
+200.0,s3_multi_hop,faiss-cpu,BAAI/bge-small-en-v1.5,"evidence_coverage@10=0.852, p99_mean=11.6ms, p99_max=22.8ms, task_cost=129.324900"
+500.0,s3_multi_hop,pgvector,BAAI/bge-small-en-v1.5,"evidence_coverage@10=0.851, p99_mean=295.8ms, p99_max=499.2ms, task_cost=129.125172"
+none,s3_multi_hop,lancedb-inproc,BAAI/bge-small-en-v1.5,"evidence_coverage@10=0.847, p99_mean=396.3ms, p99_max=739.6ms, task_cost=128.492220"

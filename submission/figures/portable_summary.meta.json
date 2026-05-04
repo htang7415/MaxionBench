@@ -1,0 +1,59 @@
+{
+  "budgets": [
+    "b0",
+    "b1",
+    "b2"
+  ],
+  "engines": [
+    "faiss-cpu",
+    "lancedb-inproc",
+    "pgvector",
+    "qdrant"
+  ],
+  "generated_at_utc": "2026-05-03T23:55:48.349720+00:00",
+  "mode": "maxionbench",
+  "observed_rows_total": 224,
+  "rows_total": 224,
+  "scenarios": [
+    "s1_single_hop",
+    "s2_streaming_memory",
+    "s3_multi_hop"
+  ],
+  "support_table_rows": 5,
+  "table_names": [
+    "portable_summary.csv",
+    "portable_winners.csv",
+    "portable_stability.csv",
+    "minimum_viable_deployment.csv",
+    "minimum_viable_deployment_sensitivity.csv",
+    "portable_decision_table.csv",
+    "portable_decision_table.tex",
+    "decision_surface.csv",
+    "decision_surface.tex",
+    "s2_write_diagnostics.csv",
+    "s2_write_diagnostics.tex",
+    "s2_post_insert_examples.csv",
+    "s2_post_insert_examples.tex",
+    "neurips_main_results.csv",
+    "neurips_main_results.tex",
+    "decision_error_ablation.csv",
+    "decision_error_ablation.tex",
+    "quality_floor_survivors.csv",
+    "quality_floor_survivors.tex",
+    "cost_formula.csv",
+    "cost_formula.tex",
+    "cost_sensitivity.csv",
+    "cost_sensitivity.tex",
+    "latency_distribution.csv",
+    "latency_distribution.tex",
+    "strict_decision_margins.csv",
+    "strict_decision_margins.tex",
+    "portable_support_table.csv",
+    "portable_support_table.tex",
+    "engine_configuration.csv",
+    "engine_configuration.tex",
+    "s3_all_evidence_hit.csv",
+    "s3_all_evidence_hit.tex"
+  ],
+  "winner_rows": 168
+}

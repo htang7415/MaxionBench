@@ -1,0 +1,3 @@
+workload,comparison,matched_quality_observations,paired_delta_quality,quality_ci95,matched_post_insert_events,"paired_delta_post_insert_hit@10,5s",post_insert_ci95,p99_direction,conclusion
+s1_single_hop,lancedb-inproc minus faiss-cpu,1788,0.0,"[0.0, 0.0]",,,,FAISS lower p99,tail-latency tie-break; paired quality interval contains zero
+s2_streaming_memory,lancedb-inproc minus faiss-cpu,1788,0.0,"[0.0, 0.0]",40.0,0.0,"[0.0, 0.0]",FAISS lower p99,tail-latency tie-break; paired quality interval contains zero

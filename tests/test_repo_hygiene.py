@@ -5,12 +5,16 @@ from pathlib import Path
 
 
 PUBLIC_TEXT_EXTENSIONS = {
+    ".bib",
     ".cfg",
     ".csv",
     ".ini",
     ".json",
+    ".jsonld",
     ".md",
     ".py",
+    ".sty",
+    ".tex",
     ".toml",
     ".txt",
     ".yaml",
@@ -21,7 +25,9 @@ PRIVATE_NEEDLES = (
     "/" + "Users/",
     "/" + "Volumes/" + "Max",
     "/" + "home/data/",
+    "Apple " + "M",
     "Mac " + "mini",
+    "mac" + "OS ",
 )
 
 
@@ -38,6 +44,8 @@ def test_gitignore_blocks_python_cache_artifacts() -> None:
     assert "artifacts/workstation_runs/" in payload
     assert "results/" in payload
     assert "results_quick_check/" in payload
+    assert "!submission/" in payload
+    assert "!submission/**" in payload
     assert ".codex" in payload
     assert ".vscode/" in payload
     assert ".agents/" in payload
@@ -87,6 +95,44 @@ def test_local_docs_and_scripts_are_gitignored_except_readme() -> None:
     assert proc.returncode == 1, "README.md should not be ignored by git"
 
 
+def test_submission_bundle_contains_neurips_documents() -> None:
+    required_paths = [
+        "submission/README.md",
+        "submission/MANIFEST.md",
+        "submission/manuscript/main.pdf",
+        "submission/manuscript/main.tex",
+        "submission/manuscript/checklist.tex",
+        "submission/manuscript/references.bib",
+        "submission/manuscript/neurips_2026.sty",
+        "submission/manuscript/sections/01_introduction.tex",
+        "submission/manuscript/sections/02_benchmark.tex",
+        "submission/manuscript/sections/03_experiments.tex",
+        "submission/manuscript/sections/03_related_work.tex",
+        "submission/manuscript/sections/04_limitations.tex",
+        "submission/manuscript/sections/05_conclusion.tex",
+        "submission/manuscript/sections/appendix.tex",
+        "submission/manuscript/tables/neurips_main_results.tex",
+        "submission/manuscript/tables/portable_decision_table.tex",
+        "submission/manuscript/tables/evidence_strength.tex",
+        "submission/figures/portable_decision_surface.pdf",
+        "submission/figures/s3_paired_audit_forest.pdf",
+        "submission/tables/neurips_main_results.csv",
+        "submission/metadata/hotpotqa_portable_croissant.jsonld",
+        "submission/metadata/maxionbench_evaluation_card.json",
+        "submission/docs/artifact_card.md",
+        "submission/docs/upload_checklist.md",
+        "submission/docs/final_submission_status.md",
+        "submission/docs/repo_inventory_for_neurips.md",
+        "submission/evidence/archive/archive_manifest.json",
+        "submission/evidence/results/conformance_matrix.csv",
+        "submission/evidence/experiments/s3_paired_quality/summary.json",
+        "submission/evidence/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+        "submission/evidence/experiments/strict_faiss_repeats/strict_faiss_repeat_summary.json",
+    ]
+    missing = [path for path in required_paths if not Path(path).exists()]
+    assert missing == []
+
+
 def test_tracked_public_text_has_no_local_identity_leaks() -> None:
     proc = subprocess.run(
         ["git", "ls-files"],
@@ -98,6 +144,20 @@ def test_tracked_public_text_has_no_local_identity_leaks() -> None:
     offenders: list[str] = []
     for path in tracked:
         if not path.exists():
+            continue
+        if path.suffix not in PUBLIC_TEXT_EXTENSIONS:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for needle in PRIVATE_NEEDLES:
+            if needle in text:
+                offenders.append(f"{path}:{needle}")
+    assert offenders == []
+
+
+def test_submission_public_text_has_no_local_identity_leaks() -> None:
+    offenders: list[str] = []
+    for path in Path("submission").rglob("*"):
+        if not path.is_file():
             continue
         if path.suffix not in PUBLIC_TEXT_EXTENSIONS:
             continue

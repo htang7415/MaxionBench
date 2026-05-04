@@ -1,0 +1,18 @@
+% Auto-generated from paired-audit artifacts.
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Matched S1/S2 FAISS CPU versus LanceDB in-process audit with \texttt{BAAI/bge-small-en-v1.5}. Paired deltas are LanceDB minus FAISS.}
+\label{tab:s1-s2-lancedb-paired}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llrccrcll}
+\toprule
+Workload & Comparison & Quality obs. & $\Delta$ quality & 95\% CI & Post-insert events & $\Delta$ \postinsertfive{} & p99 direction & Conclusion \\
+\midrule
+S1 & LanceDB $-$ FAISS & 1788 & 0.0000 & [0.0000, 0.0000] & -- & -- & FAISS lower p99 & tail-latency tie-break; paired quality interval contains zero \\
+S2 & LanceDB $-$ FAISS & 1788 & 0.0000 & [0.0000, 0.0000] & 40 & 0.0000 & FAISS lower p99 & tail-latency tie-break; paired quality interval contains zero \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
