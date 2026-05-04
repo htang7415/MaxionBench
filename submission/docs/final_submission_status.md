@@ -5,6 +5,9 @@ Status date: 2026-05-04.
 ## Public Bundle
 
 - PDF upload candidate: `submission/manuscript/main.pdf`.
+- Title field: `submission/title.txt`.
+- Abstract field: `submission/abstract.txt`.
+- Supplementary ZIP candidate: `submission/supplement.zip`.
 - Source package root: `submission/manuscript/`.
 - Artifact card: `submission/docs/artifact_card.md`.
 - Upload checklist: `submission/docs/upload_checklist.md`.

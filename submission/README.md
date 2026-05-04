@@ -8,7 +8,10 @@ It contains the current upload-facing materials while avoiding paper-preparation
 
 | Path | Contents |
 |---|---|
+| `title.txt` | Plain-text OpenReview title field. |
+| `abstract.txt` | Plain-text OpenReview abstract field. |
 | `manuscript/main.pdf` | Current PDF upload candidate. |
+| `supplement.zip` | Current supplementary ZIP upload candidate. |
 | `manuscript/` | LaTeX source package, including `main.tex`, `checklist.tex`, `references.bib`, `neurips_2026.sty`, section files, and manuscript table includes. |
 | `figures/` | Figure PDFs/PNGs and metadata sidecars referenced by the manuscript. |
 | `tables/` | Generated CSV/TeX table sources and table-facing figure copies. |
@@ -19,6 +22,9 @@ It contains the current upload-facing materials while avoiding paper-preparation
 ## Upload Mapping
 
 - Main paper PDF: `manuscript/main.pdf`
+- Title field: `title.txt`
+- Abstract field: `abstract.txt`
+- Supplementary ZIP: `supplement.zip`
 - Source package root: `manuscript/`
 - Dataset/evaluation metadata: `metadata/`
 - Claim and reproducibility card: `docs/artifact_card.md`

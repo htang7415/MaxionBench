@@ -3,6 +3,9 @@
 ## Local Bundle
 
 - `submission/manuscript/main.pdf` is the PDF upload candidate.
+- `submission/title.txt` is the OpenReview title field.
+- `submission/abstract.txt` is the OpenReview abstract field.
+- `submission/supplement.zip` is the supplementary ZIP candidate.
 - `submission/manuscript/` contains the source package needed to rebuild the PDF.
 - `submission/metadata/` contains dataset/evaluation metadata.
 - `submission/docs/artifact_card.md` records the public claim boundary.
@@ -11,6 +14,7 @@
 ## Before Upload
 
 - Rebuild `submission/manuscript/main.pdf` from a clean LaTeX state.
+- Rebuild `submission/supplement.zip` after any supporting document, metadata, evidence, figure, table, or source-package change.
 - Confirm page accounting against the active NeurIPS Evaluations & Datasets instructions.
 - Confirm the anonymous artifact URL in `submission/metadata/hotpotqa_portable_croissant.jsonld`.
 - Fix the current anonymous artifact URL before upload if it still returns HTTP 401/404 to unauthenticated reviewers.

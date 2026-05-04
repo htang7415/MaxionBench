@@ -6,7 +6,10 @@ This manifest records the NeurIPS-facing documents intentionally mirrored under 
 
 | File or directory | Role |
 |---|---|
+| `title.txt` | Plain-text OpenReview title field. |
+| `abstract.txt` | Plain-text OpenReview abstract field. |
 | `manuscript/main.pdf` | Main PDF upload candidate. |
+| `supplement.zip` | OpenReview supplementary ZIP candidate. |
 | `manuscript/main.tex` | LaTeX entry point. |
 | `manuscript/checklist.tex` | NeurIPS checklist included by `main.tex`. |
 | `manuscript/references.bib` | Bibliography used by the manuscript. |
@@ -37,4 +40,4 @@ This manifest records the NeurIPS-facing documents intentionally mirrored under 
 
 ## Exclusions
 
-The submission bundle intentionally excludes paper-writing scripts, paper-preparation scripts, LaTeX build logs, AppleDouble sidecars, local result trees, release tarballs, editor state, and reviewer-package scratch directories.
+The submission bundle intentionally excludes paper-writing scripts, paper-preparation scripts, LaTeX build logs, AppleDouble sidecars, local result trees, release tarballs, editor state, reviewer-package scratch directories, and the main PDF inside `supplement.zip`.
