@@ -69,8 +69,8 @@ ci_s1_smoke_local.yaml
 .claude/settings.local.json
 
 # Public submission handoff bundle. Keep this after the broad paper/doc ignores.
-!submission/
-!submission/**
+submission/
+submission/**
 submission/**/._*
 submission/**/*.aux
 submission/**/*.bbl
