@@ -13,9 +13,9 @@ from maxionbench.schemas.result_schema import RUN_STATUS_FILENAME, read_run_stat
 FONT_SIZE = 9
 PANEL_WIDTH_IN = 3.45
 PANEL_HEIGHT_IN = 2.25
-PANEL_PX = 1035
-DPI = 300
-STYLE_VERSION = "portable_v5_neurips_decision_audit"
+PANEL_PX = 2070
+DPI = 600
+STYLE_VERSION = "portable_v6_publication_figures"
 FIGURE_FACE_COLOR = "#ffffff"
 TEXT_COLOR = "#1f2933"
 GRID_COLOR = "#d9dee5"

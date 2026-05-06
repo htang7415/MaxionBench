@@ -40,6 +40,16 @@ _MVD_SENSITIVITY_THRESHOLDS_MS: tuple[float | None, ...] = (100.0, 200.0, 500.0,
 _BOOTSTRAP_SEED = 20260428
 _BOOTSTRAP_RESAMPLES = 2000
 _COST_SENSITIVITY_MULTIPLIERS: tuple[float, ...] = (0.1, 1.0, 10.0)
+_PAPER_FIGURE_STEMS = (
+    "maxionbench_decision_audit_conceptual",
+    "portable_decision_surface",
+    "s3_paired_audit_forest",
+    "portable_task_cost_by_budget",
+    "portable_budget_stability",
+    "portable_s2_post_insert_retrievability",
+    "portable_mvd_sensitivity",
+    "portable_s2_freshness",
+)
 _REPORT_COLUMN_ALIASES = {
     "freshness_hit_at_1s": "post_insert_hit_at_10_1s",
     "freshness_hit_at_5s": "post_insert_hit_at_10_5s",
@@ -85,6 +95,7 @@ def generate_portable_report_bundle(
     if portable_reportable.empty:
         raise RuntimeError("portable report bundle requires at least one reportable engine after conformance filtering")
     out_dir.mkdir(parents=True, exist_ok=True)
+    _remove_stale_figure_exports(out_dir=out_dir)
     tables = _export_portable_tables(
         frame=portable_reportable,
         observed_frame=portable,
@@ -93,7 +104,21 @@ def generate_portable_report_bundle(
         behavior_dir=resolved_behavior_dir,
     )
     figures = _export_portable_figures(frame=portable_reportable, out_dir=out_dir)
+    _remove_appledouble_sidecars(out_dir=out_dir)
     return {"figures": figures, "tables": tables}
+
+
+def _remove_stale_figure_exports(*, out_dir: Path) -> None:
+    for suffix in (".pdf", ".png", ".svg", ".meta.json"):
+        (out_dir / f"portable_s2_freshness{suffix}").unlink(missing_ok=True)
+        (out_dir / f"._portable_s2_freshness{suffix}").unlink(missing_ok=True)
+    _remove_appledouble_sidecars(out_dir=out_dir)
+
+
+def _remove_appledouble_sidecars(*, out_dir: Path) -> None:
+    for path in out_dir.glob("._*"):
+        if path.is_file():
+            path.unlink()
 
 
 def _extract_portable_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
@@ -372,8 +397,8 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     decision = _portable_decision_table(winners=winners, stability=stability)
     decision_surface = _decision_surface_table(winners=winners, decision=decision)
 
-    conceptual_path = out_dir / "maxionbench_decision_audit_conceptual.png"
-    fig = _wide_paper_figure(height_in=2.45)
+    conceptual_path = out_dir / "maxionbench_decision_audit_conceptual.svg"
+    fig = _wide_paper_figure(height_in=4.15)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_decision_audit_conceptual(fig=fig)
     _save_paper_figure(fig=fig, path=conceptual_path)
@@ -391,7 +416,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(conceptual_path)
 
-    decision_surface_path = out_dir / "portable_decision_surface.png"
+    decision_surface_path = out_dir / "portable_decision_surface.svg"
     fig = _wide_paper_figure(height_in=2.75)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_decision_surface(fig=fig, surface=decision_surface)
@@ -412,7 +437,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(decision_surface_path)
 
-    s3_forest_path = out_dir / "s3_paired_audit_forest.png"
+    s3_forest_path = out_dir / "s3_paired_audit_forest.svg"
     fig, ax = _paper_figure(height_in=2.15)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     forest_rows = _load_s3_paired_audit_rows()
@@ -434,7 +459,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(s3_forest_path)
 
-    task_cost_path = out_dir / "portable_task_cost_by_budget.png"
+    task_cost_path = out_dir / "portable_task_cost_by_budget.svg"
     fig, ax = _paper_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_task_cost_by_budget(ax=ax, winners=winners)
@@ -457,7 +482,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(task_cost_path)
 
-    stability_path = out_dir / "portable_budget_stability.png"
+    stability_path = out_dir / "portable_budget_stability.svg"
     fig, ax = _paper_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_budget_stability(ax=ax, stability=stability)
@@ -479,7 +504,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     )
     figures.append(stability_path)
 
-    post_insert_path = out_dir / "portable_s2_post_insert_retrievability.png"
+    post_insert_path = out_dir / "portable_s2_post_insert_retrievability.svg"
     fig, ax = _paper_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_s2_post_insert_retrievability(ax=ax, winners=winners)
@@ -501,7 +526,7 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     figures.append(post_insert_path)
 
     mvd_sensitivity = _minimum_viable_deployment_sensitivity_table(winners=winners)
-    mvd_sensitivity_path = out_dir / "portable_mvd_sensitivity.png"
+    mvd_sensitivity_path = out_dir / "portable_mvd_sensitivity.svg"
     fig, ax = _paper_figure(height_in=3.0)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_mvd_sensitivity(ax=ax, sensitivity=mvd_sensitivity)
@@ -3053,34 +3078,43 @@ def _plot_decision_audit_conceptual(*, fig: Any) -> None:
     left_face = "#eef4fb"
     right_face = "#eef8f2"
     accent_face = "#fff5df"
-    ax.text(0.22, 0.92, "Naive leaderboard", ha="center", va="center", fontsize=FONT_SIZE + 1, fontweight="bold")
-    ax.text(0.73, 0.92, "MaxionBench decision audit", ha="center", va="center", fontsize=FONT_SIZE + 1, fontweight="bold")
+    row_h = 0.12
+    result_h = 0.15
+    top_y = 0.76
+    left_middle_y = 0.57
+    left_lower_y = 0.40
+    right_middle_y = 0.465
+    result_y = 0.14
+    result_top = result_y + result_h
+    ax.text(0.22, 0.95, "Naive leaderboard", ha="center", va="center", fontsize=FONT_SIZE + 1, fontweight="bold")
+    ax.text(0.73, 0.95, "MaxionBench decision audit", ha="center", va="center", fontsize=FONT_SIZE + 1, fontweight="bold")
 
-    box(x=0.05, y=0.70, w=0.34, h=0.10, text="Static relevance only", face=left_face)
-    box(x=0.05, y=0.55, w=0.34, h=0.10, text="Mean / median latency", face=left_face)
-    box(x=0.05, y=0.40, w=0.34, h=0.10, text="No write semantics\nor context-cost proxy", face=left_face)
-    box(x=0.05, y=0.20, w=0.34, h=0.11, text="One apparent winner", face=accent_face, weight="bold")
-    arrow(0.22, 0.40, 0.22, 0.31)
+    box(x=0.05, y=top_y, w=0.34, h=row_h, text="Static relevance only", face=left_face)
+    box(x=0.05, y=left_middle_y, w=0.34, h=row_h, text="Mean / median latency", face=left_face)
+    box(x=0.05, y=left_lower_y, w=0.34, h=row_h, text="No write semantics\nor context-cost proxy", face=left_face)
+    box(x=0.05, y=result_y, w=0.34, h=result_h, text="One apparent winner", face=accent_face, weight="bold")
+    arrow(0.22, left_lower_y, 0.22, result_top)
 
-    box(x=0.51, y=0.74, w=0.19, h=0.10, text="Conformance\ngate", face=right_face, weight="bold")
-    box(x=0.75, y=0.72, w=0.19, h=0.12, text="S1 static\nS2 post-insert\nS3 multi-evidence", face=right_face)
-    box(x=0.51, y=0.54, w=0.19, h=0.12, text="p99 policy\ncontext-cost proxy", face=right_face)
-    box(x=0.75, y=0.54, w=0.19, h=0.12, text="Budget ladder\npaired audits", face=right_face)
-    box(x=0.56, y=0.22, w=0.33, h=0.15, text="Decision card:\nstrict, cost-only/no-p99,\nquality-first", face=accent_face, weight="bold")
-    arrow(0.70, 0.79, 0.75, 0.79)
-    arrow(0.61, 0.54, 0.69, 0.37)
-    arrow(0.84, 0.54, 0.76, 0.37)
+    box(x=0.51, y=top_y, w=0.19, h=row_h, text="Conformance\ngate", face=right_face, weight="bold")
+    box(x=0.75, y=top_y, w=0.19, h=row_h, text="S1 static\nS2 post-insert\nS3 multi-evidence", face=right_face)
+    box(x=0.51, y=right_middle_y, w=0.19, h=row_h, text="p99 policy\ncontext-cost proxy", face=right_face)
+    box(x=0.75, y=right_middle_y, w=0.19, h=row_h, text="Budget ladder\npaired audits", face=right_face)
+    box(x=0.535, y=result_y, w=0.38, h=result_h, text="Decision card:\nstrict, cost-only/no-p99,\nquality-first", face=accent_face, weight="bold")
+    arrow(0.70, top_y + row_h / 2.0, 0.75, top_y + row_h / 2.0)
+    arrow(0.61, right_middle_y, 0.68, result_top)
+    arrow(0.84, right_middle_y, 0.77, result_top)
 
-    ax.plot([0.455, 0.455], [0.16, 0.86], color=GRID_COLOR, linewidth=1.0)
+    ax.plot([0.455, 0.455], [0.12, 0.89], color=GRID_COLOR, linewidth=1.0)
     ax.text(
         0.50,
-        0.08,
-        "A reportable winner is conditional on conformance, workload, objective, budget, and audit margins.",
+        0.035,
+        "A reportable winner is conditional on conformance, workload, objective, budget,\nand audit margins.",
         ha="center",
         va="center",
-        fontsize=FONT_SIZE,
+        fontsize=FONT_SIZE - 1,
         color=TEXT_COLOR,
         fontweight="bold",
+        linespacing=1.12,
     )
 
 
@@ -3106,12 +3140,14 @@ def _plot_decision_surface(*, fig: Any, surface: pd.DataFrame) -> None:
         if selected.empty:
             _draw_placeholder(ax=ax, message=f"No {_short_scenario_code(scenario)} rows")
             continue
+        finite_quality: list[float] = []
         for _, row in selected.iterrows():
             p99 = _safe_float(row.get("p99_max_ms"))
             quality = _safe_float(row.get("quality_value"))
             cost = _safe_float(row.get("task_cost_est"))
             if not (math.isfinite(p99) and p99 > 0 and math.isfinite(quality)):
                 continue
+            finite_quality.append(quality)
             engine = str(row.get("engine"))
             embedding_label = _short_embedding_label(str(row.get("embedding_model")))
             size = 46.0
@@ -3149,6 +3185,13 @@ def _plot_decision_surface(*, fig: Any, surface: pd.DataFrame) -> None:
                     color=TEXT_COLOR,
                     ha="left",
                     va="center",
+                    bbox={
+                        "boxstyle": "round,pad=0.16",
+                        "facecolor": FIGURE_FACE_COLOR,
+                        "edgecolor": GRID_COLOR,
+                        "linewidth": 0.45,
+                        "alpha": 0.92,
+                    },
                     arrowprops={"arrowstyle": "-", "color": GRID_COLOR, "lw": 0.6},
                 )
         ax.axvline(_MVD_P99_MAX_MS_THRESHOLD, color=TEXT_COLOR, linestyle="--", linewidth=0.9, alpha=0.65)
@@ -3167,6 +3210,11 @@ def _plot_decision_surface(*, fig: Any, surface: pd.DataFrame) -> None:
         ax.set_title(_short_scenario_code(scenario), fontweight="bold")
         ylabel = "nDCG@10" if scenario != "s3_multi_hop" else "Cov@10"
         ax.set_ylabel(ylabel)
+        if finite_quality:
+            low = min(finite_quality)
+            high = max(finite_quality)
+            pad = max(0.004, (high - low) * 0.18)
+            ax.set_ylim(max(0.0, low - pad), min(1.0, high + pad))
         ax.grid(axis="both", alpha=0.35)
         _style_axis(ax)
     axes[1].set_xlabel("max-row p99 (ms, log scale)")
@@ -3252,26 +3300,30 @@ def _plot_s3_paired_audit_forest(*, ax: Any, rows: list[dict[str, Any]]) -> None
     ax.grid(axis="x", alpha=0.42)
     for idx, row in enumerate(rows):
         mean = _safe_float(row.get("mean_delta"))
-        ax.text(
-            0.18,
-            float(idx),
-            f"n={int(row.get('paired_queries') or 0)}",
-            fontsize=FONT_SIZE - 1,
-            va="center",
-            ha="left",
-            color=TEXT_COLOR,
-        )
-        ax.text(
-            means[idx] - 0.12,
-            float(idx) - 0.18,
+        ax.annotate(
             f"{mean:+.1e}",
+            xy=(means[idx], float(idx)),
+            xytext=(-7, -10),
+            textcoords="offset points",
             fontsize=FONT_SIZE - 1,
             va="center",
             ha="right",
             color=TEXT_COLOR,
         )
+        ax.text(
+            1.01,
+            float(idx),
+            f"n={int(row.get('paired_queries') or 0):,}",
+            transform=ax.get_yaxis_transform(),
+            fontsize=FONT_SIZE - 1,
+            va="center",
+            ha="left",
+            color=TEXT_COLOR,
+            clip_on=False,
+        )
     finite = np.concatenate([lows[np.isfinite(lows)], highs[np.isfinite(highs)], np.asarray([0.0])])
-    ax.set_xlim(float(np.min(finite)) - 0.4, float(np.max(finite)) + 1.4)
+    span = max(1.0, float(np.max(finite) - np.min(finite)))
+    ax.set_xlim(float(np.min(finite)) - 0.14 * span, float(np.max(finite)) + 0.22 * span)
     _style_axis(ax)
 
 
@@ -3285,14 +3337,17 @@ def _paper_figure(*, height_in: float | None = None) -> tuple[Any, Any]:
 
 
 def _save_paper_figure(*, fig: Any, path: Path) -> None:
+    if path.suffix.lower() != ".svg":
+        raise ValueError(f"paper figures must be exported as .svg, got {path}")
     save_kwargs = {
         "facecolor": FIGURE_FACE_COLOR,
         "edgecolor": "none",
         "bbox_inches": "tight",
         "pad_inches": 0.025,
     }
-    fig.savefig(path, dpi=DPI, format="png", **save_kwargs)
+    fig.savefig(path, format="svg", **save_kwargs)
     fig.savefig(path.with_suffix(".pdf"), format="pdf", **save_kwargs)
+    fig.savefig(path.with_suffix(".png"), dpi=DPI, format="png", **save_kwargs)
 
 
 def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
@@ -3310,7 +3365,7 @@ def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
         "s3_multi_hop": ENGINE_PALETTE[1],
     }
     scenario_offsets = {"s1_single_hop": -0.025, "s2_streaming_memory": 0.0, "s3_multi_hop": 0.025}
-    label_offsets = {"s1_single_hop": 7.0, "s2_streaming_memory": -7.0, "s3_multi_hop": 0.0}
+    label_offsets = {"s1_single_hop": (6, 9), "s2_streaming_memory": (6, -9), "s3_multi_hop": (6, 0)}
     scenario_markers = {"s1_single_hop": "o", "s2_streaming_memory": "s", "s3_multi_hop": "^"}
     max_cost = 0.0
     for scenario in scenario_order:
@@ -3333,14 +3388,16 @@ def _plot_task_cost_by_budget(*, ax: Any, winners: pd.DataFrame) -> None:
             label=_short_scenario_code(scenario),
         )
         if len(x) and len(y):
-            ax.text(
-                float(x[-1]) + 0.045,
-                float(y[-1]) + label_offsets.get(scenario, 0.0),
+            ax.annotate(
                 f"{_short_scenario_code(scenario)} {float(y[-1]):.0f}",
+                xy=(float(x[-1]), float(y[-1])),
+                xytext=label_offsets.get(scenario, (6, 0)),
+                textcoords="offset points",
                 fontsize=FONT_SIZE - 1,
                 va="center",
                 ha="left",
                 color=TEXT_COLOR,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 0.45},
             )
     ax.set_xticks([0, 1, 2], labels=["B0", "B1", "B2"])
     ax.set_xlim(-0.18, 2.55)
@@ -3384,17 +3441,19 @@ def _plot_budget_stability(*, ax: Any, stability: pd.DataFrame) -> None:
         top1 = _safe_float(row.get("top1_agreement"))
         top2 = _safe_float(row.get("top2_agreement"))
         ax.text(
-            1.06,
+            1.02,
             float(row_idx),
-            f"rho={rho:.2f}, top-1={top1:.0f}, top-2={top2:.0f}",
+            f"rho={rho:.2f}; top-1={top1:.0f}; top-2={top2:.0f}",
+            transform=ax.get_yaxis_transform(),
             fontsize=FONT_SIZE - 1,
             va="center",
             ha="left",
             color=TEXT_COLOR,
+            clip_on=False,
         )
     labels = ordered["scenario_label"].astype(str).tolist()
     ax.set_yticks(y, labels=labels)
-    ax.set_xlim(-0.04, 1.48)
+    ax.set_xlim(-0.04, 1.04)
     ax.set_xticks([0.0, 0.5, 1.0], labels=["0", "0.5", "1"])
     ax.set_ylim(len(ordered) - 0.45, -0.45)
     ax.set_xlabel("B0 -> B2 agreement")
@@ -3482,7 +3541,7 @@ def _plot_s2_post_insert_retrievability(*, ax: Any, winners: pd.DataFrame) -> No
             f"{float(row['freshness_hit_at_5s']):.2f}",
             fontsize=FONT_SIZE - 1,
             va="center",
-            ha="left",
+            ha="right" if label_x > 0.94 else "left",
             color=TEXT_COLOR,
         )
     ax.set_xlim(0.0, 1.0)
@@ -3549,7 +3608,7 @@ def _plot_mvd_sensitivity(*, ax: Any, sensitivity: pd.DataFrame) -> None:
             _short_engine_label(engine),
             ha="center",
             va="center",
-            color="#ffffff",
+            color=_contrast_text_color(_engine_color(engine)),
             fontsize=FONT_SIZE,
             fontweight="bold",
             zorder=4,
@@ -3624,6 +3683,20 @@ def _engine_color(engine: str) -> str:
         return fixed[normalized]
     index = sum(ord(char) for char in normalized) % len(ENGINE_PALETTE)
     return ENGINE_PALETTE[index]
+
+
+def _contrast_text_color(face_color: str) -> str:
+    hex_color = str(face_color).strip().lstrip("#")
+    if len(hex_color) != 6:
+        return TEXT_COLOR
+    try:
+        red = int(hex_color[0:2], 16) / 255.0
+        green = int(hex_color[2:4], 16) / 255.0
+        blue = int(hex_color[4:6], 16) / 255.0
+    except ValueError:
+        return TEXT_COLOR
+    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    return TEXT_COLOR if luminance > 0.52 else "#ffffff"
 
 
 def _short_engine_label(engine: str) -> str:

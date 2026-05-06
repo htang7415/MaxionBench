@@ -285,20 +285,32 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "portable_support_table.csv").exists()
     assert (out_dir / "portable_support_table.tex").exists()
     assert (out_dir / "portable_summary.meta.json").exists()
-    assert (out_dir / "maxionbench_decision_audit_conceptual.png").exists()
+    assert (out_dir / "maxionbench_decision_audit_conceptual.svg").exists()
     assert (out_dir / "maxionbench_decision_audit_conceptual.meta.json").exists()
-    assert (out_dir / "portable_decision_surface.png").exists()
+    assert (out_dir / "portable_decision_surface.svg").exists()
     assert (out_dir / "portable_decision_surface.meta.json").exists()
-    assert (out_dir / "s3_paired_audit_forest.png").exists()
+    assert (out_dir / "s3_paired_audit_forest.svg").exists()
     assert (out_dir / "s3_paired_audit_forest.meta.json").exists()
-    assert (out_dir / "portable_task_cost_by_budget.png").exists()
+    assert (out_dir / "portable_task_cost_by_budget.svg").exists()
     assert (out_dir / "portable_task_cost_by_budget.meta.json").exists()
-    assert (out_dir / "portable_budget_stability.png").exists()
+    assert (out_dir / "portable_budget_stability.svg").exists()
     assert (out_dir / "portable_budget_stability.meta.json").exists()
-    assert (out_dir / "portable_s2_post_insert_retrievability.png").exists()
+    assert (out_dir / "portable_s2_post_insert_retrievability.svg").exists()
     assert (out_dir / "portable_s2_post_insert_retrievability.meta.json").exists()
-    assert (out_dir / "portable_mvd_sensitivity.png").exists()
+    assert (out_dir / "portable_mvd_sensitivity.svg").exists()
     assert (out_dir / "portable_mvd_sensitivity.meta.json").exists()
+    for figure_name in (
+        "maxionbench_decision_audit_conceptual",
+        "portable_decision_surface",
+        "s3_paired_audit_forest",
+        "portable_task_cost_by_budget",
+        "portable_budget_stability",
+        "portable_s2_post_insert_retrievability",
+        "portable_mvd_sensitivity",
+    ):
+        assert (out_dir / f"{figure_name}.svg").exists()
+        assert (out_dir / f"{figure_name}.pdf").exists()
+        assert (out_dir / f"{figure_name}.png").exists()
 
     summary = pd.read_csv(out_dir / "portable_summary.csv")
     winners = pd.read_csv(out_dir / "portable_winners.csv")
