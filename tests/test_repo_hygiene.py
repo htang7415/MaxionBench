@@ -117,7 +117,7 @@ def test_submission_bundle_contains_neurips_documents() -> None:
         "submission/figures/portable_decision_surface.svg",
         "submission/figures/s3_paired_audit_forest.svg",
         "submission/tables/neurips_main_results.csv",
-        "submission/metadata/hotpotqa_portable_croissant.jsonld",
+        "submission/croissant.json",
         "submission/metadata/maxionbench_evaluation_card.json",
         "submission/docs/artifact_card.md",
         "submission/docs/upload_checklist.md",
