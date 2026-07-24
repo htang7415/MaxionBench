@@ -16,7 +16,7 @@ from maxionbench.tools.execute_run_matrix import execute_run_matrix
 from maxionbench.tools.verify_promotion_gate import verify_portable_promotion_gate
 
 _PORTABLE_SERVICE_ENGINES = frozenset({"qdrant", "pgvector"})
-_DEFAULT_PAPER_EXCLUDED_ENGINES = frozenset({"lancedb-service"})
+_DEFAULT_EXCLUDED_ENGINES = frozenset({"lancedb-service"})
 
 
 def _default_lancedb_local_uri(*, repo_root: Path, lane: str) -> str:
@@ -55,7 +55,7 @@ def _effective_engine_filter(*, selected_engines: list[str], engine_filter: set[
         return {engine.strip() for engine in engine_filter if engine.strip()} or None
     return {
         engine for engine in selected_engines
-        if engine not in _DEFAULT_PAPER_EXCLUDED_ENGINES
+        if engine not in _DEFAULT_EXCLUDED_ENGINES
     }
 
 

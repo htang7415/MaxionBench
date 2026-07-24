@@ -179,7 +179,7 @@ def write_manifest(*, root: Path, crag_examples: int, requested_datasets: list[s
     payload = {
         "profile": "maxionbench-bootstrap",
         "note": (
-            "MaxionBench dataset bootstrap for the portable paper path. "
+            "MaxionBench dataset bootstrap for the portable benchmark workflow. "
             "This manifest tracks local text corpora and one-time preprocessing workspaces."
         ),
         "requested_datasets": list(requested_datasets or []),

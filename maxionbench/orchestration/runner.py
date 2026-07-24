@@ -1885,18 +1885,6 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
             payload = yaml.safe_load(handle) or {}
         if not isinstance(payload, dict):
             raise ValueError(f"d3 params file must contain a mapping: {d3_params_path}")
-        if _requires_paper_d3_calibration_check(cfg):
-            min_vectors = max(1, int(getattr(cfg, "d3_min_calibration_vectors", PAPER_MIN_CALIBRATION_VECTORS)))
-            issues = paper_calibration_issues(payload=payload, min_vectors=min_vectors)
-            allow_unverified = bool(getattr(cfg, "allow_unverified_d3_params", False)) and not requires_verified
-            if issues and not allow_unverified:
-                joined = "; ".join(issues[:4])
-                raise ValueError(
-                    "d3 params are not paper-ready for D3 robustness scenarios. "
-                    f"Provided file: {Path(d3_params_path).resolve()}. "
-                    "Re-run `calibrate_d3` on real D3 (LAION subset) scale and provide the regenerated params. "
-                    f"Detected issues: {joined}"
-                )
         calibrated = params_from_mapping(payload, seed=cfg.d3_seed)
         return D3Params(
             k_clusters=cfg.d3_k_clusters,
@@ -1920,15 +1908,12 @@ def _resolve_d3_params(cfg: RunConfig, d3_params_path: str | None) -> D3Params:
     )
 
 
-def _requires_paper_d3_calibration_check(cfg: RunConfig) -> bool:
-    return (
+def _requires_verified_d3_params(cfg: RunConfig) -> bool:
+    requires_d3_params = (
         str(cfg.dataset_bundle).upper() == "D3"
         and str(cfg.scenario) in {"s2_filtered_ann", "s3_churn_smooth", "s3b_churn_bursty"}
     )
-
-
-def _requires_verified_d3_params(cfg: RunConfig) -> bool:
-    return _requires_paper_d3_calibration_check(cfg) and str(cfg.phase_timing_mode).strip().lower() == "strict"
+    return requires_d3_params and str(cfg.phase_timing_mode).strip().lower() == "strict"
 
 
 def _ground_truth_descriptor(cfg: RunConfig) -> dict[str, Any]:

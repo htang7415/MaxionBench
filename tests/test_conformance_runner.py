@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -12,7 +13,7 @@ from maxionbench.conformance import run as conformance_run_mod
 def test_conformance_runner_mock_cli() -> None:
     completed = subprocess.run(
         [
-            "python",
+            sys.executable,
             "-m",
             "maxionbench.conformance.run",
             "--adapter",

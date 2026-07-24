@@ -22,7 +22,7 @@ from maxionbench.reports.portable_exports import (
     _extract_portable_frame,
     _index_search_configuration,
     _latency_distribution_table,
-    _neurips_main_results_table,
+    _main_results_table,
     _minimum_viable_deployment_sensitivity_table,
     _minimum_viable_deployment_table,
     _portable_decision_table,
@@ -264,8 +264,8 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert (out_dir / "decision_surface.tex").exists()
     assert (out_dir / "s2_write_diagnostics.csv").exists()
     assert (out_dir / "s2_write_diagnostics.tex").exists()
-    assert (out_dir / "neurips_main_results.csv").exists()
-    assert (out_dir / "neurips_main_results.tex").exists()
+    assert (out_dir / "main_results.csv").exists()
+    assert (out_dir / "main_results.tex").exists()
     assert (out_dir / "decision_error_ablation.csv").exists()
     assert (out_dir / "decision_error_ablation.tex").exists()
     assert (out_dir / "quality_floor_survivors.csv").exists()
@@ -377,7 +377,7 @@ def test_portable_report_cli_exports_tables_and_figures(tmp_path: Path, monkeypa
     assert "spearman_rho" in stability.columns
 
 
-def test_neurips_main_results_table_includes_quality_and_post_insert_ci_fields() -> None:
+def test_main_results_table_includes_quality_and_post_insert_ci_fields() -> None:
     winners = pd.DataFrame(
         [
             {
@@ -428,7 +428,7 @@ def test_neurips_main_results_table_includes_quality_and_post_insert_ci_fields()
         ]
     )
 
-    table = _neurips_main_results_table(frame=winners, winners=winners, stability=stability)
+    table = _main_results_table(frame=winners, winners=winners, stability=stability)
     row = table.iloc[0]
 
     assert row["primary_quality_mean"] == pytest.approx(0.51)
@@ -522,7 +522,7 @@ def test_s2_post_insert_examples_table_counts_archived_outcomes(tmp_path: Path) 
     assert "censored at 5s" in str(missed["interpretation"])
 
 
-def test_neurips_main_results_p99_matches_latency_distribution_strict_choice() -> None:
+def test_main_results_p99_matches_latency_distribution_strict_choice() -> None:
     winners = pd.DataFrame(
         [
             {
@@ -591,7 +591,7 @@ def test_neurips_main_results_p99_matches_latency_distribution_strict_choice() -
         ]
     )
 
-    main = _neurips_main_results_table(frame=broader_frame, winners=winners, stability=stability)
+    main = _main_results_table(frame=broader_frame, winners=winners, stability=stability)
     decision = _portable_decision_table(winners=winners, stability=stability)
     latency = _latency_distribution_table(winners=winners, decision=decision)
     strict_latency = latency.loc[latency["row_role"] == "strict choice"].iloc[0]
@@ -699,7 +699,7 @@ def test_strict_decision_margin_p99_delta_uses_latency_distribution() -> None:
     assert row["interpretation"] == "cost/quality tie; p99 tie-break"
 
 
-def test_neurips_main_results_table_prefers_archived_observations(tmp_path: Path) -> None:
+def test_main_results_table_prefers_archived_observations(tmp_path: Path) -> None:
     observation_path = tmp_path / "observations.jsonl"
     _write_jsonl(
         observation_path,
@@ -744,7 +744,7 @@ def test_neurips_main_results_table_prefers_archived_observations(tmp_path: Path
         ]
     )
 
-    table = _neurips_main_results_table(frame=winners, winners=winners, stability=stability)
+    table = _main_results_table(frame=winners, winners=winners, stability=stability)
     row = table.iloc[0]
 
     assert row["primary_quality_mean"] == pytest.approx(0.5)
@@ -1154,7 +1154,7 @@ def test_task3_decision_audit_tables_expose_required_columns(tmp_path: Path) -> 
     assert {
         "missing_protocol_component",
         "wrong_conclusion_caused_by_omission",
-        "manuscript_evidence",
+        "report_evidence",
         "source_path",
     } <= set(decision_error.columns)
     assert {

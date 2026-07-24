@@ -1,4 +1,4 @@
-# Local datasets and benchmark outputs
+# Local datasets and generated benchmark outputs
 dataset/
 containers/
 artifacts/
@@ -6,37 +6,11 @@ results/
 results_quick_check/
 release/
 logs/
-paper/
-reviewer_artifact_maxionbench/
-reviewer_artifact_maxionbench_portable/
-/.*/
-._*
-.DS_Store
-.AppleDouble/
-.codex
-.agents/
-.claude/
-.vscode/
 home/
-
-# NeurIPS/paper submission artifacts
-**/paper/
-**/paper/**
-*paper*
-*Paper*
-*PAPER*
-*neurips*
-*NeurIPS*
-*NEURIPS*
-**/*neurips*/
-**/*NeurIPS*/
-**/*NEURIPS*/
-**/*neurips*/**
-**/*NeurIPS*/**
-**/*NEURIPS*/**
 
 # Python/package build outputs
 build/
+.venv/
 *.egg-info/
 maxionbench.egg-info/
 
@@ -52,31 +26,20 @@ __pycache__/
 .pytest_cache/
 .cache/
 
-# Ignore local docs/scripts by default; keep the main README visible
-*.md
-*.sh
-!README.md
+# Local editor and assistant state
+.codex
+.agents/
+.claude/
+.vscode/
+AGENTS.md
+CLAUDE.md
+command.md
 
-# Local generated benchmark outputs
-artifacts/ci/
-artifacts/containers/
-artifacts/conformance/
-artifacts/conformance_local/
-artifacts/figures/
-artifacts/runs/
-artifacts/workstation_runs/
+# OS metadata
+._*
+.DS_Store
+.AppleDouble/
+
+# Local workflow state
 ci_s1_smoke_local.yaml
 .claude/settings.local.json
-
-# Public submission handoff bundle. Keep this after the broad paper/doc ignores.
-submission/
-submission/**
-submission/**/._*
-submission/**/*.aux
-submission/**/*.bbl
-submission/**/*.blg
-submission/**/*.fdb_latexmk
-submission/**/*.fls
-submission/**/*.log
-submission/**/*.out
-submission/**/*.synctex.gz

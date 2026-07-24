@@ -14,9 +14,6 @@ artifacts/
 dataset/
 logs/
 node_modules/
-paper/
 release/
 results/
-reviewer_artifact_maxionbench/
-reviewer_artifact_maxionbench_portable/
 tests/

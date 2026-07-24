@@ -10,18 +10,18 @@ The study reports conformance-gated workload quality, post-insert top-10 retriev
 
 | Engine | Category | Role in MaxionBench study | Notes |
 | --- | --- | --- | --- |
-| FAISS CPU | local baseline | exact/strong local baseline | reported paper engine |
-| LanceDB-inproc | embedded/local | upper-bound local reference | reported paper engine |
-| LanceDB-service | service wrapper | service-mode audit target | excluded from the paper matrix because the archived local conformance table has no passing service row |
-| PostgreSQL + pgvector | DB-first | service-backed MaxionBench engine | reported paper engine |
-| Qdrant | vector-first server | service-backed MaxionBench engine | reported paper engine |
+| FAISS CPU | local baseline | exact/strong local baseline | included in the default benchmark matrix |
+| LanceDB-inproc | embedded/local | upper-bound local reference | included in the default benchmark matrix |
+| LanceDB-service | service wrapper | service-mode audit target | excluded by default because the archived local conformance table has no passing service row |
+| PostgreSQL + pgvector | DB-first | service-backed MaxionBench engine | included in the default benchmark matrix |
+| Qdrant | vector-first server | service-backed MaxionBench engine | included in the default benchmark matrix |
 
 ## Datasets
 
 | Dataset | Source | Role in MaxionBench study | Notes |
 | --- | --- | --- | --- |
-| `scifact` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
-| `fiqa` | BEIR | S1 single-hop corpus | paper-path single-hop dataset |
+| `scifact` | BEIR | S1 single-hop corpus | default single-hop dataset |
+| `fiqa` | BEIR | S1 single-hop corpus | default single-hop dataset |
 | `CRAG-500` | CRAG task 1/2 dev slice | S2 online event stream | one inserted supporting passage per event |
 | `HotpotQA-MaxionBench` | frozen local HotpotQA dev distractor preprocessing | S3 multi-evidence retrieval | one-time offline preprocessing artifact |
 
@@ -48,26 +48,23 @@ Each run writes:
 | --- | --- |
 | `maxionbench/` | Benchmark package, engine adapters, orchestration, reports, runtime metadata, schemas, and CLI tools. |
 | `configs/` | Pinned scenario, engine, and conformance configurations. |
-| `docs/` | Public behavior cards, migration notes, CI notes, and NeurIPS artifact inventory. |
-| `submission/` | Public NeurIPS submission handoff bundle: PDF/source, figures, tables, metadata, and submission-facing docs. |
+| `docs/` | Public behavior cards, migration notes, and CI notes. |
 | `tests/` | CI checks for configs, schemas, reports, workflows, and repository hygiene. |
 | `dataset/processed/hotpot_portable/` | Lightweight tracked HotpotQA-MaxionBench manifest and checksum fixtures. |
-| `artifacts/`, `results/`, `paper/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
+| `artifacts/`, `results/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
 
 ## Scope Constraints
 
 - The local workflow is controlled to fit within one day wall clock on a single node.
 - `submit` defaults to a 24-hour benchmark-execution deadline; lower `--deadline-hours` if setup, data, or embedding work consumes part of the day.
 - GPU-required scenarios and distributed topologies are out of scope.
-- The primary S3 paper path is `HotpotQA-MaxionBench`, prepared from the official HotpotQA dev distractor release before timed execution.
+- The default S3 dataset is `HotpotQA-MaxionBench`, prepared from the official HotpotQA dev distractor release before timed execution.
 
 MaxionBench figures are written to `artifacts/figures/final/`.
 
 ## Public Artifact Hygiene
 
-The GitHub repository tracks source, configs, tests, lightweight dataset manifests, and public docs. Local benchmark outputs, paper build products, release bundles, caches, editor state, and reviewer-package staging directories are ignored by default so host paths, usernames, and machine-local metadata do not enter commits.
-
-NeurIPS-facing public documents that should be visible on GitHub are mirrored under `submission/`. The ignored `paper/` tree remains a local staging area and should not be assumed to be part of a normal push.
+The GitHub repository tracks source, configs, tests, lightweight dataset manifests, and public docs. Local benchmark outputs, release bundles, caches, and editor state are ignored by default so host paths, usernames, and machine-local metadata do not enter commits.
 
 ## How to run this benchmark study
 
@@ -84,7 +81,7 @@ It covers:
 
 There are no required repo shell wrappers in the current workflow.
 
-Primary paper-path commands:
+Primary workflow commands:
 
 ```bash
 python -m maxionbench.cli workflow data --json

@@ -40,7 +40,7 @@ _MVD_SENSITIVITY_THRESHOLDS_MS: tuple[float | None, ...] = (100.0, 200.0, 500.0,
 _BOOTSTRAP_SEED = 20260428
 _BOOTSTRAP_RESAMPLES = 2000
 _COST_SENSITIVITY_MULTIPLIERS: tuple[float, ...] = (0.1, 1.0, 10.0)
-_PAPER_FIGURE_STEMS = (
+_REPORT_FIGURE_STEMS = (
     "maxionbench_decision_audit_conceptual",
     "portable_decision_surface",
     "s3_paired_audit_forest",
@@ -277,13 +277,13 @@ def _export_portable_tables(
     )
     tables.append(s2_post_insert_examples_tex_path)
 
-    neurips_main = _neurips_main_results_table(frame=frame, winners=winners, stability=stability)
-    neurips_main_path = out_dir / "neurips_main_results.csv"
-    neurips_main.to_csv(neurips_main_path, index=False)
-    tables.append(neurips_main_path)
-    neurips_main_tex_path = out_dir / "neurips_main_results.tex"
-    neurips_main_tex_path.write_text(_neurips_main_results_latex(table=neurips_main), encoding="utf-8")
-    tables.append(neurips_main_tex_path)
+    main_results = _main_results_table(frame=frame, winners=winners, stability=stability)
+    main_results_path = out_dir / "main_results.csv"
+    main_results.to_csv(main_results_path, index=False)
+    tables.append(main_results_path)
+    main_results_tex_path = out_dir / "main_results.tex"
+    main_results_tex_path.write_text(_main_results_latex(table=main_results), encoding="utf-8")
+    tables.append(main_results_tex_path)
 
     decision_error = _decision_error_ablation_table(decision=decision, stability=stability)
     decision_error_path = out_dir / "decision_error_ablation.csv"
@@ -398,10 +398,10 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     decision_surface = _decision_surface_table(winners=winners, decision=decision)
 
     conceptual_path = out_dir / "maxionbench_decision_audit_conceptual.svg"
-    fig = _wide_paper_figure(height_in=4.15)
+    fig = _wide_report_figure(height_in=4.15)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_decision_audit_conceptual(fig=fig)
-    _save_paper_figure(fig=fig, path=conceptual_path)
+    _save_report_figure(fig=fig, path=conceptual_path)
     plt.close(fig)
     _write_meta(
         conceptual_path,
@@ -417,10 +417,10 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     figures.append(conceptual_path)
 
     decision_surface_path = out_dir / "portable_decision_surface.svg"
-    fig = _wide_paper_figure(height_in=2.75)
+    fig = _wide_report_figure(height_in=2.75)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_decision_surface(fig=fig, surface=decision_surface)
-    _save_paper_figure(fig=fig, path=decision_surface_path)
+    _save_report_figure(fig=fig, path=decision_surface_path)
     plt.close(fig)
     _write_meta(
         decision_surface_path,
@@ -438,11 +438,11 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     figures.append(decision_surface_path)
 
     s3_forest_path = out_dir / "s3_paired_audit_forest.svg"
-    fig, ax = _paper_figure(height_in=2.15)
+    fig, ax = _report_figure(height_in=2.15)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     forest_rows = _load_s3_paired_audit_rows()
     _plot_s3_paired_audit_forest(ax=ax, rows=forest_rows)
-    _save_paper_figure(fig=fig, path=s3_forest_path)
+    _save_report_figure(fig=fig, path=s3_forest_path)
     plt.close(fig)
     _write_meta(
         s3_forest_path,
@@ -454,16 +454,16 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
             "dpi": DPI,
             "style_version": STYLE_VERSION,
             "rows_used": int(len(forest_rows)),
-            "source_path": "paper/experiments/s3_paired_quality/summary.json",
+            "source_path": "artifacts/evidence/s3_paired_quality/summary.json",
         },
     )
     figures.append(s3_forest_path)
 
     task_cost_path = out_dir / "portable_task_cost_by_budget.svg"
-    fig, ax = _paper_figure()
+    fig, ax = _report_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_task_cost_by_budget(ax=ax, winners=winners)
-    _save_paper_figure(fig=fig, path=task_cost_path)
+    _save_report_figure(fig=fig, path=task_cost_path)
     plt.close(fig)
     _write_meta(
         task_cost_path,
@@ -483,10 +483,10 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     figures.append(task_cost_path)
 
     stability_path = out_dir / "portable_budget_stability.svg"
-    fig, ax = _paper_figure()
+    fig, ax = _report_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_budget_stability(ax=ax, stability=stability)
-    _save_paper_figure(fig=fig, path=stability_path)
+    _save_report_figure(fig=fig, path=stability_path)
     plt.close(fig)
     _write_meta(
         stability_path,
@@ -505,10 +505,10 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
     figures.append(stability_path)
 
     post_insert_path = out_dir / "portable_s2_post_insert_retrievability.svg"
-    fig, ax = _paper_figure()
+    fig, ax = _report_figure()
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_s2_post_insert_retrievability(ax=ax, winners=winners)
-    _save_paper_figure(fig=fig, path=post_insert_path)
+    _save_report_figure(fig=fig, path=post_insert_path)
     plt.close(fig)
     _write_meta(
         post_insert_path,
@@ -527,10 +527,10 @@ def _export_portable_figures(*, frame: pd.DataFrame, out_dir: Path) -> list[Path
 
     mvd_sensitivity = _minimum_viable_deployment_sensitivity_table(winners=winners)
     mvd_sensitivity_path = out_dir / "portable_mvd_sensitivity.svg"
-    fig, ax = _paper_figure(height_in=3.0)
+    fig, ax = _report_figure(height_in=3.0)
     fig.patch.set_facecolor(FIGURE_FACE_COLOR)
     _plot_mvd_sensitivity(ax=ax, sensitivity=mvd_sensitivity)
-    _save_paper_figure(fig=fig, path=mvd_sensitivity_path)
+    _save_report_figure(fig=fig, path=mvd_sensitivity_path)
     plt.close(fig)
     _write_meta(
         mvd_sensitivity_path,
@@ -1118,7 +1118,7 @@ def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.Data
         {
             "missing_protocol_component": "p99 latency gate",
             "wrong_conclusion_caused_by_omission": s3_shift,
-            "manuscript_evidence": "decision table and threshold-sensitivity panel",
+            "report_evidence": "decision table and threshold-sensitivity panel",
             "source_path": "portable_decision_table.csv; minimum_viable_deployment_sensitivity.csv",
         },
         {
@@ -1127,7 +1127,7 @@ def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.Data
                 "Quality-first decisions differ from strict-latency decisions on "
                 f"{', '.join(changed_quality) if changed_quality else 'no workloads'}"
             ),
-            "manuscript_evidence": "decision table",
+            "report_evidence": "decision table",
             "source_path": "portable_decision_table.csv",
         },
         {
@@ -1136,7 +1136,7 @@ def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.Data
                 "B0 screening fails to preserve B2 top-1 decisions for "
                 f"{', '.join(unstable) if unstable else 'no workloads'}"
             ),
-            "manuscript_evidence": "budget-stability figure and decision table",
+            "report_evidence": "budget-stability figure and decision table",
             "source_path": "portable_stability.csv; portable_mvd_sensitivity.meta.json",
         },
         {
@@ -1144,21 +1144,21 @@ def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.Data
             "wrong_conclusion_caused_by_omission": (
                 "pgvector/bge-base appears quality-first, but the matched 5,000-query audit removes the substantive margin"
             ),
-            "manuscript_evidence": "S3 paired audit table",
-            "source_path": "paper/experiments/s3_paired_quality/summary.json",
+            "report_evidence": "S3 paired audit table",
+            "source_path": "artifacts/evidence/s3_paired_quality/summary.json",
         },
         {
             "missing_protocol_component": "Paired S2 competitor audit",
             "wrong_conclusion_caused_by_omission": "Qdrant does not hide a quality or post-insert retrievability win",
-            "manuscript_evidence": "S2 competitor audit table",
-            "source_path": "paper/experiments/s2_larger_same_machine/s2_larger_same_machine_summary.json",
+            "report_evidence": "S2 competitor audit table",
+            "source_path": "artifacts/evidence/s2_larger_same_machine/s2_larger_same_machine_summary.json",
         },
         {
             "missing_protocol_component": "Conformance gate",
             "wrong_conclusion_caused_by_omission": (
-                "Engines without passing local conformance rows do not enter paper-facing result tables"
+                "Engines without passing local conformance rows do not enter benchmark result tables"
             ),
-            "manuscript_evidence": "benchmark scope, support table, and artifact audit",
+            "report_evidence": "benchmark scope, support table, and artifact audit",
             "source_path": "artifacts/conformance/conformance_matrix.csv; docs/behavior",
         },
     ]
@@ -1167,7 +1167,7 @@ def _decision_error_ablation_table(*, decision: pd.DataFrame, stability: pd.Data
         columns=[
             "missing_protocol_component",
             "wrong_conclusion_caused_by_omission",
-            "manuscript_evidence",
+            "report_evidence",
             "source_path",
         ],
     )
@@ -1244,7 +1244,7 @@ def _cost_formula_table() -> pd.DataFrame:
             "meaning": "C_retrieval + C_embedding + c_llm_in x Nretrieved_input_tokens",
             "unit": "normalized context-cost/query",
             "value_source": "retrieval_cost_est + embedding_cost_est + llm_context_cost_est",
-            "source_path": "maxionbench/orchestration/runner.py::_portable_payload; paper/tables/portable_winners.csv",
+            "source_path": "maxionbench/orchestration/runner.py::_portable_payload; portable_winners.csv",
         },
     ]
     return pd.DataFrame(rows, columns=["term", "meaning", "unit", "value_source", "source_path"])
@@ -1466,7 +1466,7 @@ def _strict_decision_margin_table(*, winners: pd.DataFrame, latency_distribution
                 ),
                 "source_path": (
                     f"{strict.get('source_path') or ''}; {competitor.get('source_path') or ''}; "
-                    "paper/tables/latency_distribution.csv"
+                    "latency_distribution.csv"
                 ),
             }
         )
@@ -1647,7 +1647,7 @@ def _selected_from_archived_portable_run(selected: pd.DataFrame) -> bool:
 
 
 def _load_s3_all_evidence_supplement() -> dict[tuple[str, str], dict[str, Any]]:
-    path = Path("paper/experiments/s3_all_evidence/summary.json")
+    path = Path("artifacts/evidence/s3_all_evidence/summary.json")
     if not path.exists():
         return {}
     try:
@@ -2060,7 +2060,7 @@ def _load_observations_from_frame(*, selected: pd.DataFrame, include_run_dir_glo
     return rows
 
 
-def _neurips_main_results_table(*, frame: pd.DataFrame, winners: pd.DataFrame, stability: pd.DataFrame) -> pd.DataFrame:
+def _main_results_table(*, frame: pd.DataFrame, winners: pd.DataFrame, stability: pd.DataFrame) -> pd.DataFrame:
     deployment = _minimum_viable_deployment_table(winners=winners)
     rows: list[dict[str, Any]] = []
     for _, choice in deployment.iterrows():
@@ -2310,7 +2310,7 @@ def _stability_fields(*, stability: pd.DataFrame, scenario: str) -> dict[str, An
     }
 
 
-def _neurips_main_results_latex(*, table: pd.DataFrame) -> str:
+def _main_results_latex(*, table: pd.DataFrame) -> str:
     lines = [
         "% Auto-generated by maxionbench.reports.portable_exports.",
         "\\begin{table}[t]",
@@ -2530,7 +2530,7 @@ def _decision_error_ablation_latex(*, table: pd.DataFrame) -> str:
         lines.append(
             f"{_latex_escape(str(row['missing_protocol_component']))} & "
             f"{_latex_escape(str(row['wrong_conclusion_caused_by_omission']))} & "
-            f"{_latex_escape(str(row['manuscript_evidence']))} \\\\"
+            f"{_latex_escape(str(row['report_evidence']))} \\\\"
         )
     lines.extend(["\\bottomrule", "\\end{tabular}", "}", "\\end{table}", ""])
     return "\n".join(lines)
@@ -2777,7 +2777,7 @@ def _support_table_latex(*, table: pd.DataFrame) -> str:
         "\\centering",
         "\\small",
         "\\setlength{\\tabcolsep}{3.5pt}",
-        "\\caption{Conformance and behavior-card support for paper-facing reportability.}",
+        "\\caption{Conformance and behavior-card support for benchmark reportability.}",
         "\\label{tab:portable-support}",
         "\\resizebox{\\linewidth}{!}{%",
         "\\begin{tabular}{lllll}",
@@ -2987,9 +2987,9 @@ def _resolve_reportability_inputs(
     behavior_dir: Path | None,
 ) -> tuple[Path, Path]:
     if conformance_matrix_path is None:
-        raise ValueError("portable paper-facing reports require --conformance-matrix")
+        raise ValueError("portable benchmark reports require --conformance-matrix")
     if behavior_dir is None:
-        raise ValueError("portable paper-facing reports require --behavior-dir")
+        raise ValueError("portable benchmark reports require --behavior-dir")
     resolved_conformance_matrix_path = conformance_matrix_path.resolve()
     if not resolved_conformance_matrix_path.exists():
         raise FileNotFoundError(f"conformance matrix not found: {resolved_conformance_matrix_path}")
@@ -3017,7 +3017,7 @@ def _reportability_by_adapter(
     return reportability
 
 
-def _wide_paper_figure(*, height_in: float) -> Any:
+def _wide_report_figure(*, height_in: float) -> Any:
     return plt.figure(figsize=(PANEL_WIDTH_IN * 2.05, height_in), dpi=DPI)
 
 
@@ -3239,7 +3239,7 @@ def _plot_decision_surface(*, fig: Any, surface: pd.DataFrame) -> None:
 
 
 def _load_s3_paired_audit_rows() -> list[dict[str, Any]]:
-    path = Path("paper/experiments/s3_paired_quality/summary.json")
+    path = Path("artifacts/evidence/s3_paired_quality/summary.json")
     if not path.exists():
         return []
     try:
@@ -3327,7 +3327,7 @@ def _plot_s3_paired_audit_forest(*, ax: Any, rows: list[dict[str, Any]]) -> None
     _style_axis(ax)
 
 
-def _paper_figure(*, height_in: float | None = None) -> tuple[Any, Any]:
+def _report_figure(*, height_in: float | None = None) -> tuple[Any, Any]:
     fig, ax = plt.subplots(
         figsize=(PANEL_WIDTH_IN, height_in or PANEL_HEIGHT_IN),
         dpi=DPI,
@@ -3336,9 +3336,9 @@ def _paper_figure(*, height_in: float | None = None) -> tuple[Any, Any]:
     return fig, ax
 
 
-def _save_paper_figure(*, fig: Any, path: Path) -> None:
+def _save_report_figure(*, fig: Any, path: Path) -> None:
     if path.suffix.lower() != ".svg":
-        raise ValueError(f"paper figures must be exported as .svg, got {path}")
+        raise ValueError(f"report figures must be exported as .svg, got {path}")
     save_kwargs = {
         "facecolor": FIGURE_FACE_COLOR,
         "edgecolor": "none",

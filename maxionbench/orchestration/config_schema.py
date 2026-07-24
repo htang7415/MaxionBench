@@ -116,8 +116,6 @@ class RunConfig:
     s3b_on_write_mult: float = 8.0
     s3b_off_write_mult: float = 0.25
     allow_missing_s3_baseline: bool = False
-    allow_unverified_d3_params: bool = False
-    d3_min_calibration_vectors: int = 10_000_000
     rrf_k: int = 60
     s4_dense_candidates: int = 200
     s4_bm25_candidates: int = 200
@@ -245,8 +243,6 @@ def _validate(cfg: RunConfig) -> None:
         raise ValueError("maintenance_interval_s must be positive")
     if cfg.s3_max_events < 1:
         raise ValueError("s3_max_events must be >= 1")
-    if cfg.d3_min_calibration_vectors < 1:
-        raise ValueError("d3_min_calibration_vectors must be >= 1")
     if not isinstance(cfg.calibration_require_real_data, bool):
         raise ValueError("calibration_require_real_data must be a boolean")
     if cfg.rrf_k < 1:
