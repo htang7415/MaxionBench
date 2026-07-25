@@ -5,6 +5,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 import bz2
 import json
+import os
 from pathlib import Path
 import shutil
 import tarfile

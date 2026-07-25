@@ -110,7 +110,7 @@ class ResultRow:
 
 @dataclass(frozen=True)
 class RunMetadata:
-    """Run-level metadata required by AGENTS.md Section 9."""
+    """Run-level metadata required for reproducibility."""
 
     run_id: str
     timestamp_utc: str

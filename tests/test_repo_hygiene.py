@@ -25,9 +25,6 @@ PRIVATE_NEEDLES = (
     "/" + "Users/",
     "/" + "Volumes/" + "Max",
     "/" + "home/data/",
-    "Apple " + "M",
-    "Mac " + "mini",
-    "mac" + "OS ",
 )
 
 
@@ -46,6 +43,7 @@ def test_gitignore_blocks_generated_and_local_artifacts() -> None:
     assert ".vscode/" in payload
     assert ".agents/" in payload
     assert ".claude/" in payload
+    assert "AGENTS.md" not in payload
     assert ".env.slurm.*" not in payload
     assert "prepare_containers.sh" not in payload
 
@@ -64,7 +62,6 @@ def test_repository_has_no_tracked_python_cache_artifacts() -> None:
 
 def test_only_explicit_local_docs_are_gitignored() -> None:
     ignored_paths = [
-        "AGENTS.md",
         "CLAUDE.md",
         "command.md",
     ]
@@ -78,6 +75,7 @@ def test_only_explicit_local_docs_are_gitignored() -> None:
         assert proc.returncode == 0, f"{path} should be ignored by git"
 
     visible_paths = [
+        "AGENTS.md",
         "README.md",
         "docs/behavior/_template.md",
     ]

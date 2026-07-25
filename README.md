@@ -50,8 +50,10 @@ Each run writes:
 | `configs/` | Pinned scenario, engine, and conformance configurations. |
 | `docs/` | Public behavior cards, migration notes, and CI notes. |
 | `tests/` | CI checks for configs, schemas, reports, workflows, and repository hygiene. |
-| `dataset/processed/hotpot_portable/` | Lightweight tracked HotpotQA-MaxionBench manifest and checksum fixtures. |
+| `dataset/processed/hotpot_portable/` | Frozen HotpotQA-MaxionBench fixture and checksums. |
 | `artifacts/`, `results/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
+
+Supporting documentation: [architecture](docs/architecture.md), [technical report](docs/technical_report.md), [contributing](docs/contributing.md), and [security](docs/security.md).
 
 ## Scope Constraints
 
@@ -69,6 +71,15 @@ The GitHub repository tracks source, configs, tests, lightweight dataset manifes
 ## How to run this benchmark study
 
 Use the reduced local workflow.
+
+Install the locked development environment:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --no-deps --no-build-isolation -e .
+```
 
 It covers:
 

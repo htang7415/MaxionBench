@@ -12,4 +12,14 @@ def test_env_docker_example_matches_portable_service_defaults() -> None:
 
     assert "${MAXIONBENCH_QDRANT_IMAGE:-qdrant/qdrant:v1.17.1}" in compose_text
     assert "${MAXIONBENCH_PGVECTOR_IMAGE:-pgvector/pgvector:0.8.2-pg16-trixie}" in compose_text
-    assert '"5432:5432"' in compose_text
+    assert '"127.0.0.1:5432:5432"' in compose_text
+    assert '"127.0.0.1:6333:6333"' in compose_text
+    assert "healthcheck:" in compose_text
+
+
+def test_dockerfile_uses_tracked_inputs_and_non_root_runtime() -> None:
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    for local_only_file in ("CLAUDE.md", "document.md", "project.md", "prompt.md"):
+        assert local_only_file not in dockerfile
+    assert "USER maxionbench" in dockerfile

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
@@ -47,3 +48,23 @@ def test_conformance_runner_expands_env_placeholders(monkeypatch: pytest.MonkeyP
     assert code == 0
     assert captured["options"] == {"host": "qdrant", "port": "6333"}
     assert "-s" in captured["argv"]
+
+
+def test_conformance_runner_resolves_suite_outside_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+
+    def _fake_pytest_main(argv: list[str]) -> int:
+        captured.extend(argv)
+        return 0
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(conformance_run_mod.pytest, "main", _fake_pytest_main)
+
+    assert conformance_run_mod.main(["--adapter", "mock"]) == 0
+    suite_path = Path(captured[-1])
+    assert suite_path.is_absolute()
+    assert suite_path.name == "test_conformance.py"
+    assert suite_path.exists()

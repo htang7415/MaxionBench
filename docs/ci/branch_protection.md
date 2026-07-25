@@ -24,9 +24,11 @@ Optional (recommended once token permissions are stable):
   - validates behavior-card coverage and conformance-matrix adapter coverage via `maxionbench verify-engine-readiness`
   - preserves a CI artifact trail for readiness gating inputs
 - `report_preflight` verifies the normal path:
-  - smoke benchmark run
-  - artifact validation (`maxionbench validate`)
-  - report generation (`maxionbench report`)
+  - locked dependency installation
+  - lint and the full test suite, including benchmark/report smoke coverage
+  - wheel build and clean CLI smoke test
+  - Docker Compose validation and container build
+  - config, manifest, behavior-card, and required-check consistency
 
 ## Maintenance note
 
@@ -34,19 +36,12 @@ If workflow/job names change, update this policy doc and `.github/pull_request_t
 
 ## Automatic policy-sync guards
 
-These consistency checks are enforced in CI and should pass in the same PR as any workflow/check rename:
+Consistency is enforced by the strict required-check snapshot:
 
-- `tests/test_branch_protection_policy_sync.py`
-  - `report_preflight.yml` jobs <-> required check contexts in this doc
-  - `report_preflight.yml` jobs <-> required check checklist entries in `.github/pull_request_template.md`
-  - `report_preflight.yml` jobs <-> `maxionbench.tools.verify_branch_protection.DEFAULT_REQUIRED_CHECKS`
-  - `branch_protection_drift.yml --required-check ...` <-> `DEFAULT_REQUIRED_CHECKS`
-- `tests/test_branch_protection_drift_workflow.py`
-  - drift workflow command shape and required-check arguments
-- `tests/test_report_preflight_workflow.py`
-  - preflight workflow structure and required legacy safety-path checks
-- `tests/test_report_figure_policy_sync.py`
-  - report figure IDs/style pins and prompt alignment for milestone/final exports
+- `report_preflight.yml` jobs <-> required check contexts in this doc
+- `report_preflight.yml` jobs <-> required check checklist entries in `.github/pull_request_template.md`
+- `report_preflight.yml` jobs <-> `maxionbench.tools.verify_branch_protection.DEFAULT_REQUIRED_CHECKS`
+- `branch_protection_drift.yml --required-check ...` <-> `DEFAULT_REQUIRED_CHECKS`
 - CI artifact snapshot command:
   - `maxionbench snapshot-required-checks --output artifacts/ci/required_checks_snapshot.json --strict --json`
   - writes `artifacts/ci/required_checks_snapshot.json` for auditable required-check context parity

@@ -28,6 +28,9 @@ from .plots import (
 )
 from maxionbench.tools.verify_engine_readiness import BEHAVIOR_CARD_BY_ADAPTER, REQUIRED_ADAPTERS
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 

@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ARG MAXIONBENCH_PIP_EXTRAS=dev,engines,reporting,datasets
+ARG MAXIONBENCH_PIP_EXTRAS=conformance,engines,reporting,datasets
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -16,14 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt/maxionbench
 
-COPY pyproject.toml README.md ./
-COPY AGENTS.md CLAUDE.md document.md project.md prompt.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY maxionbench ./maxionbench
 COPY configs ./configs
 COPY docs ./docs
 
 RUN python -m pip install --upgrade pip setuptools wheel \
- && python -m pip install ".[${MAXIONBENCH_PIP_EXTRAS}]"
+ && python -m pip install ".[${MAXIONBENCH_PIP_EXTRAS}]" \
+ && useradd --create-home --uid 10001 maxionbench
+
+USER maxionbench
 
 ENTRYPOINT ["maxionbench"]
 CMD ["--help"]

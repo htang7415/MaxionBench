@@ -10,6 +10,7 @@ home/
 
 # Python/package build outputs
 build/
+dist/
 .venv/
 *.egg-info/
 maxionbench.egg-info/
@@ -31,8 +32,8 @@ __pycache__/
 .agents/
 .claude/
 .vscode/
-AGENTS.md
 CLAUDE.md
+AGENTS.md
 command.md
 
 # OS metadata

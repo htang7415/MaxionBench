@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   conformance_readiness_gate:
     runs-on: ubuntu-latest
@@ -20,12 +23,12 @@ jobs:
           python-version: "3.11"
           cache: "pip"
           cache-dependency-path: |
-            pyproject.toml
+            requirements-dev.lock
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Verify conformance config catalog
         run: |
@@ -59,7 +62,7 @@ jobs:
 
   report_preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,12 +73,36 @@ jobs:
           python-version: "3.11"
           cache: "pip"
           cache-dependency-path: |
-            pyproject.toml
+            requirements-dev.lock
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,reporting]"
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Lint
+        run: |
+          python -m ruff check maxionbench scripts tests
+
+      - name: Run full test suite
+        run: |
+          python -m pytest -q
+
+      - name: Build and smoke-test wheel
+        run: |
+          python scripts/build_package.py
+          python -m venv /tmp/maxionbench-wheel-smoke
+          /tmp/maxionbench-wheel-smoke/bin/python -m pip install --no-deps dist/*.whl
+          cd /tmp
+          /tmp/maxionbench-wheel-smoke/bin/maxionbench --help
+
+      - name: Validate container configuration
+        run: |
+          docker compose config --quiet
+          docker build \
+            --build-arg MAXIONBENCH_PIP_EXTRAS=conformance,reporting \
+            --tag maxionbench-ci .
+          docker run --rm maxionbench-ci --help
 
       - name: Verify pinned scenario configs
         run: |
@@ -92,14 +119,6 @@ jobs:
       - name: Verify conformance config catalog
         run: |
           maxionbench verify-conformance-configs --config-dir configs/conformance --json
-
-      - name: Verify repository hygiene
-        run: |
-          pytest -q tests/test_repo_hygiene.py
-
-      - name: Verify migration docs index
-        run: |
-          pytest -q tests/test_migration_docs.py
 
       - name: Build portable matrix
         run: |

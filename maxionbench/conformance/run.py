@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 "-q",
                 "-s",
-                str(Path("maxionbench/conformance/test_conformance.py")),
+                str(Path(__file__).with_name("test_conformance.py")),
             ]
         )
     finally:

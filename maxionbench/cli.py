@@ -7,8 +7,6 @@ from pathlib import Path
 import re
 import sys
 
-from maxionbench.conformance.run import main as conformance_main
-
 _MILESTONE_ID_RE = re.compile(r"^M[0-9]+$")
 _LEGACY_COMMAND_ALIASES = {
     "preprocess-hotpot-portable": "preprocess-hotpot-maxionbench",
@@ -767,6 +765,8 @@ def main(argv: list[str] | None = None) -> int:
 
         raise ValueError(f"Unsupported report mode: {args.mode}")
     if args.command == "conformance":
+        from maxionbench.conformance.run import main as conformance_main
+
         conformance_argv = [
             "--adapter",
             args.adapter,
