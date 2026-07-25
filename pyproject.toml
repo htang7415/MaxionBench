@@ -38,7 +38,7 @@ datasets = [
   "pytz==2023.3.post1",
   "PyYAML==6.0.*",
   "scikit-learn==1.7.*",
-  "scipy==1.16.*",
+  "scipy>=1.16,<1.18",
 ]
 engines = [
   "faiss-cpu>=1.8.0",
