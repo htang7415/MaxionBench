@@ -44,3 +44,5 @@ command.md
 # Local workflow state
 ci_s1_smoke_local.yaml
 .claude/settings.local.json
+docs/
+/docs
