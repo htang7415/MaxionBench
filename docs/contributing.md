@@ -3,10 +3,19 @@
 ## Setup
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
+python3 -m venv ~/.venvs/maxionbench
+. ~/.venvs/maxionbench/bin/activate
 python -m pip install --require-hashes -r requirements-dev.lock
 python -m pip install --no-deps --no-build-isolation -e .
+python -m pip install -e ".[rag]"   # v0.2/v0.3 RAG and serving tools
+```
+
+Keep the virtual environment on an internal disk. On exFAT or other external volumes, macOS writes
+`._*` AppleDouble files that break Python imports and pytest collection, and imports run up to 10x
+slower. Remove stray metadata before testing or committing:
+
+```bash
+find . -name '._*' -not -path './.git/*' -delete
 ```
 
 ## Validate changes

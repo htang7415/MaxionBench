@@ -46,3 +46,10 @@ ci_s1_smoke_local.yaml
 .claude/settings.local.json
 docs/
 /docs
+# Secrets: never commit API keys, even if docs/ becomes tracked
+gemini_api.txt
+**/gemini_api.txt
+*.key
+.env
+.env.*
+!.env.docker.example

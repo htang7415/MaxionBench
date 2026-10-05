@@ -1,0 +1,227 @@
+{
+  "$defs": {
+    "CellSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "cell_id": {
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MetricCI"
+          },
+          "type": "object"
+        },
+        "n_failed": {
+          "type": "integer"
+        },
+        "n_ok": {
+          "type": "integer"
+        },
+        "params": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "cell_id",
+        "params",
+        "n_ok",
+        "n_failed",
+        "metrics"
+      ],
+      "type": "object"
+    },
+    "MetricCI": {
+      "additionalProperties": false,
+      "properties": {
+        "ci_high": {
+          "type": "number"
+        },
+        "ci_low": {
+          "type": "number"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "std": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "mean",
+        "ci_low",
+        "ci_high",
+        "std",
+        "n"
+      ],
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at": {
+          "type": "string"
+        },
+        "git_commit": {
+          "type": "string"
+        },
+        "git_dirty": {
+          "type": "boolean"
+        },
+        "host": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "spec_fingerprint": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "tools": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "git_commit",
+        "git_dirty",
+        "spec_fingerprint",
+        "started_at",
+        "finished_at",
+        "host",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "TrialResult": {
+      "additionalProperties": false,
+      "properties": {
+        "cell_id": {
+          "type": "string"
+        },
+        "duration_s": {
+          "type": "number"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host_load_1m_before": {
+          "type": "number"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "quiet_host_ok": {
+          "type": "boolean"
+        },
+        "repeat": {
+          "type": "integer"
+        },
+        "requests_per_endpoint": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "failed"
+          ]
+        },
+        "target": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "trial_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "trial_id",
+        "cell_id",
+        "repeat",
+        "seed",
+        "status",
+        "started_at",
+        "duration_s",
+        "host_load_1m_before",
+        "quiet_host_ok",
+        "metrics",
+        "requests_per_endpoint",
+        "target",
+        "error"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://maxionbench.local/schemas/maxionbench-harness-result-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cells": {
+      "items": {
+        "$ref": "#/$defs/CellSummary"
+      },
+      "type": "array"
+    },
+    "description": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "maxionbench-harness-result-v1"
+    },
+    "spec": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "trials": {
+      "items": {
+        "$ref": "#/$defs/TrialResult"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "name",
+    "description",
+    "spec",
+    "provenance",
+    "trials",
+    "cells"
+  ],
+  "title": "ExperimentResult",
+  "type": "object"
+}

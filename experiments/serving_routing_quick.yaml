@@ -1,0 +1,38 @@
+schema_version: maxionbench-experiment-v1
+name: serving-routing-quick
+description: >
+  Reduced routing comparison (12 sessions, 2 policies, 3 repeats, ~8 minutes) used to check
+  harness repeatability: two runs of this spec should have overlapping 95% CIs.
+seed: 42
+repeats: 3
+seed_strategy: per_repeat
+target:
+  kind: llamacpp_replicas
+  params:
+    model: ~/models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    replicas: 3
+    threads: 3
+    slots: 2
+    ctx: 8192
+    cache_ram_mib: 64
+    base_port: 8100
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 12
+    turns: 3
+    k: 5
+    window: 6
+    rate_rps: 0.5
+    max_in_flight: 12
+    timeout_s: 30
+    max_tokens: 24
+slo:
+  ttft_s: 2.5
+  e2e_s: 4.0
+matrix:
+  target.routing_policy: [round_robin, prefix_affinity]
+quiet_host:
+  max_load_1m: 3.0
+  wait_s: 60

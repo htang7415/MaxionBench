@@ -1,6 +1,31 @@
 # MaxionBench
 
-MaxionBench is a reproducible single-node decision-audit benchmark for retrieval infrastructure used as agentic operational memory.
+MaxionBench is a reproducible decision harness for LLM serving, RAG, and agents. It compares a
+self-hosted vLLM fleet routed by llm-d with a managed Gemini API, and hybrids of the two, under one SLO
+model. Every headline number comes from repeated trials with confidence intervals and provenance.
+
+The original v0.1 study, a single-node decision-audit benchmark for retrieval infrastructure used as
+agentic operational memory, is unchanged and documented below (tag `v0.1`).
+
+## v0.3 harness (in progress)
+
+| Layer | Implementation |
+| --- | --- |
+| Experiment harness | `maxionbench/harness/`: YAML specs, matrix planner (repeat-major, cell order reshuffled per repeat), open-loop load generation, 95% CIs per cell, provenance, generated JSON Schema |
+| Local serving | vLLM on Apple Silicon (`vllm-metal`, GPU) and llama.cpp (Metal/CPU) with Qwen3 models |
+| Control plane | llm-d (gateway + endpoint picker) on kind, over vLLM CPU pods or `llm-d-inference-sim` |
+| Managed API | `gemini-3.5-flash-lite` with a hard spend cap (`configs/pricing/gemini.yaml`) |
+| AI gateway (planned) | Go service for local-first routing with SLO- and cost-aware overflow to Gemini |
+
+```bash
+. ~/.venvs/maxionbench/bin/activate          # venv on the internal SSD (see docs/contributing.md)
+python -m maxionbench.harness run experiments/serving_routing_quick.yaml
+python -m maxionbench.harness compare <run_dir_a> <run_dir_b>   # CI overlap between runs
+python -m maxionbench.harness schema --check                    # result contract is up to date
+```
+
+Paid-API keys are read only at runtime and are never written to logs, result bundles, git, or
+images; see [security](docs/security.md).
 
 ## Benchmark study
 

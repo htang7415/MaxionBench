@@ -19,3 +19,9 @@ node_modules/
 release/
 results/
 tests/
+
+# Secrets: never bake API keys into images
+**/gemini_api.txt
+*.key
+.env
+.env.*
