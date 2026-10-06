@@ -87,3 +87,31 @@ def test_agent_run_stops_at_max_steps(dataset: Path) -> None:
 
     (run,) = run_tasks(tasks, lambda t: looping, dataset, max_steps=3)
     assert run.status == "max_steps" and run.answer is None and len(run.tool_calls) == 3
+
+
+def test_chat_policy_replays_model_message_verbatim(dataset: Path) -> None:
+    from maxionbench.agents.loop import ChatPolicy
+    from maxionbench.rag.llm_client import CompletionResult
+
+    corpus = HotpotCorpus(dataset)
+    tasks = build_tasks(corpus, n=1, k=2, dataset_dir=dataset)
+    seen: list[list[dict]] = []
+    replies = [
+        {"role": "assistant", "content": None, "tool_calls": [  # no id: the policy must fill one in
+            {"type": "function", "function": {"name": "search", "arguments": '{"query": "Ottilie Brandt"}'},
+             "extra_content": {"google": {"thought_signature": "sig-1"}}}]},
+        {"role": "assistant", "content": " Lübeck "},
+    ]
+
+    def send(messages, tools):
+        seen.append([dict(m) for m in messages])
+        assert {t["function"]["name"] for t in tools} == {"search", "read"}
+        return CompletionResult(json.dumps(replies[len(seen) - 1]), "ok", None, 0.1, 100, 0, 5)
+
+    policy = ChatPolicy(send)
+    (run,) = run_tasks(tasks, lambda t: policy, dataset)
+    assert run.status == "answered" and run.answer == "Lübeck" and len(policy.results) == 2
+    replayed, tool_reply = seen[1][2], seen[1][3]
+    assert replayed["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": "sig-1"}}
+    assert tool_reply["role"] == "tool" and tool_reply["tool_call_id"] == replayed["tool_calls"][0]["id"]
+    assert tool_reply["content"].startswith("[brandt]")

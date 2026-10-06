@@ -69,7 +69,21 @@ def test_run_calls_reserves_then_bills_usage_and_retries(tmp_path: Path) -> None
     ledger_path = tmp_path / "ledger.jsonl"
     results, spend = run_calls(_Paid(), calls, "test", send=send, ledger_factory=lambda cap: BudgetLedger(cap, ledger_path))
     assert results["flaky"].status == "ok" and attempts == {"a": 1, "flaky": 2, "broken": 1}  # 400 is not retried
-    assert spend["estimated_requests"] == 1  # the failed call is charged its estimate
-    billed = (2 * (1000 * 1.0 + 10 * 10.0) + (len("broken") // 3 + 8) * 1.0 + 20 * 10.0) / 1e6
+    assert spend["requests"] == 4 and spend["estimated_requests"] == 0  # HTTP errors are not billed
+    billed = 2 * (1000 * 1.0 + 10 * 10.0) / 1e6
     assert spend["spend_usd"] == pytest.approx(billed, abs=1e-6)
     assert BudgetLedger(1.0, ledger_path).spent_usd() == pytest.approx(billed, abs=1e-6)
+
+
+def test_metered_charges_timeouts_and_failed_runs(tmp_path: Path) -> None:
+    from maxionbench.eval.batch import metered
+
+    path = tmp_path / "ledger.jsonl"
+    factory = lambda cap: BudgetLedger(cap, path)  # noqa: E731
+    with metered(_Paid(), lambda price: 0.01, "t", factory) as meter:
+        meter.add(CompletionResult("", "timeout", None, 1.0, 0, 0, 0, "socket timeout"),
+                  [{"role": "user", "content": "x" * 30}], max_tokens=100)
+    assert BudgetLedger(1.0, path).spent_usd() == pytest.approx((10 + 8) * 1.0 / 1e6 + 100 * 10.0 / 1e6)
+    with pytest.raises(RuntimeError), metered(_Paid(), lambda price: 0.01, "t", factory):
+        raise RuntimeError("boom")
+    assert BudgetLedger(1.0, path).spent_usd() == pytest.approx(0.01 + 0.001018, abs=1e-6)

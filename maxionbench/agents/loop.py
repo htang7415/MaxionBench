@@ -42,6 +42,7 @@ class ToolCall:
 class PolicyOutput:
     tool_calls: tuple[ToolCall, ...] = ()
     answer: str | None = None
+    assistant_message: dict[str, Any] | None = None  # model's own message, replayed verbatim if given
 
 
 Policy = Callable[[list[dict[str, Any]], list[dict[str, Any]]], PolicyOutput]
@@ -76,7 +77,7 @@ async def run_agent(session: ClientSession, policy: Policy, task: AgentTask, max
             if out.answer is not None:
                 run.status, run.answer = "answered", out.answer
                 return run
-            messages.append({
+            messages.append(out.assistant_message or {
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [
@@ -111,6 +112,35 @@ def run_tasks(
             return [await run_agent(session, policy_for(t), t, max_steps) for t in tasks]
 
     return asyncio.run(main())
+
+
+class ChatPolicy:
+    """A chat model as the policy: tool calls in its reply are executed, plain content is the answer.
+
+    `send(messages, tools)` returns a `CompletionResult` whose text is the assistant message JSON
+    (see `maxionbench.eval.tool_client`). Per-step results are kept for latency and cost accounting.
+    """
+
+    def __init__(self, send: Callable[[list[dict[str, Any]], list[dict[str, Any]]], Any]) -> None:
+        self.send = send
+        self.results: list[Any] = []
+
+    def __call__(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> PolicyOutput:
+        result = self.send(messages, tools)
+        self.results.append(result)
+        if result.status != "ok":
+            raise RuntimeError(f"model call failed: {result.error}")
+        message = json.loads(result.text)
+        calls = message.get("tool_calls") or []
+        if not calls:
+            return PolicyOutput(answer=(message.get("content") or "").strip())
+        parsed = []
+        for n, c in enumerate(calls):
+            c["id"] = c.get("id") or f"call{len(self.results)}-{n}"  # some engines omit ids; tool replies need them
+            args = c["function"].get("arguments") or "{}"
+            parsed.append(ToolCall(c["id"], c["function"]["name"], json.loads(args) if isinstance(args, str) else dict(args)))
+        message.setdefault("content", None)
+        return PolicyOutput(tool_calls=tuple(parsed), assistant_message=message)
 
 
 class OraclePolicy:

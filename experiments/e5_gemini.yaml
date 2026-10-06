@@ -1,0 +1,18 @@
+schema_version: maxionbench-e5-v1
+name: e5-gemini
+description: >
+  E5 Gemini side: gemini-3.5-flash-lite (reasoning minimal) on CRAG-500 and HotpotQA RAG, BFCL v3
+  single-turn AST categories, and agentic HotpotQA over the MCP search/read server. Answers at
+  concurrency 1; RAG correctness from the Gemini judge (rubric qa-judge-v1, kappa 0.96 vs Claude labels).
+  The local side (Qwen3-4B, e5_qwen3_4b.yaml) runs the same items in the GPU window.
+seed: 0
+shards: 5
+model:
+  kind: gemini
+  params: {model: gemini-3.5-flash-lite, reasoning_effort: minimal}
+judge: {model: gemini-3.5-flash-lite, reasoning_effort: low}
+suites:
+  rag_crag: {n: 500}
+  rag_hotpot: {n: 300}
+  bfcl: {per_category: 100}
+  agent: {n: 100, max_steps: 8}
