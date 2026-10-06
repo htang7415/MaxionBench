@@ -1,0 +1,72 @@
+schema_version: maxionbench-experiment-v1
+name: e3-llmd-metal
+description: >
+  E3 (mode C): real llm-d EPP v0.11.0 + Envoy (Docker) routing to two native vllm-metal replicas of
+  Qwen3-0.6B Q8 on the Apple GPU, versus the harness's client-side pickers (round robin and
+  prefix affinity) over the same two replicas. Multi-turn RAG sessions, prefix caching on, conc 8.
+  Answers whether llm-d's scheduler beats simple routing on real engines.
+seed: 13
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: false
+target:
+  kind: vllm_metal
+  params: {model: ~/models/Qwen3-0.6B-Q8_0.gguf}
+target_variants:
+  llmd_optimized_baseline:
+    kind: llmd
+    params: &llmd
+      workers: vllm_metal
+      model: qwen3-0.6b
+      scorer_profile: optimized-baseline
+      worker_params: &workers
+        model: ~/models/Qwen3-0.6B-Q8_0.gguf
+        tokenizer: Qwen/Qwen3-0.6B
+        replicas: 2
+        base_port: 8210
+        max_model_len: 2048
+        gpu_memory_utilization: 0.2
+        max_num_seqs: 8
+        enable_prefix_caching: true
+  llmd_prefix_aware:
+    kind: llmd
+    params:
+      <<: *llmd
+      scorer_profile: prefix-aware
+  llmd_load_aware:
+    kind: llmd
+    params:
+      <<: *llmd
+      scorer_profile: load-aware
+  client_round_robin:
+    kind: vllm_metal
+    params:
+      <<: *workers
+      routing_policy: round_robin
+  client_prefix_affinity:
+    kind: vllm_metal
+    params:
+      <<: *workers
+      routing_policy: prefix_affinity
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 24
+    turns: 3
+    k: 5
+    window: 8
+    concurrency: 8
+    max_tokens: 32
+    ignore_eos: true
+    warmup_requests: 2
+    timeout_s: 300
+slo:
+  ttft_s: 1.0
+  e2e_s: 5.0
+matrix:
+  target.variant: [llmd_optimized_baseline, llmd_prefix_aware, llmd_load_aware, client_round_robin, client_prefix_affinity]
+quiet_host:
+  max_load_1m: 4.0
+  wait_s: 120
+  min_available_gb: 4.0

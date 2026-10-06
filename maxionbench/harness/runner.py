@@ -121,6 +121,7 @@ def _run_trial(
                     send(target.base_urls[0], spec_.messages, max_tokens=8, timeout_s=workload.timeout_s)
             started_requests = True
             records, duration = _drive(workload, target, send, trial.seed)
+            target_desc = {**target_desc, "collected": target.collect()}
             pool.release()
         except BaseException:
             pool.close()  # never reuse a target after a failed trial

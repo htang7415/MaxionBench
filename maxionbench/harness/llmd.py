@@ -23,6 +23,7 @@ from maxionbench.harness.targets import (
     VllmMetal,
     _check_keys,
     port_in_use,
+    scrape_vllm_counters,
     wait_healthy,
 )
 from maxionbench.rag.routing import PICKERS, EndpointPicker
@@ -60,7 +61,7 @@ def render_epp_config(profile: str) -> dict[str, Any]:
         ],
         "dataLayer": {
             "injectDefaults": False,
-            "discovery": {"pluginRef": "file-discovery"},
+            "discovery": {"endpoints": {"pluginRef": "file-discovery"}},  # v0.11 schema
             "sources": [{"pluginRef": "metrics-source", "extractors": [{"pluginRef": "metrics-extractor"}]}],
         },
     }
@@ -87,8 +88,9 @@ class _SimWorkers:
     def __enter__(self) -> "_SimWorkers":
         try:
             for i, name in enumerate(self.names):
+                # POD_IP is normally injected by Kubernetes; the sim needs it to publish KV-cache events.
                 _docker(["run", "-d", "--rm", "--name", name, "-p", f"127.0.0.1:{self.base_port + i}:8000",
-                         SIM_IMAGE, "--model", self.model, "--port", "8000", *self.args])
+                         "-e", "POD_IP=127.0.0.1", SIM_IMAGE, "--model", self.model, "--port", "8000", *self.args])
             for url in self.base_urls:
                 wait_healthy(url, timeout_s=60)
         except BaseException:
@@ -161,6 +163,17 @@ class LlmdNoK8s(Target):
 
     def picker(self) -> EndpointPicker:
         return PICKERS["round_robin"](1)  # routing happens inside llm-d
+
+    def collect(self) -> dict[str, Any]:
+        """Per-worker vLLM counters: how llm-d actually distributed load and where prefixes hit."""
+        workers = [scrape_vllm_counters(f"http://127.0.0.1:{port}") for port in self.worker_ports]
+        queries = sum(w.get("prefix_cache_queries_total", 0.0) for w in workers)
+        hits = sum(w.get("prefix_cache_hits_total", 0.0) for w in workers)
+        return {
+            "worker_counters": workers,
+            "requests_per_worker": [w.get("request_success_total", 0.0) for w in workers],
+            "server_prefix_cache_hit_ratio": round(hits / queries, 4) if queries else None,
+        }
 
     def request_options(self) -> dict[str, Any]:
         body: dict[str, Any] = {"model": self.model}

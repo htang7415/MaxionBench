@@ -42,6 +42,38 @@ class Target:
         """(model, price, budget cap) for paid targets; None for local ones."""
         return None
 
+    def collect(self) -> dict[str, Any]:
+        """Server-side observations gathered after a trial, before teardown (default: none)."""
+        return {}
+
+
+VLLM_COUNTERS = (
+    "vllm:request_success_total",
+    "vllm:prompt_tokens_total",
+    "vllm:prefix_cache_queries_total",
+    "vllm:prefix_cache_hits_total",
+)
+
+
+def scrape_vllm_counters(base_url: str, timeout_s: float = 5.0) -> dict[str, float]:
+    """Sum selected vLLM Prometheus counters across label sets; {} if unreachable."""
+    try:
+        with urllib.request.urlopen(base_url + "/metrics", timeout=timeout_s) as resp:
+            text = resp.read().decode("utf-8", "replace")
+    except OSError:
+        return {}
+    totals = {name: 0.0 for name in VLLM_COUNTERS}
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        name = line.split("{", 1)[0].split(" ", 1)[0]
+        if name in totals:
+            try:
+                totals[name] += float(line.rsplit(" ", 1)[1])
+            except (IndexError, ValueError):
+                pass
+    return {k.split(":", 1)[1]: v for k, v in totals.items()}
+
 
 class StaticEndpoints(Target):
     """Already-running OpenAI-compatible endpoints (e.g. a gateway or a compose stack)."""

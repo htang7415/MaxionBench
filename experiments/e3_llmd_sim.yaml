@@ -1,0 +1,43 @@
+schema_version: maxionbench-experiment-v1
+name: e3-llmd-sim
+description: >
+  E3 (mode A): llm-d EPP v0.11.0 scorer profiles over 8 llm-d-inference-sim workers with a small
+  per-worker KV cache (512 blocks x 16 tokens) to create cache pressure. Multi-turn HotpotQA RAG
+  sessions, closed loop at concurrency 16. Sim latencies are calibrated roughly to vllm-metal on
+  Qwen3-0.6B (E1/E2: ~1.4 ms/prompt token prefill, ~11 ms/output token) and are synthetic by design;
+  the result is the scheduler's routing behaviour, not engine speed.
+seed: 11
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: false
+target:
+  kind: llmd
+  params:
+    workers: sim
+    model: qwen3
+    scorer_profile: optimized-baseline
+    worker_params:
+      replicas: 8
+      base_port: 8300
+      args: ["--enable-kvcache", "--kv-cache-size", "512", "--block-size", "16", "--max-num-seqs", "4",
+             "--prefill-time-per-token", "1400us", "--inter-token-latency", "11ms",
+             "--time-factor-under-load", "2.0", "--max-model-len", "4096"]
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 48
+    turns: 3
+    k: 5
+    window: 16
+    concurrency: 16
+    max_tokens: 32
+    timeout_s: 120
+slo:
+  ttft_s: 1.0
+  e2e_s: 3.0
+matrix:
+  target.scorer_profile: [optimized-baseline, prefix-aware, load-aware]
+quiet_host:
+  max_load_1m: 6.0
+  wait_s: 30

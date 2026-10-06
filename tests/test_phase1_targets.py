@@ -346,7 +346,7 @@ def test_llmd_epp_config_profiles_and_endpoints() -> None:
         assert types[0] == "file-discovery" and cfg["plugins"][0]["parameters"]["watchFile"] is True
         assert [s for s, _ in scorers] == [t for t in types if t.endswith("-scorer")]
         assert cfg["schedulingProfiles"][0]["plugins"] == [{"pluginRef": s, "weight": w} for s, w in scorers]
-        assert cfg["dataLayer"]["discovery"] == {"pluginRef": "file-discovery"}
+        assert cfg["dataLayer"]["discovery"] == {"endpoints": {"pluginRef": "file-discovery"}}
     with pytest.raises(ValueError, match="scorer_profile"):
         render_epp_config("round-robin-ish")
     eps = render_endpoints([8301, 8302], "qwen3")["endpoints"]
@@ -374,3 +374,36 @@ def test_llmd_target_wires_vllm_workers(tmp_path: Path) -> None:
     assert target.describe()["scorer_profile"] == "prefix-aware"
     with pytest.raises(ValueError, match="workers"):
         make_target("llmd", {"workers": "tpu"}, tmp_path)
+
+
+def test_scrape_vllm_counters_sums_label_sets() -> None:
+    from http.server import BaseHTTPRequestHandler as _H
+
+    from maxionbench.harness.targets import scrape_vllm_counters
+
+    text = (
+        "# HELP vllm:request_success_total x\n"
+        'vllm:request_success_total{finished_reason="stop",model_name="q"} 3\n'
+        'vllm:request_success_total{finished_reason="length",model_name="q"} 4\n'
+        'vllm:prefix_cache_queries_total{model_name="q"} 1000\n'
+        'vllm:prefix_cache_hits_total{model_name="q"} 250\n'
+    ).encode()
+
+    class _M(_H):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(text)
+
+        def log_message(self, *a: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _M)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        got = scrape_vllm_counters(f"http://127.0.0.1:{server.server_port}")
+    finally:
+        server.shutdown()
+    assert got["request_success_total"] == 7
+    assert got["prefix_cache_hits_total"] / got["prefix_cache_queries_total"] == 0.25
+    assert scrape_vllm_counters("http://127.0.0.1:9") == {}

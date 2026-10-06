@@ -25,12 +25,17 @@ services:
 
   envoy:
     image: ${ENVOY_IMAGE:-docker.io/envoyproxy/envoy:distroless-v1.33.2}
-    command:
-      - --service-node=envoy-proxy
-      - --log-level=warn
-      - --concurrency=4
-      - --drain-strategy=immediate
-      - --drain-time-s=5
+    command:  # Envoy's CLI parser needs "--flag value", not "--flag=value"
+      - --service-node
+      - envoy-proxy
+      - --log-level
+      - warn
+      - --concurrency
+      - "4"
+      - --drain-strategy
+      - immediate
+      - --drain-time-s
+      - "5"
       - -c
       - /etc/envoy/envoy.yaml
     volumes:
