@@ -1,0 +1,46 @@
+# Observability for the serving stack: OTel collector -> Jaeger (traces), Prometheus (metrics), Grafana.
+# Serving components run natively on the host (gateway, vLLM, llama.cpp) or in the llm-d compose
+# project (EPP); all are scraped through host.docker.internal. Every port binds to 127.0.0.1.
+#
+#   docker compose -f deploy/observability/compose.yaml up -d
+#   gateway: OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 maxion-gateway -config ...
+#   Grafana http://127.0.0.1:3000 (anonymous viewer), Jaeger http://127.0.0.1:16686, Prometheus :9091
+name: maxionbench-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.131.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"  # OTLP gRPC
+      - "127.0.0.1:4318:4318"  # OTLP HTTP
+    depends_on: [jaeger]
+
+  jaeger:
+    image: jaegertracing/jaeger:2.8.0
+    ports:
+      - "127.0.0.1:16686:16686"  # UI
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports:
+      - "127.0.0.1:9091:9090"  # 9090 on the host belongs to the llm-d EPP
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [prometheus]

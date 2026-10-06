@@ -1,0 +1,32 @@
+{
+  "name": "maxionbench-dashboard",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": {
+    "types": "json2ts -i ../maxionbench/harness/result.schema.json -o src/types/result.ts --bannerComment '/* Generated from maxionbench/harness/result.schema.json by `npm run types`; do not edit. */'",
+    "data": "cd .. && python3 -m maxionbench.harness.dashboard_export --out dashboard/public/data",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "json-schema-to-typescript": "^16.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -217,22 +218,22 @@ func TestSLOPolicyOverflowsOnPredictedWait(t *testing.T) {
 	h.gw.cfg.Local.SLOTTFTS = 1.0
 	now := time.Now()
 	h.gw.est = newServiceEstimator(10*time.Second, 4, now.Add(-time.Minute))
-	if r := h.gw.overflowReason(now); r != "" {
+	if r := h.gw.overflowReason(context.Background(), now); r != "" {
 		t.Fatalf("no samples yet: got %q", r)
 	}
 	for i := 0; i < 20; i++ { // 20 completions in 10 s -> 0.5 s per request
 		h.gw.est.record(now.Add(-time.Duration(i) * 400 * time.Millisecond))
 	}
 	h.gw.local.Store(2) // 2 x 0.5 = 1.0 s: at the SLO, stay local
-	if r := h.gw.overflowReason(now); r != "" {
+	if r := h.gw.overflowReason(context.Background(), now); r != "" {
 		t.Fatalf("predicted 1.0 s: got %q", r)
 	}
 	h.gw.local.Store(3) // 1.5 s > 1.0 s
-	if r := h.gw.overflowReason(now); r != "slo_predicted" {
+	if r := h.gw.overflowReason(context.Background(), now); r != "slo_predicted" {
 		t.Fatalf("predicted 1.5 s: got %q", r)
 	}
 	h.gw.local.Store(100) // the in-flight cap still applies
-	if r := h.gw.overflowReason(now); r != "local_saturated" {
+	if r := h.gw.overflowReason(context.Background(), now); r != "local_saturated" {
 		t.Fatalf("at cap: got %q", r)
 	}
 	h.gw.local.Store(0)
@@ -240,7 +241,7 @@ func TestSLOPolicyOverflowsOnPredictedWait(t *testing.T) {
 	lf := newHarness(t, okLocal, config.LocalFirst, 100, 10) // fixed threshold ignores the prediction
 	lf.gw.est = h.gw.est
 	lf.gw.local.Store(50)
-	if r := lf.gw.overflowReason(now); r != "" {
+	if r := lf.gw.overflowReason(context.Background(), now); r != "" {
 		t.Fatalf("local_first below cap: got %q", r)
 	}
 }

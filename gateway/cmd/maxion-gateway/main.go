@@ -18,6 +18,7 @@ import (
 	"github.com/htang7415/MaxionBench/gateway/internal/budget"
 	"github.com/htang7415/MaxionBench/gateway/internal/config"
 	"github.com/htang7415/MaxionBench/gateway/internal/proxy"
+	"github.com/htang7415/MaxionBench/gateway/internal/telemetry"
 )
 
 func main() {
@@ -42,6 +43,12 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	shutdownTracing, err := telemetry.Setup(context.Background(), "maxion-gateway")
+	if err != nil {
+		log.Error("tracing", "err", err.Error())
+		os.Exit(2)
+	}
+	defer shutdownTracing(context.Background()) //nolint:errcheck
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	gw := proxy.New(cfg, key, ledger, reg, log)

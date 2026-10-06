@@ -19,6 +19,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/htang7415/MaxionBench/gateway/internal/budget"
 	"github.com/htang7415/MaxionBench/gateway/internal/config"
@@ -83,7 +86,8 @@ type Gateway struct {
 func New(cfg *config.Config, key string, ledger *budget.Ledger, reg *prometheus.Registry, log *slog.Logger) *Gateway {
 	g := &Gateway{
 		cfg: cfg, key: key, ledger: ledger, log: log,
-		client:   &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 64}},
+		// The instrumented transport opens a client span per upstream call and injects traceparent.
+		client:   &http.Client{Transport: otelhttp.NewTransport(&http.Transport{MaxIdleConnsPerHost: 64})},
 		m:        newMetrics(reg),
 		upstream: make([]atomic.Int64, len(cfg.Local.Upstreams)),
 		est:      newServiceEstimator(seconds(cfg.Local.WindowS), cfg.Local.MinSamples, time.Now()),
@@ -95,7 +99,7 @@ func New(cfg *config.Config, key string, ledger *budget.Ledger, reg *prometheus.
 // Handler serves /v1/chat/completions, /health and /metrics.
 func (g *Gateway) Handler(reg *prometheus.Registry) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/chat/completions", g.chat)
+	mux.Handle("POST /v1/chat/completions", otelhttp.NewHandler(http.HandlerFunc(g.chat), "chat.completions"))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return mux
@@ -121,7 +125,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	case config.LocalOnly:
 		g.serveLocal(r.Context(), w, body, "policy", false)
 	default: // local_first, local_first_slo
-		reason := g.overflowReason(time.Now())
+		reason := g.overflowReason(r.Context(), time.Now())
 		if reason == "" || !remoteOK {
 			g.serveLocal(r.Context(), w, body, "capacity", remoteOK && g.cfg.Failover)
 			return
@@ -133,7 +137,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 }
 
 // overflowReason returns why a new request should go remote, or "" to serve it locally.
-func (g *Gateway) overflowReason(now time.Time) string {
+func (g *Gateway) overflowReason(ctx context.Context, now time.Time) string {
 	inflight := g.local.Load()
 	if inflight >= int64(g.cfg.Local.MaxInflight) {
 		return "local_saturated"
@@ -147,6 +151,7 @@ func (g *Gateway) overflowReason(now time.Time) string {
 	}
 	wait := float64(inflight) * perReq
 	g.m.predicted.Set(wait)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Float64("maxion.predicted_local_wait_s", wait))
 	if wait > g.cfg.Local.SLOTTFTS {
 		return "slo_predicted"
 	}
@@ -207,6 +212,7 @@ func (g *Gateway) serveLocal(ctx context.Context, w http.ResponseWriter, body ma
 	}
 	defer resp.Body.Close()
 	g.m.routes.WithLabelValues("local", reason).Inc()
+	routeSpan(ctx, "local", reason)
 	copyHeaders(w, resp, "local", reason)
 	w.WriteHeader(resp.StatusCode)
 	g.m.requests.WithLabelValues("local", fmt.Sprint(resp.StatusCode)).Inc()
@@ -265,6 +271,7 @@ func (g *Gateway) serveRemote(ctx context.Context, w http.ResponseWriter, body m
 	}
 	defer resp.Body.Close()
 	g.m.routes.WithLabelValues("remote", reason).Inc()
+	routeSpan(ctx, "remote", reason)
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		g.ledger.Release(res) //nolint:errcheck // provider errors are not billed
@@ -292,6 +299,12 @@ func (g *Gateway) serveRemote(ctx context.Context, w http.ResponseWriter, body m
 	}
 	g.m.spend.Add(cost)
 	return nil
+}
+
+// routeSpan tags the request's server span with the routing decision (never headers or bodies).
+func routeSpan(ctx context.Context, backend, reason string) {
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("maxion.backend", backend),
+		attribute.String("maxion.route_reason", reason))
 }
 
 func (g *Gateway) refreshRemaining() {
