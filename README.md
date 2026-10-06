@@ -80,13 +80,16 @@ Each run writes:
 | Path | Purpose |
 | --- | --- |
 | `maxionbench/` | Benchmark package, engine adapters, orchestration, reports, runtime metadata, schemas, and CLI tools. |
-| `configs/` | Pinned scenario, engine, and conformance configurations. |
-| `docs/` | Public behavior cards, migration notes, and CI notes. |
-| `tests/` | CI checks for configs, schemas, reports, workflows, and repository hygiene. |
+| `configs/` | Pinned scenario, engine, conformance, and API pricing configurations. |
+| `experiments/` | v0.3 experiment specs (E1–E6, CI smoke runs). |
+| `gateway/` | Go AI gateway (routing, overflow, spend cap, metrics, tracing). |
+| `dashboard/` | TypeScript results dashboard built from saved result files. |
+| `deploy/` | llm-d without Kubernetes (EPP + Envoy) and the observability stack. |
+| `ci/` | Performance-gate bounds checked in CI. |
+| `docs/` | Behavior cards, schema migration notes, and project notes. |
+| `tests/` | Python tests for the harness, evaluation, configs, schemas, and reports. |
 | `dataset/processed/hotpot_portable/` | Frozen HotpotQA-MaxionBench fixture and checksums. |
 | `artifacts/`, `results/`, `release/` | Local generated outputs; ignored by default and packaged explicitly when needed. |
-
-Supporting documentation: [architecture](docs/architecture.md), [technical report](docs/technical_report.md), [contributing](docs/contributing.md), and [security](docs/security.md).
 
 ## Scope Constraints
 
