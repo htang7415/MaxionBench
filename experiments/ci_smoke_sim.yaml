@@ -1,0 +1,25 @@
+schema_version: maxionbench-experiment-v1
+name: ci-smoke-sim
+description: >
+  CI performance smoke (GPU-free): 2 llm-d-inference-sim replicas with a fixed latency model
+  (1.4 ms/prompt token prefill, 11 ms/output token), open-loop synthetic chat. Catches regressions
+  in the harness's load generation and measurement, which would show up as latency drift.
+seed: 7
+repeats: 2
+target:
+  kind: sim_replicas
+  params:
+    replicas: 2
+    base_port: 8400
+    args: ["--max-num-seqs", "8", "--prefill-time-per-token", "1400us", "--inter-token-latency", "11ms",
+           "--max-model-len", "4096"]
+workload:
+  kind: synthetic_chat
+  params: {requests: 60, sessions: 6, prompt_words: 200, rate_rps: 4.0, max_tokens: 32, ignore_eos: true, max_in_flight: 32,
+           timeout_s: 30}
+slo:
+  ttft_s: 1.0
+  e2e_s: 2.0
+quiet_host:
+  max_load_1m: 1000
+  wait_s: 0

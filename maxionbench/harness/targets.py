@@ -346,6 +346,10 @@ def make_target(kind: str, params: Mapping[str, Any], log_dir: Path) -> Target:
         from maxionbench.harness.llmd import LlmdNoK8s  # local import: llmd builds on this module
 
         return LlmdNoK8s(params, log_dir)
+    if kind == "sim_replicas":
+        from maxionbench.harness.llmd import SimReplicas
+
+        return SimReplicas(params)
     if kind == "ai_gateway":
         from maxionbench.harness.gateway import AIGateway  # local import: wraps other targets
 

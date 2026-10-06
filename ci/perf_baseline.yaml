@@ -1,0 +1,26 @@
+# Performance smoke bounds for CI (checked by maxionbench.harness.perf_gate on cell means).
+#
+# ci-smoke-sim: llm-d-inference-sim has a fixed latency model (1.4 ms/prompt token, 11 ms/output
+# token), so bounds are tight: drift here means the harness's load generation or timing changed.
+# Calibrated locally 2026-10-06: TTFT p50 874-876 ms, TPOT p50 11.5 ms.
+#
+# ci-smoke-llamacpp: real CPU inference on shared runners varies a lot, so the bounds are a floor and
+# a ceiling that only a large regression crosses. Calibrated locally on a loaded Apple M4 CPU
+# (15 tok/s, TTFT p50 1.5 s at concurrency 1); re-check against the first GitHub runner numbers.
+experiments:
+  ci-smoke-sim:
+    - metrics:
+        errors: {max: 0}
+        rejected: {max: 0}
+        ok: {min: 60}
+        ttft_p50_ms: {min: 790, max: 970}
+        tpot_p50_ms: {min: 10.5, max: 13.5}
+        slo_attainment: {min: 0.99}
+  ci-smoke-llamacpp:
+    - metrics:
+        errors: {max: 0}
+        ok: {min: 12}
+        output_tokens_per_s: {min: 3.0}
+    - cells: {workload.concurrency: 1}
+      metrics:
+        ttft_p50_ms: {max: 15000}

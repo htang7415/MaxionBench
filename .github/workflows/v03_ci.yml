@@ -1,0 +1,139 @@
+name: v03-ci
+
+# v0.3 harness CI: lint, tests, schema/type drift, dashboard build, and a CPU performance smoke gate.
+# No paid API calls: Gemini tests use fakes, and no secrets are available to these jobs.
+
+on:
+  pull_request:
+  push:
+    branches: [main, v0.3-harness]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v03-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - uses: actions/setup-go@v5  # gateway end-to-end tests build the Go binary
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install "bm25s>=0.2,<1" "mcp>=1.9,<2"
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Ruff
+        run: python -m ruff check maxionbench scripts tests
+      - name: Result schema is current
+        run: python -m maxionbench.harness schema --check
+      - name: Pytest
+        # test_repo_hygiene predates v0.3 and asserts AGENTS.md/docs/ are tracked, which the
+        # project deliberately keeps local; dataset-dependent tests skip without dataset/.
+        run: |
+          python -m pytest -q \
+            --deselect tests/test_repo_hygiene.py::test_gitignore_blocks_generated_and_local_artifacts \
+            --deselect tests/test_repo_hygiene.py::test_only_explicit_local_docs_are_gitignored
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - name: Types match the result JSON Schema
+        run: npm run types && git diff --exit-code src/types
+      - run: npx vitest run
+      - run: npm run build  # tsc type check + production bundle (data is exported locally, not in CI)
+
+  perf-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LLAMA_BUILD: b11454
+      LLAMA_SHA256: 02c892db355f05876e4fea2d0131881c987df3349dbcea35a30d1256822d3987
+      MODEL_URL: https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf
+      MODEL_SHA256: 9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install harness
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Cache model and llama.cpp
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/models/Qwen3-0.6B-Q8_0.gguf
+            ~/llama.tar.gz
+          key: perf-smoke-${{ env.LLAMA_BUILD }}-${{ env.MODEL_SHA256 }}
+      - name: Fetch pinned llama.cpp CPU build and Qwen3-0.6B Q8_0
+        run: |
+          mkdir -p ~/models
+          [ -f ~/llama.tar.gz ] || curl -fsSL -o ~/llama.tar.gz \
+            "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_BUILD}/llama-${LLAMA_BUILD}-bin-ubuntu-x64.tar.gz"
+          echo "${LLAMA_SHA256}  ${HOME}/llama.tar.gz" | sha256sum -c -
+          [ -f ~/models/Qwen3-0.6B-Q8_0.gguf ] || curl -fsSL -o ~/models/Qwen3-0.6B-Q8_0.gguf "${MODEL_URL}"
+          echo "${MODEL_SHA256}  ${HOME}/models/Qwen3-0.6B-Q8_0.gguf" | sha256sum -c -
+          tar xzf ~/llama.tar.gz -C ~
+          echo "${HOME}/llama-${LLAMA_BUILD}" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=${HOME}/llama-${LLAMA_BUILD}" >> "$GITHUB_ENV"
+      - name: Pull inference-sim
+        run: docker pull ghcr.io/llm-d/llm-d-inference-sim:v0.11.4
+      - name: Run smoke experiments
+        run: |
+          llama-server --version
+          python -m maxionbench.harness run experiments/ci_smoke_sim.yaml --out artifacts/ci
+          python -m maxionbench.harness run experiments/ci_smoke_llamacpp.yaml --out artifacts/ci
+      - name: Performance gate
+        run: python -m maxionbench.harness.perf_gate ci/perf_baseline.yaml artifacts/ci/*/results.json
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-results
+          retention-days: 14
+          path: artifacts/ci/**

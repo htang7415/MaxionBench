@@ -102,6 +102,38 @@ class _SimWorkers:
         subprocess.run(["docker", "rm", "-f", *self.names], capture_output=True, check=False)
 
 
+class SimReplicas(Target):
+    """llm-d-inference-sim containers with client-side routing (no EPP): a GPU-free stand-in engine
+    with a deterministic latency model, used by the CI performance smoke gate."""
+
+    kind = "sim_replicas"
+    KEYS = {"replicas", "base_port", "model", "args", "routing_policy"}
+
+    def __init__(self, params: Mapping[str, Any]) -> None:
+        _check_keys(self.kind, params, self.KEYS)
+        self.routing_policy = str(params.get("routing_policy", "round_robin"))
+        self.workers = _SimWorkers(int(params.get("replicas", 2)), int(params.get("base_port", 8300)),
+                                   str(params.get("model", "qwen3")), [str(a) for a in params.get("args", [])])
+        self.base_urls = self.workers.base_urls
+
+    def __enter__(self) -> "SimReplicas":
+        self.workers.__enter__()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.workers.__exit__()
+
+    def picker(self) -> EndpointPicker:
+        return PICKERS[self.routing_policy](len(self.base_urls))
+
+    def request_options(self) -> dict[str, Any]:
+        return {"extra_body": {"model": self.workers.model}}  # the sim rejects requests without its model name
+
+    def describe(self) -> dict[str, Any]:
+        return {"kind": self.kind, "engine": "llm-d-inference-sim", "image": SIM_IMAGE,
+                "replicas": self.workers.replicas, "args": self.workers.args, "routing_policy": self.routing_policy}
+
+
 class LlmdNoK8s(Target):
     kind = "llmd"
     KEYS = {"workers", "worker_params", "scorer_profile", "gateway_port", "model", "disable_thinking"}
