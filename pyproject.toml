@@ -60,6 +60,10 @@ rag = [
   "sentence-transformers>=3,<6",
   "torch>=2.2",
 ]
+agents = [
+  "bm25s>=0.2,<1",
+  "mcp>=1.9,<2",
+]
 [project.scripts]
 maxionbench = "maxionbench.cli:main"
 

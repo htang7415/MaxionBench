@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import random
 from typing import Any, Mapping
 
 from maxionbench.rag.loadgen import RequestSpec
@@ -23,6 +24,7 @@ class Workload:
     max_tokens: int
     warmup_requests: int = 0  # sent after target start, before measurement; results discarded
     extra_body: dict[str, Any] = field(default_factory=dict)  # workload-level request fields
+    arrivals: list[float] | None = None  # explicit open-loop schedule (trace replay), seconds from start
 
 
 def warmup_specs(n: int) -> list[RequestSpec]:
@@ -34,6 +36,8 @@ def warmup_specs(n: int) -> list[RequestSpec]:
 
 
 def make_workload(kind: str, params: Mapping[str, Any], seed: int) -> Workload:
+    if kind == "trace_replay":
+        return _trace_replay(params, seed)
     if kind == "rag_sessions":
         specs = _rag_sessions(params, seed)
     elif kind == "synthetic_chat":
@@ -91,6 +95,64 @@ def _synthetic_chat(params: Mapping[str, Any]) -> list[RequestSpec]:
             )
         )
     return specs
+
+
+TRACE_KEYS = {
+    "start_s", "duration_s", "rate_scale", "token_scale", "max_prompt_tokens", "max_output_tokens",
+    "max_in_flight", "timeout_s", "warmup_requests", "ignore_eos",
+}
+# Short common words, roughly one BPE token each; servers report the actual prompt_tokens per request.
+_FILLER = (
+    "the of and to in is was for on as with by at from his her that it an be this which or are had "
+    "not but were their one all also new first who has been two more time after other city year most "
+    "made into used state may later during would people many some only world over film then school"
+).split()
+
+
+def _trace_replay(params: Mapping[str, Any], seed: int) -> Workload:
+    """Replay real Azure LLM trace arrivals and token lengths, scaled down to fit one machine.
+
+    `rate_scale` stretches time (0.1 = one tenth of the trace's request rate); `token_scale` shrinks
+    prompt and output lengths, then caps apply. Prompts are filler text of about the target token
+    count (the trace has no content), each with a unique header so prefix caching cannot help.
+    """
+    from maxionbench.datasets.loaders.v03 import load_azure_trace
+
+    unknown = set(params) - TRACE_KEYS
+    if unknown:
+        raise ValueError(f"trace_replay: unknown params {sorted(unknown)}")
+    rate_scale = float(params.get("rate_scale", 1.0))
+    token_scale = float(params.get("token_scale", 1.0))
+    if rate_scale <= 0 or token_scale <= 0:
+        raise ValueError("trace_replay: rate_scale and token_scale must be > 0")
+    max_prompt = int(params.get("max_prompt_tokens", 2048))
+    max_output = int(params.get("max_output_tokens", 256))
+    window = load_azure_trace(float(params.get("start_s", 0.0)), float(params["duration_s"]))
+    rng = random.Random(seed)
+    specs = []
+    for i, (ctx, gen) in enumerate(zip(window.context_tokens.tolist(), window.generated_tokens.tolist())):
+        n_prompt = min(max_prompt, max(1, round(ctx * token_scale)))
+        words = " ".join(rng.choice(_FILLER) for _ in range(n_prompt))
+        specs.append(
+            RequestSpec(
+                request_id=f"r{i}",
+                session_id=f"r{i}",
+                prefix_key=f"r{i}",
+                messages=({"role": "user", "content": f"Request {i}. Continue this text: {words}"},),
+                max_tokens=min(max_output, max(1, round(gen * token_scale))),
+            )
+        )
+    return Workload(
+        specs=specs,
+        rate_rps=None,
+        concurrency=None,
+        max_in_flight=int(params.get("max_in_flight", 12)),
+        timeout_s=float(params.get("timeout_s", 30.0)),
+        max_tokens=max_output,
+        warmup_requests=int(params.get("warmup_requests", 0)),
+        extra_body={"ignore_eos": True} if params.get("ignore_eos", True) else {},
+        arrivals=[t / rate_scale for t in window.arrival_s.tolist()],
+    )
 
 
 def _check_keys(kind: str, params: Mapping[str, Any], allowed: set[str]) -> None:

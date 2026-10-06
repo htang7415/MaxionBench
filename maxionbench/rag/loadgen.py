@@ -27,6 +27,7 @@ class RequestSpec:
     prefix_key: str
     messages: tuple[Mapping[str, str], ...]
     fallback_text: str = ""
+    max_tokens: int | None = None  # per-request output length (trace replay); None uses the run-level value
 
 
 @dataclass(frozen=True)
@@ -62,16 +63,24 @@ def run_open_loop(
     *,
     base_urls: Sequence[str],
     picker: EndpointPicker,
-    rate_rps: float,
+    rate_rps: float | None,
     max_in_flight: int,
     timeout_s: float,
     max_tokens: int,
     seed: int,
     send: Callable[..., CompletionResult] = chat_completion,
     events: Sequence[tuple[float, Callable[[], None]]] = (),
+    arrivals: Sequence[float] | None = None,
 ) -> tuple[list[RequestRecord], float]:
-    """Run the schedule; returns records in arrival order and wall-clock duration in seconds."""
-    arrivals = poisson_arrivals(len(specs), rate_rps, seed)
+    """Run the schedule; returns records in arrival order and wall-clock duration in seconds.
+
+    Arrivals are seeded Poisson at `rate_rps` unless an explicit schedule (seconds from start) is given.
+    """
+    if arrivals is None:
+        assert rate_rps is not None
+        arrivals = poisson_arrivals(len(specs), rate_rps, seed)
+    elif len(arrivals) != len(specs):
+        raise ValueError("arrivals must have one entry per request")
     records: list[RequestRecord | None] = [None] * len(specs)
     lock = threading.Lock()
     in_flight = 0
@@ -165,7 +174,7 @@ def _execute(
         if idx is None:
             return _degraded(spec, None, scheduled_s, "no_endpoint", "no healthy endpoint")
         try:
-            result = send(base_urls[idx], spec.messages, max_tokens=max_tokens, timeout_s=timeout_s)
+            result = send(base_urls[idx], spec.messages, max_tokens=spec.max_tokens or max_tokens, timeout_s=timeout_s)
         finally:
             picker.release(idx)
         if result.status == "error" and not (result.error or "").startswith("http "):

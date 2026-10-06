@@ -1,0 +1,99 @@
+# v0.3 datasets: every file a loader reads, pinned by SHA-256. Fetch/verify with
+#   python -m maxionbench.datasets.sources fetch|verify
+# Files land under dataset/v03/ (git-ignored). BFCL is pinned to a Hugging Face revision.
+schema_version: maxionbench-datasets-v03
+files:
+  crag/crag_task_1_and_2_dev_v4.jsonl.bz2:
+    group: crag
+    url: https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2
+    bytes: 739384484
+    sha256: afa29f2b3facfb5d15aa9cded00d5ec90ff76f3e67279e7b99cfe86659a641ca
+    license: CC BY-NC 4.0
+  beir/scifact.zip:
+    group: beir
+    url: https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip
+    bytes: 2816079
+    sha256: 536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165
+    license: unverified; see BEIR dataset card
+  beir/fiqa.zip:
+    group: beir
+    url: https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip
+    bytes: 17948027
+    sha256: 32c7df99ed21252fdfb2cf3f5673502a8d245ee0c44c4a133570d92ce2b3ad02
+    license: unverified; see BEIR dataset card
+  sharegpt/ShareGPT_V3_unfiltered_cleaned_split.json:
+    group: sharegpt
+    url: https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+    bytes: 672837942
+    sha256: 35f0e213ce091ed9b9af2a1f0755e9d39f9ccec34ab281cd4ca60d70f6479ba4
+    license: unclear; local use only
+  azure/AzureLLMInferenceTrace_conv_1week.csv:
+    group: azure_trace
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/dataset-llm-2024/AzureLLMInferenceTrace_conv_1week.csv
+    bytes: 1135195393
+    sha256: a0cc9b969a9bbf0fd811802cbf4323edd3a209ace791e3799ad4f9207f213941
+    license: CC-BY 4.0 (cite DynamoLLM, HPCA 2025)
+  bfcl/BFCL_v3_simple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_simple.json
+    bytes: 280474
+    sha256: fbc37b2ad252bf9af985582e0e07b456173fe627d957491472ea9cef5fb83158
+    license: Apache-2.0
+  bfcl/possible_answer/BFCL_v3_simple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_simple.json
+    bytes: 60809
+    sha256: 2911a2bc00df82c4f999ffa64fedb0164cb88e96212ffa5972087eb91fd496ee
+    license: Apache-2.0
+  bfcl/BFCL_v3_multiple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_multiple.json
+    bytes: 316583
+    sha256: aef168155ebd74b7ac2401198b201343bc7d16d7a3d7e0d4e6d8ee82c6969b2a
+    license: Apache-2.0
+  bfcl/possible_answer/BFCL_v3_multiple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_multiple.json
+    bytes: 32254
+    sha256: 244e00ce9395df948bcafc7bee64e8f9c87ef70887587d83cae45b13699f3047
+    license: Apache-2.0
+  bfcl/BFCL_v3_parallel.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel.json
+    bytes: 172094
+    sha256: fad375d68295776efb63e5aa331dd884f8635e7bb50e05908113c74f14281c3c
+    license: Apache-2.0
+  bfcl/possible_answer/BFCL_v3_parallel.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_parallel.json
+    bytes: 65905
+    sha256: 3af54bf04e5b7640b03a9b6a82440f52474feb24b398f94435fd2b155c7727de
+    license: Apache-2.0
+  bfcl/BFCL_v3_parallel_multiple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel_multiple.json
+    bytes: 347080
+    sha256: 8863ea8433239f55c5f016154cf0830853c89f693c6ea270396a2fa121960579
+    license: Apache-2.0
+  bfcl/possible_answer/BFCL_v3_parallel_multiple.json:
+    group: bfcl
+    url: https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_parallel_multiple.json
+    bytes: 74601
+    sha256: df4d2c16238c1465dc04697c273cf3ab4a450075fcd274e3dc86ad5bf0049b75
+    license: Apache-2.0
+derived:
+  crag/crag_task_1_and_2_dev_v4.first_500.jsonl:
+    group: crag
+    kind: crag_slice
+    from: crag/crag_task_1_and_2_dev_v4.jsonl.bz2
+    examples: 500
+    sha256: fcd720bf3955b90d864af2211af45128d83acd877bc32b9dff147666d1b3b438
+    license: CC BY-NC 4.0
+  sharegpt/sharegpt_first_turn.sample_2000.jsonl:
+    group: sharegpt
+    kind: sharegpt_sample
+    from: sharegpt/ShareGPT_V3_unfiltered_cleaned_split.json
+    examples: 2000
+    seed: 0
+    sha256: 38b9ae0dbbb2223cb4cff2fd28fc34d6f4232e56d3a819baf413cd5cb48270e1
+    license: unclear; local use only

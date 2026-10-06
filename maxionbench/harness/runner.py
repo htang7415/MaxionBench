@@ -260,11 +260,10 @@ def _drive(
             concurrency=workload.concurrency, timeout_s=workload.timeout_s,
             max_tokens=workload.max_tokens, send=send,
         )
-    assert workload.rate_rps is not None
     return run_open_loop(
         workload.specs, base_urls=target.base_urls, picker=target.picker(), rate_rps=workload.rate_rps,
         max_in_flight=workload.max_in_flight, timeout_s=workload.timeout_s,
-        max_tokens=workload.max_tokens, seed=seed, send=send,
+        max_tokens=workload.max_tokens, seed=seed, send=send, arrivals=workload.arrivals,
     )
 
 
@@ -275,7 +274,8 @@ def estimated_tokens(spec: RequestSpec) -> int:
 
 def estimate_cost_usd(workload: Workload, price: ModelPrice) -> float:
     prompt = sum(estimated_tokens(s) for s in workload.specs)
-    return cost_usd(price, input_tokens=prompt, output_tokens=workload.max_tokens * len(workload.specs))
+    output = sum(s.max_tokens or workload.max_tokens for s in workload.specs)
+    return cost_usd(price, input_tokens=prompt, output_tokens=output)
 
 
 def actual_cost_usd(records: list[RequestRecord], workload: Workload, price: ModelPrice) -> tuple[float, dict[str, int]]:
@@ -289,7 +289,7 @@ def actual_cost_usd(records: list[RequestRecord], workload: Workload, price: Mod
             usage["output_tokens"] += r.completion_tokens
         elif r.status not in ("rejected", "no_endpoint"):  # may have been billed without usage data
             usage["input_tokens"] += estimated_tokens(by_id[r.request_id])
-            usage["output_tokens"] += workload.max_tokens
+            usage["output_tokens"] += by_id[r.request_id].max_tokens or workload.max_tokens
             usage["estimated_requests"] += 1
     cost = cost_usd(price, input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
                     cached_tokens=usage["cached_tokens"])
