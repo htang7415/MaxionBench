@@ -24,8 +24,22 @@ class CompletionResult:
     e2e_s: float
     prompt_tokens: int
     cached_tokens: int
-    completion_tokens: int
+    completion_tokens: int  # visible output tokens (used for TPOT)
     error: str | None = None
+    reasoning_tokens: int = 0  # hidden thinking tokens: billed as output but not in completion_tokens
+
+
+def reasoning_tokens(usage: Mapping[str, Any]) -> int:
+    """Thinking tokens from an OpenAI-style usage block.
+
+    Gemini's OpenAI-compatible API leaves thinking out of completion_tokens but counts it in
+    total_tokens (e.g. completion 3, prompt 31, total 232), so it is recovered as the remainder.
+    """
+    details = usage.get("completion_tokens_details") or {}
+    if details.get("reasoning_tokens"):
+        return int(details["reasoning_tokens"])
+    total = int(usage.get("total_tokens") or 0)
+    return max(0, total - int(usage.get("prompt_tokens") or 0) - int(usage.get("completion_tokens") or 0))
 
 
 def chat_completion(
@@ -100,6 +114,7 @@ def chat_completion(
         prompt_tokens=int(usage.get("prompt_tokens") or 0),
         cached_tokens=int(details.get("cached_tokens") or 0),
         completion_tokens=int(usage.get("completion_tokens") or 0),
+        reasoning_tokens=reasoning_tokens(usage),
     )
 
 

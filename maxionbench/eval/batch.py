@@ -52,7 +52,7 @@ class Meter:
             if result.status == "ok" and result.prompt_tokens > 0:
                 self.usage["input_tokens"] += result.prompt_tokens
                 self.usage["cached_tokens"] += result.cached_tokens
-                self.usage["output_tokens"] += result.completion_tokens
+                self.usage["output_tokens"] += result.completion_tokens + result.reasoning_tokens
             elif (result.error or "").startswith("http "):
                 pass  # provider rejected the request: not billed (as in the Go gateway)
             else:  # timeout or transport failure: may have been billed without usage data

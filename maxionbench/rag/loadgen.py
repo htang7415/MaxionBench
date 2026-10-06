@@ -44,6 +44,7 @@ class RequestRecord:
     completion_tokens: int
     degraded: bool
     error: str | None
+    reasoning_tokens: int = 0  # billed as output; excluded from TPOT and output throughput
 
 
 def poisson_arrivals(n: int, rate_rps: float, seed: int) -> list[float]:
@@ -193,6 +194,7 @@ def _execute(
             prompt_tokens=result.prompt_tokens,
             cached_tokens=result.cached_tokens,
             completion_tokens=result.completion_tokens,
+            reasoning_tokens=result.reasoning_tokens,
             degraded=False,
             error=None,
         )

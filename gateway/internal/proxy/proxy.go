@@ -291,8 +291,9 @@ func (g *Gateway) serveRemote(ctx context.Context, w http.ResponseWriter, body m
 
 	cost, meta := estimate, map[string]any{"estimated": true, "reason": reason}
 	if u.found {
-		cost = rc.Price.Cost(u.Prompt, u.Completion, u.Cached)
-		meta = map[string]any{"input_tokens": u.Prompt, "cached_tokens": u.Cached, "output_tokens": u.Completion, "reason": reason}
+		cost = rc.Price.Cost(u.Prompt, u.Completion+u.Reasoning, u.Cached)
+		meta = map[string]any{"input_tokens": u.Prompt, "cached_tokens": u.Cached, "output_tokens": u.Completion + u.Reasoning,
+			"reasoning_tokens": u.Reasoning, "reason": reason}
 	}
 	if err := g.ledger.Commit(res, cost, meta); err != nil {
 		g.log.Error("ledger commit failed", "err", err.Error())
@@ -325,6 +326,7 @@ func (g *Gateway) redact(s string) string {
 
 type usage struct {
 	Prompt, Completion, Cached int
+	Reasoning                  int // thinking tokens: billed as output but absent from completion_tokens on Gemini
 	found                      bool
 }
 
@@ -373,9 +375,13 @@ func parseUsageJSON(b []byte, u *usage) {
 		Usage *struct {
 			PromptTokens        int `json:"prompt_tokens"`
 			CompletionTokens    int `json:"completion_tokens"`
+			TotalTokens         int `json:"total_tokens"`
 			PromptTokensDetails *struct {
 				CachedTokens int `json:"cached_tokens"`
 			} `json:"prompt_tokens_details"`
+			CompletionTokensDetails *struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
 		} `json:"usage"`
 	}
 	if json.Unmarshal(b, &ev) != nil || ev.Usage == nil || ev.Usage.PromptTokens == 0 {
@@ -384,6 +390,12 @@ func parseUsageJSON(b []byte, u *usage) {
 	u.Prompt, u.Completion, u.found = ev.Usage.PromptTokens, ev.Usage.CompletionTokens, true
 	if ev.Usage.PromptTokensDetails != nil {
 		u.Cached = ev.Usage.PromptTokensDetails.CachedTokens
+	}
+	// Same rule as the Python client: explicit reasoning count, else total - prompt - completion.
+	if d := ev.Usage.CompletionTokensDetails; d != nil && d.ReasoningTokens > 0 {
+		u.Reasoning = d.ReasoningTokens
+	} else if extra := ev.Usage.TotalTokens - ev.Usage.PromptTokens - ev.Usage.CompletionTokens; extra > 0 {
+		u.Reasoning = extra
 	}
 }
 

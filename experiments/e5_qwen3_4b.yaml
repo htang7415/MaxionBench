@@ -2,7 +2,7 @@ schema_version: maxionbench-e5-v1
 name: e5-qwen3-4b
 description: >
   E5 local side (GPU window): Qwen3-4B Q8_0 on vllm-metal (Mac GPU), thinking disabled, hermes tool
-  parser, on exactly the items of e5_gemini.yaml (same seed and sizes). Answers at concurrency 1; RAG
+  parser, on exactly the items of e5_gemini.yaml (same seed and sizes). Answers at concurrency 1; QA
   correctness from the same Gemini judge (rubric qa-judge-v1). Local spend is $0; judge spend is not.
 seed: 0
 shards: 5

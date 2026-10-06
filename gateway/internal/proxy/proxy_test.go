@@ -268,3 +268,22 @@ func TestSLOPolicyRoutesRemoteEndToEnd(t *testing.T) {
 		t.Fatal("predicted wait gauge missing")
 	}
 }
+
+func TestUsageBillsHiddenReasoningTokens(t *testing.T) {
+	var u usage
+	parseUsageJSON([]byte(`{"usage":{"prompt_tokens":31,"completion_tokens":3,"total_tokens":232}}`), &u)
+	if u.Reasoning != 198 || u.Completion != 3 {
+		t.Fatalf("Gemini-style totals: %+v", u)
+	}
+	var v usage
+	parseUsageJSON([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,`+
+		`"completion_tokens_details":{"reasoning_tokens":4}}}`), &v)
+	if v.Reasoning != 4 {
+		t.Fatalf("explicit reasoning count: %+v", v)
+	}
+	var w usage
+	parseUsageJSON([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), &w)
+	if w.Reasoning != 0 {
+		t.Fatalf("consistent totals must add nothing: %+v", w)
+	}
+}

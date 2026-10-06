@@ -7,25 +7,33 @@ model. Every headline number comes from repeated trials with confidence interval
 The original v0.1 study, a single-node decision-audit benchmark for retrieval infrastructure used as
 agentic operational memory, is unchanged and documented below (tag `v0.1`).
 
-## v0.3 harness (in progress)
+## v0.3 harness
 
 | Layer | Implementation |
 | --- | --- |
-| Experiment harness | `maxionbench/harness/`: YAML specs, matrix planner (repeat-major, cell order reshuffled per repeat), open-loop load generation, 95% CIs per cell, provenance, generated JSON Schema |
+| Experiment harness | `maxionbench/harness/`: YAML specs, matrix planner, open-loop (Poisson or replayed Azure trace) and closed-loop load generation, 95% CIs per cell, provenance, generated JSON Schema |
 | Local serving | vLLM on Apple Silicon (`vllm-metal`, GPU) and llama.cpp (Metal/CPU) with Qwen3 models |
-| Control plane | llm-d (gateway + endpoint picker) on kind, over vLLM CPU pods or `llm-d-inference-sim` |
-| Managed API | `gemini-3.5-flash-lite` with a hard spend cap (`configs/pricing/gemini.yaml`) |
-| AI gateway (planned) | Go service for local-first routing with SLO- and cost-aware overflow to Gemini |
+| Control plane | llm-d endpoint picker + Envoy without Kubernetes (Docker) over vllm-metal or `llm-d-inference-sim` workers |
+| Managed API | `gemini-3.5-flash-lite` under a hard spend cap shared by Python and Go (`configs/pricing/gemini.yaml`) |
+| AI gateway | `gateway/` (Go): local-first routing, fixed or predicted-wait overflow to Gemini, failover, Prometheus metrics, OpenTelemetry tracing |
+| Evaluation | `maxionbench/eval`, `graders`, `agents`: QA with provided context (CRAG, HotpotQA) and a calibrated Gemini judge, offline BFCL AST grader, agentic HotpotQA over an MCP search/read server |
+| Observability | `deploy/observability/`: OTel collector, Jaeger, Prometheus, Grafana |
+| Dashboard | `dashboard/`: static TypeScript site over saved results |
 
 ```bash
-. ~/.venvs/maxionbench/bin/activate          # venv on the internal SSD (see docs/contributing.md)
-python -m maxionbench.harness run experiments/serving_routing_quick.yaml
+. ~/.venvs/maxionbench/bin/activate
+python -m maxionbench.datasets.sources fetch                     # pinned datasets, SHA-256 verified
+python -m maxionbench.harness run experiments/e2_prefix_caching.yaml
 python -m maxionbench.harness compare <run_dir_a> <run_dir_b>   # CI overlap between runs
 python -m maxionbench.harness schema --check                    # result contract is up to date
+cd dashboard && npm ci && npm run data && npm run build          # results dashboard
 ```
 
-Paid-API keys are read only at runtime and are never written to logs, result bundles, git, or
-images; see [security](docs/security.md).
+CI (`.github/workflows/v03_ci.yml`) runs lint, Python/Go/TypeScript tests, schema and type drift
+checks, and a CPU performance gate (llama.cpp + inference-sim) with no paid API calls.
+
+Paid-API keys are read only at runtime (`GEMINI_API_KEY` or a git-ignored key file) and are never
+written to logs, result bundles, git, or images; every paid request reserves its worst-case cost first.
 
 ## Benchmark study
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maxionbench"
-version = "0.1.0"
-description = "MaxionBench v0.1 benchmark harness for retrieval and RAG infrastructure"
+version = "0.3.0.dev0"
+description = "MaxionBench: reproducible LLM serving, routing, and evaluation harness"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

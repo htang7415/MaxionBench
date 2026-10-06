@@ -14,7 +14,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from maxionbench.harness.secrets import Secret
-from maxionbench.rag.llm_client import CompletionResult
+from maxionbench.rag.llm_client import CompletionResult, reasoning_tokens
 
 
 def chat_tools(
@@ -65,6 +65,7 @@ def chat_tools(
         prompt_tokens=int(usage.get("prompt_tokens") or 0),
         cached_tokens=int(details.get("cached_tokens") or 0),
         completion_tokens=int(usage.get("completion_tokens") or 0),
+        reasoning_tokens=reasoning_tokens(usage),
     )
 
 

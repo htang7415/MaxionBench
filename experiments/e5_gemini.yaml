@@ -1,9 +1,11 @@
 schema_version: maxionbench-e5-v1
 name: e5-gemini
 description: >
-  E5 Gemini side: gemini-3.5-flash-lite (reasoning minimal) on CRAG-500 and HotpotQA RAG, BFCL v3
+  E5 Gemini side: gemini-3.5-flash-lite (reasoning minimal) on QA with provided context (CRAG-500 search
+  snippets; HotpotQA gold paragraphs + distractors, so no retrieval is measured), BFCL v3
   single-turn AST categories, and agentic HotpotQA over the MCP search/read server. Answers at
-  concurrency 1; RAG correctness from the Gemini judge (rubric qa-judge-v1, kappa 0.96 vs Claude labels).
+  concurrency 1; QA correctness from the Gemini judge (rubric qa-judge-v1; kappa 0.96 vs Claude labels,
+  0.86 on answered items).
   The local side (Qwen3-4B, e5_qwen3_4b.yaml) runs the same items in the GPU window.
 seed: 0
 shards: 5

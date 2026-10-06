@@ -16,8 +16,8 @@ const LABELS: Record<string, string> = {
   local_first_slo: "Local first (SLO-aware)",
   remote_only: "Remote only",
   "e1-engines-cpu": "llama.cpp (CPU)",
-  rag_crag: "CRAG RAG",
-  rag_hotpot: "HotpotQA RAG",
+  rag_crag: "CRAG (given snippets)",
+  rag_hotpot: "HotpotQA (gold context)",
   bfcl: "BFCL tool calls",
   agent: "Agentic HotpotQA",
   implicit: "Implicit cache",
@@ -174,7 +174,7 @@ export function Scheduling({ data }: { data: Data }) {
   const sim = data.results["e3-llmd-sim"], metal = data.results["e3-llmd-metal"];
   const profile = (c: CellSummary) => param(c, "target.scorer_profile");
   return (
-    <Section title="llm-d scheduling (E3)" intro="llm-d EPP scorer profiles over 8 simulated workers with a small KV cache (mode A); real vllm-metal replicas (mode C) when published.">
+    <Section title="llm-d scheduling (E3)" intro="llm-d EPP scorer profiles over 8 simulated workers with a small KV cache (mode A); real vllm-metal replicas (mode C) when published. Simulated latencies use vLLM's per-token TTFT at concurrency 4 plus the simulator's own load factor, so absolute latencies likely overstate load; compare profiles, not milliseconds.">
       {sim ? (
         <Grid>
           <BarCard r={sim} title="Goodput at SLO" subtitle="Requests per second meeting TTFT and E2E targets" metric="goodput_rps" by={profile} />
@@ -216,9 +216,9 @@ function hybridCards(r: ExperimentResult) {
 export function Hybrid({ data }: { data: Data }) {
   const e4 = data.results["e4-hybrid-gateway"], e4b = data.results["e4b-slo-overflow"];
   return (
-    <Section title="Hybrid serving and cost (E4)" intro="Go AI gateway in front of llm-d over simulated local workers, overflowing to Gemini 3.5 Flash-Lite under a hard spend cap. E4b compares the fixed in-flight threshold with SLO-aware overflow.">
+    <Section title="Hybrid serving and cost (E4)" intro="Go AI gateway in front of llm-d over simulated local workers, overflowing to Gemini 3.5 Flash-Lite under a hard spend cap. Simulated local latency likely counts load twice (loaded per-token rate plus the simulator's load factor), which favors overflow; Gemini latency and spend are real. E4b compares the fixed in-flight threshold with predicted-wait overflow (in-flight × recent time per completed request, an end-to-end estimate compared against the TTFT target): it triggers earlier, but gains stay within the CIs.">
       {e4 ? hybridCards(e4) : <Missing what="E4" />}
-      <h3 className="pt-2 text-base font-semibold">E4b: SLO-aware overflow</h3>
+      <h3 className="pt-2 text-base font-semibold">E4b: predicted-wait (SLO-aware) overflow</h3>
       {e4b ? hybridCards(e4b) : <Missing what="E4b" />}
     </Section>
   );
@@ -237,7 +237,7 @@ export function Quality({ data }: { data: Data }) {
       Number.isFinite(m("usd_per_correct")) ? `$${fmt(1000 * m("usd_per_correct"), 2)}` : "–"];
   }));
   return (
-    <Section title="Quality and cost (E5)" intro="Each model on CRAG and HotpotQA RAG (judged by Gemini with a rubric calibrated against 100 reference labels, κ = 0.96), BFCL v3 single-turn tool calls (AST grader), and agentic HotpotQA over an MCP search/read server. Requests at concurrency 1; CIs over 5 item shards.">
+    <Section title="Quality and cost (E5)" intro="Question answering with provided context — CRAG with the dataset's search snippets, HotpotQA with its gold paragraphs plus distractors (no retrieval is measured) — judged by Gemini against a rubric; BFCL v3 single-turn tool calls (AST grader); and agentic HotpotQA over an MCP search/read server, where the model must find the evidence itself. Judge vs 100 reference labels: κ = 0.96 overall, 0.86 on answered items; it missed 2 of 9 wrong answers, so judged accuracy is a slight upper bound. Requests at concurrency 1; CIs over 5 item shards.">
       <Grid>
         <Card title="Accuracy by suite" table={barTable(groups("accuracy"), pct)}>
           <BarCI groups={groups("accuracy")} format={pct} axisFormat={pct} />

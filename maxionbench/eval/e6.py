@@ -21,7 +21,6 @@ from datetime import datetime, timezone
 import functools
 import json
 from pathlib import Path
-import platform
 import random
 import sys
 import time
@@ -35,14 +34,13 @@ from maxionbench.agents.hotpot_env import DEFAULT_DATASET
 from maxionbench.eval.batch import metered
 from maxionbench.graders.qa import grade_qa
 from maxionbench.harness.budget import ModelPrice, cost_usd
-from maxionbench.harness.results import RESULT_SCHEMA_VERSION, ExperimentResult, Provenance, TrialResult, aggregate_cells
-from maxionbench.harness.runner import _git, _scrubber
+from maxionbench.harness.results import RESULT_SCHEMA_VERSION, ExperimentResult, TrialResult, aggregate_cells
+from maxionbench.harness.provenance import make_provenance, scrubber
 from maxionbench.harness.secrets import load_gemini_key, redact
 from maxionbench.harness.targets import GeminiTarget
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.rag.llm_client import CompletionResult, chat_completion
-from maxionbench.runtime.system_info import collect_system_info
-from maxionbench.schemas.result_schema import stable_config_fingerprint, utc_now_iso
+from maxionbench.schemas.result_schema import utc_now_iso
 from maxionbench.tools.rag_eval import SYSTEM_PROMPT
 
 MODEL = "gemini-3.5-flash-lite"
@@ -115,7 +113,7 @@ def _rest(method: str, path: str, body: dict[str, Any] | None = None, timeout_s:
 
 def _answer(qid: str, r: CompletionResult) -> Answer:
     return Answer(qid, r.text.strip(), r.status, r.ttft_s, r.e2e_s if r.status == "ok" else None,
-                  r.prompt_tokens, r.cached_tokens, r.completion_tokens)
+                  r.prompt_tokens, r.cached_tokens, r.completion_tokens + r.reasoning_tokens)
 
 
 def run_implicit(sessions: list[Session], send: Callable[..., CompletionResult], meter: Any) -> tuple[list[Answer], float]:
@@ -253,7 +251,7 @@ def run_e6(arms: list[str], n_sessions: int, questions: int, distractors: int, r
     target = GeminiTarget({"model": MODEL, "reasoning_effort": "minimal"})
     _, price, _ = target.pricing()
     send = functools.partial(chat_completion, **target.request_options())
-    scrub, key_present = _scrubber()
+    scrub, key_present = scrubber()
     trials, rows = [], []
     for rep in range(repeats):
         for a_i, arm in enumerate(arms):
@@ -297,12 +295,8 @@ def run_e6(arms: list[str], n_sessions: int, questions: int, distractors: int, r
     result = ExperimentResult(
         schema_version=RESULT_SCHEMA_VERSION, run_id=run_id, name=spec["name"], description=__doc__.split("\n\n")[0],
         spec=spec,
-        provenance=Provenance(
-            git_commit=_git(["rev-parse", "HEAD"]) or "unknown", git_dirty=bool(_git(["status", "--porcelain"])),
-            spec_fingerprint=stable_config_fingerprint(spec), started_at=started_at, finished_at=utc_now_iso(),
-            host=collect_system_info(),
-            tools={"python": platform.python_version(), "harness_result_schema": RESULT_SCHEMA_VERSION,
-                   "gemini_key_present": key_present, "trials_planned": len(trials), "trials_completed": len(trials)}),
+        provenance=make_provenance(spec, started_at, {
+            "gemini_key_present": key_present, "trials_planned": len(trials), "trials_completed": len(trials)}),
         trials=trials, cells=aggregate_cells(trials, {arm: {"arm": arm} for arm in arms}))
     (out_dir / "results.json").write_text(scrub(json.dumps(result.to_dict(), indent=2)) + "\n", encoding="utf-8")
     log(f"wrote {out_dir}")

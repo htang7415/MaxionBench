@@ -11,7 +11,6 @@ import functools
 import json
 import os
 from pathlib import Path
-import platform
 import subprocess
 import sys
 import time
@@ -21,21 +20,19 @@ import yaml
 
 from maxionbench.harness.budget import BudgetLedger, ModelPrice, Reservation, cost_usd
 from maxionbench.harness.planner import Trial, plan
+from maxionbench.harness.provenance import make_provenance, scrubber
 from maxionbench.harness.results import (
     RESULT_SCHEMA_VERSION,
     ExperimentResult,
-    Provenance,
     TrialResult,
     aggregate_cells,
 )
-from maxionbench.harness.secrets import MissingSecretError, load_gemini_key, redact
 from maxionbench.harness.spec import ExperimentSpec, QuietHost
 from maxionbench.harness.targets import Target, make_target
 from maxionbench.harness.workloads import Workload, make_workload, warmup_specs
 from maxionbench.rag.llm_client import chat_completion
 from maxionbench.rag.loadgen import RequestRecord, RequestSpec, run_closed_loop, run_open_loop, summarize
-from maxionbench.runtime.system_info import collect_system_info
-from maxionbench.schemas.result_schema import stable_config_fingerprint, utc_now_iso
+from maxionbench.schemas.result_schema import utc_now_iso
 
 TargetFactory = Callable[[str, dict[str, Any], Path], Target]
 LedgerFactory = Callable[[float], BudgetLedger]
@@ -58,7 +55,7 @@ def run_experiment(
     trials = plan(spec)
     log(f"{run_id}: {len(trials)} trials ({spec.repeats} repeats)")
 
-    scrub, key_present = _scrubber()
+    scrub, key_present = scrubber()
     results: list[TrialResult] = []
     pool = _TargetPool(target_factory, reuse=spec.reuse_targets)
     with (out_dir / "requests.jsonl").open("w", encoding="utf-8") as req_fh:
@@ -192,22 +189,11 @@ def _write_result(
         name=spec.name,
         description=spec.description,
         spec=spec_dict,
-        provenance=Provenance(
-            git_commit=_git(["rev-parse", "HEAD"]) or "unknown",
-            # Untracked source counts: results from uncommitted code are not reproducible from git_commit.
-            git_dirty=bool(_git(["status", "--porcelain"])),
-            spec_fingerprint=stable_config_fingerprint(spec_dict),
-            started_at=started_at,
-            finished_at=utc_now_iso(),
-            host=collect_system_info(),
-            tools={
-                "python": platform.python_version(),
-                "harness_result_schema": RESULT_SCHEMA_VERSION,
-                "gemini_key_present": key_present,  # presence only, never the value
-                "trials_planned": len(trials),
-                "trials_completed": len(results),
-            },
-        ),
+        provenance=make_provenance(spec_dict, started_at, {
+            "gemini_key_present": key_present,  # presence only, never the value
+            "trials_planned": len(trials),
+            "trials_completed": len(results),
+        }),
         trials=list(results),
         cells=aggregate_cells(results, cell_params),
     )
@@ -286,7 +272,7 @@ def actual_cost_usd(records: list[RequestRecord], workload: Workload, price: Mod
         if r.status == "ok" and r.prompt_tokens > 0:
             usage["input_tokens"] += r.prompt_tokens
             usage["cached_tokens"] += r.cached_tokens
-            usage["output_tokens"] += r.completion_tokens
+            usage["output_tokens"] += r.completion_tokens + r.reasoning_tokens
         elif r.status not in ("rejected", "no_endpoint"):  # may have been billed without usage data
             usage["input_tokens"] += estimated_tokens(by_id[r.request_id])
             usage["output_tokens"] += by_id[r.request_id].max_tokens or workload.max_tokens
@@ -294,15 +280,6 @@ def actual_cost_usd(records: list[RequestRecord], workload: Workload, price: Mod
     cost = cost_usd(price, input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
                     cached_tokens=usage["cached_tokens"])
     return cost, usage
-
-
-def _scrubber() -> tuple[Callable[[str], str], bool]:
-    """Redact any configured API key from text bound for logs or result bundles."""
-    try:
-        key = load_gemini_key()
-    except MissingSecretError:
-        return (lambda text: text), False
-    return (lambda text: redact(text, key)), True
 
 
 def flatten_summary(summary: dict[str, Any]) -> dict[str, float]:
@@ -441,10 +418,3 @@ def wait_for_quiet_host(
             return load, False, others
         time.sleep(poll_s)
 
-
-def _git(args: list[str]) -> str:
-    try:
-        out = subprocess.run(["git", *args], capture_output=True, text=True, check=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return out.stdout.strip()

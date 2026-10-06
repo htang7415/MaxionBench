@@ -87,3 +87,19 @@ def test_metered_charges_timeouts_and_failed_runs(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError), metered(_Paid(), lambda price: 0.01, "t", factory):
         raise RuntimeError("boom")
     assert BudgetLedger(1.0, path).spent_usd() == pytest.approx(0.01 + 0.001018, abs=1e-6)
+
+
+def test_reasoning_tokens_are_recovered_and_billed(tmp_path: Path) -> None:
+    from maxionbench.eval.batch import metered
+    from maxionbench.rag.llm_client import reasoning_tokens
+
+    # Gemini OpenAI-compatible usage observed 2026-10-06 at reasoning_effort=low
+    assert reasoning_tokens({"prompt_tokens": 31, "completion_tokens": 3, "total_tokens": 232}) == 198
+    assert reasoning_tokens({"prompt_tokens": 10, "completion_tokens": 5, "completion_tokens_details": {"reasoning_tokens": 4}}) == 4
+    assert reasoning_tokens({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}) == 0  # vLLM, llama.cpp
+    assert reasoning_tokens({}) == 0
+    path = tmp_path / "ledger.jsonl"
+    with metered(_Paid(), lambda price: 0.01, "t", lambda cap: BudgetLedger(cap, path)) as meter:
+        meter.add(CompletionResult("x", "ok", 0.1, 0.2, 31, 0, 3, None, 198), [], max_tokens=10)
+    assert meter.usage["output_tokens"] == 201
+    assert BudgetLedger(1.0, path).spent_usd() == pytest.approx((31 * 1.0 + 201 * 10.0) / 1e6)

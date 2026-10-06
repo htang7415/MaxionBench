@@ -1,9 +1,10 @@
-"""E5 quality and cost: one model on RAG (CRAG, HotpotQA), BFCL, and agentic HotpotQA over MCP.
+"""E5 quality and cost: one model on QA with provided context (CRAG snippets, HotpotQA gold paragraphs
+plus distractors; retrieval itself is not measured), BFCL, and agentic HotpotQA over MCP.
 
 Answer requests run one at a time (concurrency 1) so latencies are comparable between Gemini and a
 local engine; judge requests run in parallel. Items are split into seeded shards that serve as the
-result schema's repeats, so each cell's CI reflects item sampling. RAG correctness comes from the
-Gemini judge (rubric qa-judge-v1); EM/F1 are reported alongside.
+result schema's repeats, so each cell's CI reflects item sampling. QA correctness comes from the
+Gemini judge (rubric qa-judge-v1, slightly lenient: read it as an upper bound); EM/F1 are reported alongside.
 
     python -m maxionbench.eval.e5 experiments/e5_gemini.yaml [--out artifacts/e5] [--limit 10]
 """
@@ -15,7 +16,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import platform
 import random
 import sys
 import time
@@ -33,12 +33,11 @@ from maxionbench.graders import bfcl
 from maxionbench.graders.judge import RUBRIC_VERSION, judge_messages, parse_label
 from maxionbench.graders.qa import agent_success, crag_score, grade_qa
 from maxionbench.harness.budget import ModelPrice, cost_usd
-from maxionbench.harness.results import RESULT_SCHEMA_VERSION, ExperimentResult, Provenance, TrialResult, aggregate_cells
-from maxionbench.harness.runner import _git, _scrubber
+from maxionbench.harness.results import RESULT_SCHEMA_VERSION, ExperimentResult, TrialResult, aggregate_cells
+from maxionbench.harness.provenance import make_provenance, scrubber
 from maxionbench.harness.targets import GeminiTarget, Target, make_target
 from maxionbench.metrics.latency import latency_summary
-from maxionbench.runtime.system_info import collect_system_info
-from maxionbench.schemas.result_schema import stable_config_fingerprint, utc_now_iso
+from maxionbench.schemas.result_schema import utc_now_iso
 
 E5_SCHEMA = "maxionbench-e5-v1"
 SUITES = ("rag_crag", "rag_hotpot", "bfcl", "agent")
@@ -69,7 +68,7 @@ def load_e5_spec(path: Path) -> dict[str, Any]:
 def _item_cost(price: ModelPrice | None, results: list[Any]) -> float:
     if price is None:
         return 0.0
-    return sum(cost_usd(price, input_tokens=r.prompt_tokens, output_tokens=r.completion_tokens,
+    return sum(cost_usd(price, input_tokens=r.prompt_tokens, output_tokens=r.completion_tokens + r.reasoning_tokens,
                         cached_tokens=r.cached_tokens) for r in results)
 
 
@@ -235,7 +234,7 @@ def run_e5(spec: dict[str, Any], out_root: Path, limit: int | None = None,
                 f"{label}/agent", log)
         target_desc = target.describe()
 
-    scrub, key_present = _scrubber()
+    scrub, key_present = scrubber()
     with (out_dir / "items.jsonl").open("w", encoding="utf-8") as fh:
         for suite_items in items.values():
             for item in suite_items:
@@ -254,13 +253,9 @@ def run_e5(spec: dict[str, Any], out_root: Path, limit: int | None = None,
     result = ExperimentResult(
         schema_version=RESULT_SCHEMA_VERSION, run_id=run_id, name=spec["name"],
         description=str(spec.get("description", "")), spec=spec,
-        provenance=Provenance(
-            git_commit=_git(["rev-parse", "HEAD"]) or "unknown", git_dirty=bool(_git(["status", "--porcelain"])),
-            spec_fingerprint=stable_config_fingerprint(spec), started_at=started_at, finished_at=utc_now_iso(),
-            host=collect_system_info(),
-            tools={"python": platform.python_version(), "harness_result_schema": RESULT_SCHEMA_VERSION,
-                   "gemini_key_present": key_present, "judge_rubric": RUBRIC_VERSION, "item_limit": limit,
-                   "trials_planned": len(trials), "trials_completed": len(trials)}),
+        provenance=make_provenance(spec, started_at, {
+            "gemini_key_present": key_present, "judge_rubric": RUBRIC_VERSION, "item_limit": limit,
+            "trials_planned": len(trials), "trials_completed": len(trials)}),
         trials=trials, cells=aggregate_cells(trials, cell_params))
     (out_dir / "results.json").write_text(scrub(json.dumps(result.to_dict(), indent=2)) + "\n", encoding="utf-8")
     overall = {suite: shard_metrics(v) for suite, v in items.items()}
