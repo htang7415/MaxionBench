@@ -6,18 +6,16 @@ Describe the change and why it is needed.
 
 - [ ] `python -m ruff check maxionbench scripts tests`
 - [ ] `python -m pytest -q`
-- [ ] `python scripts/build_package.py`
-- [ ] `report-preflight / conformance_readiness_gate` passed
-- [ ] `report-preflight / report_preflight` passed
-- [ ] `branch-protection-drift / verify_branch_protection` passed (if enforced)
+- [ ] `cd gateway && go test -race ./...` (if `gateway/` changed)
+- [ ] `cd dashboard && npm run types && npm test && npm run build` (if `dashboard/` or the result schema changed)
+- [ ] `v03-ci` passed: `python`, `go`, `dashboard`, `perf-smoke`
 
-## Artifact/Report Notes
+## Results and spend
 
-- [ ] If artifact schema/report paths changed, I ran:
-  - `maxionbench validate --input artifacts/runs --strict-schema --json`
-  - `maxionbench migrate-stage-timing --input artifacts/runs --dry-run` (if needed)
-  - `maxionbench report --input artifacts/runs --mode maxionbench --out artifacts/figures/final`
+- [ ] If the result schema changed: `python -m maxionbench.harness schema --write`, and the dashboard types regenerated
+- [ ] If a change touches paid API calls: spend still goes through the ledger reservation, and no key is logged
+- [ ] If performance bounds changed: `ci/perf_baseline.yaml` comments record the new calibration
 
 ## References
 
-- Branch protection policy: `docs/ci/branch_protection.md`
+- CI policy: `docs/ci/branch_protection.md`

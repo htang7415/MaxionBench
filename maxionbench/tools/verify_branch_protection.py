@@ -9,12 +9,13 @@ from typing import Any, Iterable, Mapping
 
 import requests
 
+# Jobs of .github/workflows/v03_ci.yml (status contexts are "<workflow name> / <job id>").
 DEFAULT_REQUIRED_CHECKS = (
-    "report-preflight / conformance_readiness_gate",
-    "report-preflight / report_preflight",
+    "v03-ci / python",
+    "v03-ci / go",
+    "v03-ci / dashboard",
+    "v03-ci / perf-smoke",
 )
-OPTIONAL_DRIFT_CHECK = "branch-protection-drift / verify_branch_protection"
-OPTIONAL_REQUIRED_CHECKS = (OPTIONAL_DRIFT_CHECK,)
 
 
 def extract_required_check_contexts(payload: Mapping[str, Any]) -> set[str]:
@@ -64,10 +65,8 @@ def resolve_required_checks(
     include_strict_readiness_check: bool = False,
     include_publish_bundle_check: bool = False,
 ) -> list[str]:
-    del include_strict_readiness_check, include_publish_bundle_check
+    del include_drift_check, include_strict_readiness_check, include_publish_bundle_check
     checks = list(required_checks) if required_checks is not None else list(DEFAULT_REQUIRED_CHECKS)
-    if include_drift_check:
-        checks.append(OPTIONAL_DRIFT_CHECK)
     deduped: list[str] = []
     seen: set[str] = set()
     for check in checks:
@@ -123,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-drift-check",
         action="store_true",
-        help=f"Also require `{OPTIONAL_DRIFT_CHECK}`",
+        help="Deprecated no-op; the branch-protection-drift workflow was retired in v0.3.",
     )
     parser.add_argument(
         "--include-strict-readiness-check",

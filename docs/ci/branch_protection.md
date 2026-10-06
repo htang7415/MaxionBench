@@ -1,74 +1,53 @@
-# Branch Protection Policy: `main`
+# CI and branch protection
 
-This repository relies on CI status checks to protect report-generation correctness and artifact preflight guarantees.
+## Workflow
 
-## Required settings (GitHub)
+All checks run in one workflow, `.github/workflows/v03_ci.yml` (name `v03-ci`), on pushes to `main`
+and `v0.3-harness`, on pull requests, and on manual dispatch. It makes no paid API calls and uses no
+secrets.
 
-For branch `main`, configure branch protection with:
+| Job | What it checks |
+| --- | --- |
+| `python` | Ruff; result JSON Schema is current (`python -m maxionbench.harness schema --check`); pytest (Python 3.12, hash-locked dependencies; Go installed so gateway end-to-end tests run) |
+| `go` | `gofmt`, `go vet`, `go test -race ./...` in `gateway/` |
+| `dashboard` | `npm ci`; generated TypeScript types match the result schema; Vitest; production build |
+| `perf-smoke` | Runs `experiments/ci_smoke_sim.yaml` (llm-d-inference-sim) and `experiments/ci_smoke_llamacpp.yaml` (pinned llama.cpp CPU build, Qwen3-0.6B Q8_0, both SHA-256 verified), then `python -m maxionbench.harness.perf_gate ci/perf_baseline.yaml` |
 
-1. `Require a pull request before merging`
-2. `Require status checks to pass before merging`
+pytest deselects two `tests/test_repo_hygiene.py` checks that predate v0.3 and assert that
+`AGENTS.md` and local-only `docs/` files are tracked, which the project deliberately does not do.
+Playwright tests (`cd dashboard && npm run e2e`) need exported results and run locally only.
 
-Required checks:
+## Performance gate
 
-- `report-preflight / conformance_readiness_gate`
-- `report-preflight / report_preflight`
+`ci/perf_baseline.yaml` bounds each experiment's cell means. The inference simulator has a fixed
+latency model, so its bounds are tight (TTFT p50 790–970 ms): drift means the harness's load
+generation or timing changed. CPU inference on shared runners varies, so llama.cpp has a floor of
+6 tokens/s and a 5 s TTFT p50 ceiling, which only a roughly 2× regression crosses. Any request error
+or failed trial fails the gate. Recalibrate by running both experiments on the target runner and
+recording the observed values in the file's comments.
 
-Optional (recommended once token permissions are stable):
-- `branch-protection-drift / verify_branch_protection`
+## Branch protection (recommended)
 
-## Why these checks are required
+`main` is currently not protected. To protect it, require a pull request before merging and require
+these status checks:
 
-- `conformance_readiness_gate` verifies pre-run readiness policy wiring:
-  - generates `artifacts/conformance/conformance_matrix.csv`
-  - validates behavior-card coverage and conformance-matrix adapter coverage via `maxionbench verify-engine-readiness`
-  - preserves a CI artifact trail for readiness gating inputs
-- `report_preflight` verifies the normal path:
-  - locked dependency installation
-  - lint and the full test suite, including benchmark/report smoke coverage
-  - wheel build and clean CLI smoke test
-  - Docker Compose validation and container build
-  - config, manifest, behavior-card, and required-check consistency
+- `v03-ci / python`
+- `v03-ci / go`
+- `v03-ci / dashboard`
+- `v03-ci / perf-smoke`
 
-## Maintenance note
-
-If workflow/job names change, update this policy doc and `.github/pull_request_template.md` in the same PR.
-
-## Automatic policy-sync guards
-
-Consistency is enforced by the strict required-check snapshot:
-
-- `report_preflight.yml` jobs <-> required check contexts in this doc
-- `report_preflight.yml` jobs <-> required check checklist entries in `.github/pull_request_template.md`
-- `report_preflight.yml` jobs <-> `maxionbench.tools.verify_branch_protection.DEFAULT_REQUIRED_CHECKS`
-- `branch_protection_drift.yml --required-check ...` <-> `DEFAULT_REQUIRED_CHECKS`
-- CI artifact snapshot command:
-  - `maxionbench snapshot-required-checks --output artifacts/ci/required_checks_snapshot.json --strict --json`
-  - writes `artifacts/ci/required_checks_snapshot.json` for auditable required-check context parity
-
-## Optional drift check command
-
-You can verify current GitHub branch protection status via API:
+These are the defaults of the verifier:
 
 ```bash
 maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json
-maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --include-drift-check --json
 ```
 
-Notes:
-- Uses `GITHUB_TOKEN` by default (or pass `--token`).
-- Returns exit code `0` when required checks are present, `2` when checks are missing.
+It uses `GITHUB_TOKEN` (or `--token`) and exits `0` when every required check is configured and `2`
+when some are missing. If a job is renamed, update `DEFAULT_REQUIRED_CHECKS` in
+`maxionbench/tools/verify_branch_protection.py`, this document, and the pull request template together.
 
-## Automated drift workflow
+## Retired in v0.3
 
-Workflow:
-- `.github/workflows/branch_protection_drift.yml`
-
-Behavior:
-- runs on schedule and on manual dispatch
-- executes `maxionbench verify-branch-protection` for `main`
-- uploads `branch_protection_summary.json` as an artifact
-
-Auth note:
-- workflow prefers `BRANCH_PROTECTION_TOKEN` secret (recommended: repo-admin PAT)
-- falls back to `github.token`; if insufficient for branch-protection API access, configure `BRANCH_PROTECTION_TOKEN`
+`report-preflight` and `branch-protection-drift` (and the `snapshot-required-checks` command that kept
+them in sync) were removed: both failed on every run after the dependency lock moved to numpy 2.5,
+which needs Python 3.12, and the drift check targeted protection that `main` does not have.

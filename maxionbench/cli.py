@@ -267,18 +267,6 @@ def main(argv: list[str] | None = None) -> int:
     verify_promotion_gate_parser.add_argument("--conformance-matrix", default=None)
     verify_promotion_gate_parser.add_argument("--json", action="store_true")
 
-    snapshot_checks_parser = subparsers.add_parser(
-        "snapshot-required-checks",
-        help="Write required-checks snapshot JSON artifact",
-    )
-    snapshot_checks_parser.add_argument("--output", default="artifacts/ci/required_checks_snapshot.json")
-    snapshot_checks_parser.add_argument("--report-workflow", default=".github/workflows/report_preflight.yml")
-    snapshot_checks_parser.add_argument("--drift-workflow", default=".github/workflows/branch_protection_drift.yml")
-    snapshot_checks_parser.add_argument("--branch-protection-doc", default="docs/ci/branch_protection.md")
-    snapshot_checks_parser.add_argument("--pr-template", default=".github/pull_request_template.md")
-    snapshot_checks_parser.add_argument("--strict", action="store_true")
-    snapshot_checks_parser.add_argument("--json", action="store_true")
-
     report_parser = subparsers.add_parser("report", help="Generate report artifacts")
     report_parser.add_argument("--input", required=True)
     report_parser.add_argument("--mode", required=True, choices=["maxionbench"])
@@ -727,26 +715,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             verify_argv.append("--json")
         return verify_promotion_gate_main(verify_argv)
-    if args.command == "snapshot-required-checks":
-        from maxionbench.tools.required_checks_snapshot import main as snapshot_required_checks_main
-
-        snapshot_argv: list[str] = [
-            "--output",
-            args.output,
-            "--report-workflow",
-            args.report_workflow,
-            "--drift-workflow",
-            args.drift_workflow,
-            "--branch-protection-doc",
-            args.branch_protection_doc,
-            "--pr-template",
-            args.pr_template,
-        ]
-        if args.strict:
-            snapshot_argv.append("--strict")
-        if args.json:
-            snapshot_argv.append("--json")
-        return snapshot_required_checks_main(snapshot_argv)
     if args.command == "report":
         if args.mode == "maxionbench":
             from maxionbench.reports.portable_exports import generate_portable_report_bundle

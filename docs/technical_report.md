@@ -2,6 +2,10 @@
 
 Time: 2025.09 - 2026.02
 
+Scope: this report covers the v0.1 retrieval-infrastructure study and its archived results. The v0.3
+serving harness (vLLM and llama.cpp on Apple Silicon, llm-d scheduling, the Go AI gateway, Gemini
+overflow, and quality evaluation) is described in `docs/architecture.md` and the README.
+
 ## Purpose
 
 This report summarizes the motivation, datasets, model, theory, methods, metrics, results, and discussion for MaxionBench. It is written as a technical project report rather than a file inventory, so implementation details are described by role instead of by source location.
