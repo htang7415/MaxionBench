@@ -260,14 +260,17 @@ class VllmMetal(ManagedServers):
         return {"extra_body": dict(QWEN3_NO_THINKING)} if self.disable_thinking else {}
 
     def describe(self) -> dict[str, Any]:
-        version = subprocess.run(
-            [str(Path(self.vllm).with_name("python")), "-c",
-             "import vllm, vllm_metal; print('MAXIONBENCH_VERSIONS', vllm.__version__, "
-             "getattr(vllm_metal, '__version__', '?'))"],
-            capture_output=True, text=True, check=False,
-        )
+        try:
+            stdout = subprocess.run(
+                [str(Path(self.vllm).with_name("python")), "-c",
+                 "import vllm, vllm_metal; print('MAXIONBENCH_VERSIONS', vllm.__version__, "
+                 "getattr(vllm_metal, '__version__', '?'))"],
+                capture_output=True, text=True, check=False,
+            ).stdout
+        except OSError:  # vllm-metal not installed here: versions stay unknown
+            stdout = ""
         # vLLM may log to stdout on import, so read only the marked line.
-        marked = [ln for ln in version.stdout.splitlines() if ln.startswith("MAXIONBENCH_VERSIONS")]
+        marked = [ln for ln in stdout.splitlines() if ln.startswith("MAXIONBENCH_VERSIONS")]
         parts = marked[-1].split()[1:] if marked else []
         return {
             "kind": self.kind,

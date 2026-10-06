@@ -4,9 +4,9 @@
 # token), so bounds are tight: drift here means the harness's load generation or timing changed.
 # Calibrated locally 2026-10-06: TTFT p50 874-876 ms, TPOT p50 11.5 ms.
 #
-# ci-smoke-llamacpp: real CPU inference on shared runners varies a lot, so the bounds are a floor and
-# a ceiling that only a large regression crosses. Calibrated locally on a loaded Apple M4 CPU
-# (15 tok/s, TTFT p50 1.5 s at concurrency 1); re-check against the first GitHub runner numbers.
+# ci-smoke-llamacpp: real CPU inference on shared runners varies, so the bounds catch a ~2x
+# regression rather than noise. GitHub ubuntu-latest (first run, 2026-10-06): 13.4 tok/s, TTFT p50
+# 1.68 s at concurrency 1 (Apple M4 CPU locally: 15 tok/s, 1.5 s). Sim on the runner: TTFT p50 870 ms.
 experiments:
   ci-smoke-sim:
     - metrics:
@@ -20,7 +20,7 @@ experiments:
     - metrics:
         errors: {max: 0}
         ok: {min: 12}
-        output_tokens_per_s: {min: 3.0}
+        output_tokens_per_s: {min: 6.0}
     - cells: {workload.concurrency: 1}
       metrics:
-        ttft_p50_ms: {max: 15000}
+        ttft_p50_ms: {max: 5000}
