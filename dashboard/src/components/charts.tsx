@@ -42,9 +42,15 @@ export function useTheme(): Theme {
   return theme;
 }
 
-/** Series color by fixed slot order of the entity (never by rank). */
-export function seriesColor(theme: Theme, index: number): string {
-  return theme[`--s${(index % 8) + 1}` as keyof Theme];
+/** Fixed palette slot per entity, so an entity keeps its color on every chart (never by rank). */
+const SLOTS: Record<string, number> = {
+  "Local first (fixed threshold)": 0, "Local only": 1, "Remote only": 2, "Local first (SLO-aware)": 3,
+  "vLLM (Metal)": 0, "llama.cpp (Metal)": 1, "llama.cpp (CPU)": 1, gemini: 0, "qwen3-4b": 1,
+};
+
+export function seriesColor(theme: Theme, index: number, name?: string): string {
+  const slot = name !== undefined && name in SLOTS ? SLOTS[name] : index;
+  return theme[`--s${(slot % 8) + 1}` as keyof Theme];
 }
 
 export function Card({ title, subtitle, children, table }: {
@@ -92,7 +98,7 @@ export function Legend({ names, kind = "line" }: { names: string[]; kind?: "line
               width: kind === "line" ? 14 : 10,
               height: kind === "line" ? 2 : 10,
               borderRadius: kind === "line" ? 1 : 2,
-              background: seriesColor(theme, i),
+              background: seriesColor(theme, i, n),
             }}
           />
           {n}
@@ -125,14 +131,17 @@ const axisProps = (theme: Theme) => ({
 });
 
 /** Lines with markers and a 10% CI band per series; crosshair tooltip lists every series. */
-export function LineCI({ series, xLabel, format = (v: number) => fmt(v), height = 240 }: {
+export function LineCI({ series, xLabel, format = (v: number) => fmt(v), axisFormat = (v: number) => fmt(v),
+  height = 240 }: {
   series: Series[];
   xLabel: string;
   format?: (v: number) => string;
+  axisFormat?: (v: number) => string;
   height?: number;
 }) {
   const theme = useTheme();
-  const rows = toRows(series);
+  // Every plotted metric is non-negative: clamp CI bands at zero.
+  const rows = toRows(series.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, lo: Math.max(0, p.lo) })) })));
   const names = series.map((s) => s.name);
   const content = ({ active, payload, label }: TooltipContentProps<ValueType, NameType>) => {
     if (!active || !payload?.length) return null;
@@ -143,7 +152,7 @@ export function LineCI({ series, xLabel, format = (v: number) => fmt(v), height 
         rows={names.filter((n) => typeof row[n] === "number").map((n) => {
           const [lo, hi] = row[`${n}_ci`] as [number, number];
           return { name: n, value: `${format(row[n] as number)} [${format(lo)}, ${format(hi)}]`,
-            color: seriesColor(theme, names.indexOf(n)) };
+            color: seriesColor(theme, names.indexOf(n), n) };
         })}
       />
     );
@@ -156,15 +165,15 @@ export function LineCI({ series, xLabel, format = (v: number) => fmt(v), height 
           <CartesianGrid stroke={theme["--grid"]} vertical={false} />
           <XAxis dataKey="x" {...axisProps(theme)}
             label={{ value: xLabel, position: "insideBottom", offset: -10, fill: theme["--muted"], fontSize: 11 }} />
-          <YAxis {...axisProps(theme)} axisLine={false} width={56} tickFormatter={(v: number) => format(v)} />
+          <YAxis {...axisProps(theme)} axisLine={false} width={48} domain={[0, "auto"]} tickFormatter={axisFormat} />
           <Tooltip content={content} cursor={{ stroke: theme["--axis"], strokeWidth: 1 }} />
           {names.map((n, i) => (
-            <Area key={`${n}-ci`} dataKey={`${n}_ci`} stroke="none" fill={seriesColor(theme, i)} fillOpacity={0.1}
+            <Area key={`${n}-ci`} dataKey={`${n}_ci`} stroke="none" fill={seriesColor(theme, i, n)} fillOpacity={0.1}
               isAnimationActive={false} connectNulls activeDot={false} />
           ))}
           {names.map((n, i) => (
-            <Line key={n} dataKey={n} stroke={seriesColor(theme, i)} strokeWidth={2} isAnimationActive={false}
-              connectNulls dot={{ r: 4, fill: seriesColor(theme, i), stroke: theme["--surface"], strokeWidth: 2 }}
+            <Line key={n} dataKey={n} stroke={seriesColor(theme, i, n)} strokeWidth={2} isAnimationActive={false}
+              connectNulls dot={{ r: 4, fill: seriesColor(theme, i, n), stroke: theme["--surface"], strokeWidth: 2 }}
               activeDot={{ r: 5, stroke: theme["--surface"], strokeWidth: 2 }} />
           ))}
         </ComposedChart>
@@ -174,9 +183,10 @@ export function LineCI({ series, xLabel, format = (v: number) => fmt(v), height 
 }
 
 /** Columns with 95% CI whiskers; `groups` > 1 draws side-by-side bars per category. */
-export function BarCI({ groups, format = (v: number) => fmt(v), height = 220 }: {
+export function BarCI({ groups, format = (v: number) => fmt(v), axisFormat = (v: number) => fmt(v), height = 220 }: {
   groups: { name: string; points: Point[] }[];
   format?: (v: number) => string;
+  axisFormat?: (v: number) => string;
   height?: number;
 }) {
   const theme = useTheme();
@@ -186,9 +196,10 @@ export function BarCI({ groups, format = (v: number) => fmt(v), height = 220 }: 
     for (const g of groups) {
       const p = g.points.find((q) => String(q.x) === c);
       if (p) {
+        const lo = Math.max(0, p.lo); // non-negative metrics: clamp the whisker at zero
         row[g.name] = p.mean;
-        row[`${g.name}_err`] = [p.mean - p.lo, p.hi - p.mean];
-        row[`${g.name}_ci`] = [p.lo, p.hi];
+        row[`${g.name}_err`] = [p.mean - lo, p.hi - p.mean];
+        row[`${g.name}_ci`] = [lo, p.hi];
       }
     }
     return row;
@@ -202,7 +213,7 @@ export function BarCI({ groups, format = (v: number) => fmt(v), height = 220 }: 
         rows={groups.filter((g) => typeof row[g.name] === "number").map((g) => {
           const [lo, hi] = row[`${g.name}_ci`] as [number, number];
           return { name: g.name, value: `${format(row[g.name] as number)} [${format(lo)}, ${format(hi)}]`,
-            color: seriesColor(theme, groups.indexOf(g)) };
+            color: seriesColor(theme, groups.indexOf(g), g.name) };
         })}
       />
     );
@@ -214,10 +225,10 @@ export function BarCI({ groups, format = (v: number) => fmt(v), height = 220 }: 
         <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 4, left: 0 }} barGap={2}>
           <CartesianGrid stroke={theme["--grid"]} vertical={false} />
           <XAxis dataKey="x" {...axisProps(theme)} interval={0} />
-          <YAxis {...axisProps(theme)} axisLine={false} width={56} tickFormatter={(v: number) => format(v)} />
+          <YAxis {...axisProps(theme)} axisLine={false} width={48} domain={[0, "auto"]} tickFormatter={axisFormat} />
           <Tooltip content={content} cursor={{ fill: theme["--grid"], fillOpacity: 0.4 }} />
           {groups.map((g, i) => (
-            <Bar key={g.name} dataKey={g.name} fill={seriesColor(theme, i)} maxBarSize={24} radius={[4, 4, 0, 0]}
+            <Bar key={g.name} dataKey={g.name} fill={seriesColor(theme, i, g.name)} maxBarSize={24} radius={[4, 4, 0, 0]}
               isAnimationActive={false}>
               <ErrorBar dataKey={`${g.name}_err`} stroke={theme["--ink-2"]} strokeWidth={1} width={6} />
             </Bar>

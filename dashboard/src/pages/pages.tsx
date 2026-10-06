@@ -7,14 +7,15 @@ import type { CellSummary, ExperimentResult } from "../types/result";
 const LABELS: Record<string, string> = {
   vllm_metal: "vLLM (Metal)",
   llamacpp_metal: "llama.cpp (Metal)",
-  vllm_apc_on: "vLLM, prefix cache on",
-  vllm_apc_off: "vLLM, prefix cache off",
-  llamacpp_cache_on: "llama.cpp, cache on",
-  llamacpp_cache_off: "llama.cpp, cache off",
+  vllm_apc_on: "vLLM on",
+  vllm_apc_off: "vLLM off",
+  llamacpp_cache_on: "llama.cpp on",
+  llamacpp_cache_off: "llama.cpp off",
   local_only: "Local only",
   local_first: "Local first (fixed threshold)",
   local_first_slo: "Local first (SLO-aware)",
   remote_only: "Remote only",
+  "e1-engines-cpu": "llama.cpp (CPU)",
   rag_crag: "CRAG RAG",
   rag_hotpot: "HotpotQA RAG",
   bfcl: "BFCL tool calls",
@@ -26,7 +27,7 @@ const LABELS: Record<string, string> = {
 const label = (v: string) => LABELS[v] ?? v;
 const ms = (v: number) => `${fmt(v, 0)} ms`;
 const pct = (v: number) => `${fmt(100 * v, 0)}%`;
-const usd = (v: number) => `$${fmt(v, 3)}`;
+const per1k = (v: number) => `$${fmt(1000 * v, 2)}`;
 
 function relabel<T extends { name: string }>(series: T[]): T[] {
   return series.map((s) => ({ ...s, name: label(s.name) }));
@@ -63,7 +64,7 @@ function SweepCard({ r, title, subtitle, metric, seriesKey, format }: {
   const series = relabel(sweep(r, "workload.concurrency", seriesKey, metric));
   return (
     <Card title={title} subtitle={subtitle} table={sweepTable(series, "Concurrency", format)}>
-      <LineCI series={series} xLabel="Concurrency" format={format} />
+      <LineCI series={series} xLabel="Concurrency" format={format} axisFormat={format === pct ? pct : undefined} />
     </Card>
   );
 }
@@ -79,7 +80,7 @@ function BarCard({ r, title, subtitle, metric, by, format }: {
   const groups = [{ name: title, points: bars(r, metric, (c) => label(by(c))) }];
   return (
     <Card title={title} subtitle={subtitle} table={barTable(groups, format)}>
-      <BarCI groups={groups} format={format} />
+      <BarCI groups={groups} format={format} axisFormat={format === pct ? pct : undefined} />
     </Card>
   );
 }
@@ -112,7 +113,7 @@ export function Overview({ data }: { data: Data }) {
   if (e5) {
     for (const c of e5.cells) {
       tiles.push(<StatTile key={`e5-${c.cell_id}`} label={`Gemini Flash-Lite, ${label(c.cell_id)}`}
-        value={pct(c.metrics.accuracy.mean)} note={`${usd(c.metrics.usd_per_correct?.mean ?? NaN)} per correct answer (E5)`} />);
+        value={pct(c.metrics.accuracy.mean)} note={`${per1k(c.metrics.usd_per_correct?.mean ?? NaN)} per 1k correct answers (E5)`} />);
     }
   }
   const e6 = r["e6-gemini-caching"];
@@ -137,8 +138,8 @@ export function Engines({ data }: { data: Data }) {
       {gpu ? (
         <Grid>
           <SweepCard r={gpu} title="Output throughput" subtitle="Tokens per second, all clients" metric="output_tokens_per_s" seriesKey="target.variant" />
-          <SweepCard r={gpu} title="Time to first token, p95" metric="ttft_p95_ms" seriesKey="target.variant" format={ms} />
-          <SweepCard r={gpu} title="Time per output token, p50" metric="tpot_p50_ms" seriesKey="target.variant" format={ms} />
+          <SweepCard r={gpu} title="Time to first token, p95" subtitle="Milliseconds" metric="ttft_p95_ms" seriesKey="target.variant" format={ms} />
+          <SweepCard r={gpu} title="Time per output token, p50" subtitle="Milliseconds" metric="tpot_p50_ms" seriesKey="target.variant" format={ms} />
           {cpu && <SweepCard r={cpu} title="llama.cpp CPU-only throughput" subtitle="Tokens per second" metric="output_tokens_per_s" seriesKey={null} />}
         </Grid>
       ) : <Missing what="E1" />}
@@ -153,15 +154,15 @@ export function Caching({ data }: { data: Data }) {
     <Section title="Caching (E2, E6)" intro="Local prefix caching on multi-turn RAG sessions (E2), and Gemini implicit vs explicit context caching vs the Batch API on shared-document sessions (E6).">
       {e2 ? (
         <Grid>
-          <BarCard r={e2} title="TTFT p50 by cache setting" metric="ttft_p50_ms" by={variant} format={ms} />
+          <BarCard r={e2} title="TTFT p50 by cache setting" subtitle="Milliseconds; vLLM automatic prefix caching and llama.cpp prompt cache, on vs off" metric="ttft_p50_ms" by={variant} format={ms} />
           <BarCard r={e2} title="Prefix cache hit ratio" metric="prefix_cache_hit_ratio" by={variant} format={pct} />
         </Grid>
       ) : <Missing what="E2" />}
       {e6 ? (
         <Grid>
-          <BarCard r={e6} title="Gemini cost per 1k requests" subtitle="Explicit includes cache storage for the full TTL" metric="usd_per_1k_requests" by={(c) => c.cell_id} format={(v) => `$${fmt(v, 2)}`} />
+          <BarCard r={e6} title="Gemini cost per 1k requests" subtitle="US dollars; explicit includes cache storage for the full TTL" metric="usd_per_1k_requests" by={(c) => c.cell_id} format={(v) => `$${fmt(v, 2)}`} />
           <BarCard r={e6} title="Share of prompt tokens served from cache" metric="cached_token_ratio" by={(c) => c.cell_id} format={pct} />
-          <BarCard r={e6} title="TTFT p50 (interactive arms)" metric="ttft_p50_ms" by={(c) => c.cell_id} format={ms} />
+          <BarCard r={e6} title="TTFT p50 (interactive arms)" subtitle="Milliseconds" metric="ttft_p50_ms" by={(c) => c.cell_id} format={ms} />
           <BarCard r={e6} title="Batch job turnaround" subtitle="Seconds from submit to results" metric="turnaround_s" by={(c) => c.cell_id} format={(v) => `${fmt(v, 0)} s`} />
         </Grid>
       ) : <Missing what="E6" />}
@@ -177,7 +178,7 @@ export function Scheduling({ data }: { data: Data }) {
       {sim ? (
         <Grid>
           <BarCard r={sim} title="Goodput at SLO" subtitle="Requests per second meeting TTFT and E2E targets" metric="goodput_rps" by={profile} />
-          <BarCard r={sim} title="TTFT p95" metric="ttft_p95_ms" by={profile} format={ms} />
+          <BarCard r={sim} title="TTFT p95" subtitle="Milliseconds" metric="ttft_p95_ms" by={profile} format={ms} />
           <BarCard r={sim} title="Prefix cache hit ratio" metric="prefix_cache_hit_ratio" by={profile} format={pct} />
         </Grid>
       ) : <Missing what="E3 mode A" />}
@@ -204,9 +205,9 @@ function hybridCards(r: ExperimentResult) {
     <Grid>
       <SweepCard r={r} title="SLO attainment" subtitle="Share of requests within TTFT 1 s and E2E 3 s" metric="slo_attainment" seriesKey="target.policy" format={pct} />
       <SweepCard r={r} title="Goodput at SLO" subtitle="Requests per second" metric="goodput_rps" seriesKey="target.policy" />
-      <SweepCard r={r} title="TTFT p99" metric="ttft_p99_ms" seriesKey="target.policy" format={ms} />
+      <SweepCard r={r} title="TTFT p99" subtitle="Milliseconds" metric="ttft_p99_ms" seriesKey="target.policy" format={ms} />
       <Card title="Share of requests sent to Gemini" subtitle="Mean over repeats (from gateway route counters)" table={sweepTable(share, "Concurrency", pct)}>
-        <LineCI series={share} xLabel="Concurrency" format={pct} />
+        <LineCI series={share} xLabel="Concurrency" format={pct} axisFormat={pct} />
       </Card>
     </Grid>
   );
@@ -239,9 +240,9 @@ export function Quality({ data }: { data: Data }) {
     <Section title="Quality and cost (E5)" intro="Each model on CRAG and HotpotQA RAG (judged by Gemini with a rubric calibrated against 100 reference labels, κ = 0.96), BFCL v3 single-turn tool calls (AST grader), and agentic HotpotQA over an MCP search/read server. Requests at concurrency 1; CIs over 5 item shards.">
       <Grid>
         <Card title="Accuracy by suite" table={barTable(groups("accuracy"), pct)}>
-          <BarCI groups={groups("accuracy")} format={pct} />
+          <BarCI groups={groups("accuracy")} format={pct} axisFormat={pct} />
         </Card>
-        <Card title="Latency p50 per request (agent: per task)" table={barTable(groups("latency_p50_ms"), ms)}>
+        <Card title="Latency p50" subtitle="Milliseconds per request; agentic: per task (several model calls)" table={barTable(groups("latency_p50_ms"), ms)}>
           <BarCI groups={groups("latency_p50_ms")} format={ms} />
         </Card>
       </Grid>
@@ -277,7 +278,14 @@ export function Provenance({ data }: { data: Data }) {
 }
 
 function hostSummary(host: Record<string, unknown>): string {
-  const keys = ["platform", "machine", "cpu_brand", "cpu_count", "memory_total_gb", "python_version"];
-  return keys.filter((k) => host[k] !== undefined).map((k) => `${k}: ${String(host[k])}`).join(" · ") || "–";
+  const parts = [
+    host.apple_silicon_model,
+    host.cpu_count_logical !== undefined ? `${host.cpu_count_logical} CPU threads` : undefined,
+    typeof host.total_memory_bytes === "number" ? `${fmt(host.total_memory_bytes / 2 ** 30, 0)} GB` : undefined,
+    host.macos_version !== undefined ? `macOS ${host.macos_version}` : host.platform,
+    host.python_version !== undefined ? `Python ${host.python_version}` : undefined,
+    host.docker_version,
+  ];
+  return parts.filter((v) => v !== undefined && v !== null).map(String).join(" · ") || "–";
 }
 
