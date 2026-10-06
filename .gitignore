@@ -53,3 +53,6 @@ gemini_api.txt
 .env
 .env.*
 !.env.docker.example
+
+# Go gateway build output
+gateway/bin/

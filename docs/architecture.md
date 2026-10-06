@@ -50,6 +50,16 @@ experiments/*.yaml
   repo so cleaning artifacts never resets spend.
 - API keys are loaded only at runtime via `harness.secrets`; results record key presence, not value.
 
+## AI gateway (`gateway/`, Go)
+
+- OpenAI-compatible proxy in front of a local fleet (vLLM replicas or an llm-d gateway) with
+  `local_only`, `local_first` (overflow beyond an in-flight threshold, failover before first byte) and
+  `remote_only` policies to a paid provider.
+- Paid requests reserve worst-case cost in the same JSONL ledger the Python harness uses (exclusive
+  flock), so one hard cap holds across languages; actual usage is committed from the response stream.
+- The gateway process is the only holder of the provider key; it is redacted from forwarded errors and
+  never appears in metrics. `X-Maxionbench-Backend` attributes each response to local or remote.
+
 ## Generated state
 
 `dataset/`, `artifacts/`, `results/`, and `release/` contain local or generated state. Source, tests, configs, and documentation remain in Git.
