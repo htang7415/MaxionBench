@@ -1,0 +1,44 @@
+schema_version: maxionbench-experiment-v1
+name: e1-engines-cpu
+description: >
+  E1 (CPU lane): llama.cpp CPU-only on the same Qwen3-0.6B Q8_0 file and workload as e1-engines-gpu, at
+  concurrency 1 and 4 (CPU throughput makes higher concurrency impractical). Prefix caching off.
+seed: 42
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: true
+target:
+  kind: llamacpp_replicas
+  params:
+    model: ~/models/Qwen3-0.6B-Q8_0.gguf
+    device: cpu
+    replicas: 1
+    threads: 4
+    slots: 4
+    ctx: 4096
+    cache_ram_mib: 0
+    cache_prompt: false
+    disable_thinking: true
+    base_port: 8100
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 12
+    turns: 1
+    k: 3
+    window: 12
+    concurrency: 1
+    max_tokens: 128
+    ignore_eos: true
+    warmup_requests: 1
+    timeout_s: 600
+slo:
+  ttft_s: 2.0
+  e2e_s: 10.0
+matrix:
+  workload.concurrency: [1, 4]
+quiet_host:
+  max_load_1m: 4.0
+  wait_s: 90
+  min_available_gb: 3.0

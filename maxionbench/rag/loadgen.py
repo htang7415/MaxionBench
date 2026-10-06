@@ -80,36 +80,7 @@ def run_open_loop(
     def worker(i: int, spec: RequestSpec, scheduled_abs: float) -> None:
         nonlocal in_flight
         try:
-            idx = picker.acquire(spec.prefix_key)
-            if idx is None:
-                records[i] = _degraded(spec, None, arrivals[i], "no_endpoint", "no healthy endpoint")
-                return
-            try:
-                result = send(base_urls[idx], spec.messages, max_tokens=max_tokens, timeout_s=timeout_s)
-            finally:
-                picker.release(idx)
-            if result.status == "error" and not (result.error or "").startswith("http "):
-                picker.mark_down(idx)  # passive health check: transport failure
-            if result.status != "ok":
-                records[i] = _degraded(spec, idx, arrivals[i], result.status, result.error)
-                return
-            offset = time.perf_counter() - result.e2e_s - scheduled_abs  # queueing before send
-            records[i] = RequestRecord(
-                request_id=spec.request_id,
-                session_id=spec.session_id,
-                endpoint=idx,
-                scheduled_s=arrivals[i],
-                status="ok",
-                ttft_s=None if result.ttft_s is None else offset + result.ttft_s,
-                e2e_s=offset + result.e2e_s,
-                prompt_tokens=result.prompt_tokens,
-                cached_tokens=result.cached_tokens,
-                completion_tokens=result.completion_tokens,
-                degraded=False,
-                error=None,
-            )
-        except Exception as exc:  # keep the record; a lost request would bias goodput upward
-            records[i] = _degraded(spec, None, arrivals[i], "error", f"{type(exc).__name__}: {exc}")
+            records[i] = _execute(spec, arrivals[i], scheduled_abs, base_urls, picker, send, max_tokens, timeout_s)
         finally:
             with lock:
                 in_flight -= 1
@@ -138,6 +109,88 @@ def run_open_loop(
     return [r for r in records if r is not None], time.perf_counter() - t0
 
 
+def run_closed_loop(
+    specs: Sequence[RequestSpec],
+    *,
+    base_urls: Sequence[str],
+    picker: EndpointPicker,
+    concurrency: int,
+    timeout_s: float,
+    max_tokens: int,
+    send: Callable[..., CompletionResult] = chat_completion,
+) -> tuple[list[RequestRecord], float]:
+    """`concurrency` clients each send their next request as soon as the previous one finishes.
+
+    This is the saturation/throughput mode used by engine benchmarks; latency is measured from send.
+    """
+    if concurrency < 1:
+        raise ValueError("concurrency must be >= 1")
+    records: list[RequestRecord | None] = [None] * len(specs)
+    lock = threading.Lock()
+    next_index = 0
+    t0 = time.perf_counter()
+
+    def client() -> None:
+        nonlocal next_index
+        while True:
+            with lock:
+                if next_index >= len(specs):
+                    return
+                i = next_index
+                next_index += 1
+            now = time.perf_counter()
+            records[i] = _execute(specs[i], now - t0, now, base_urls, picker, send, max_tokens, timeout_s)
+
+    threads = [threading.Thread(target=client, daemon=True) for _ in range(concurrency)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return [r for r in records if r is not None], time.perf_counter() - t0
+
+
+def _execute(
+    spec: RequestSpec,
+    scheduled_s: float,
+    scheduled_abs: float,
+    base_urls: Sequence[str],
+    picker: EndpointPicker,
+    send: Callable[..., CompletionResult],
+    max_tokens: int,
+    timeout_s: float,
+) -> RequestRecord:
+    """Route and send one request; latency is measured from `scheduled_abs`. Never raises."""
+    try:
+        idx = picker.acquire(spec.prefix_key)
+        if idx is None:
+            return _degraded(spec, None, scheduled_s, "no_endpoint", "no healthy endpoint")
+        try:
+            result = send(base_urls[idx], spec.messages, max_tokens=max_tokens, timeout_s=timeout_s)
+        finally:
+            picker.release(idx)
+        if result.status == "error" and not (result.error or "").startswith("http "):
+            picker.mark_down(idx)  # passive health check: transport failure
+        if result.status != "ok":
+            return _degraded(spec, idx, scheduled_s, result.status, result.error)
+        offset = time.perf_counter() - result.e2e_s - scheduled_abs  # queueing before send
+        return RequestRecord(
+            request_id=spec.request_id,
+            session_id=spec.session_id,
+            endpoint=idx,
+            scheduled_s=scheduled_s,
+            status="ok",
+            ttft_s=None if result.ttft_s is None else offset + result.ttft_s,
+            e2e_s=offset + result.e2e_s,
+            prompt_tokens=result.prompt_tokens,
+            cached_tokens=result.cached_tokens,
+            completion_tokens=result.completion_tokens,
+            degraded=False,
+            error=None,
+        )
+    except Exception as exc:  # keep the record; a lost request would bias goodput upward
+        return _degraded(spec, None, scheduled_s, "error", f"{type(exc).__name__}: {exc}")
+
+
 def summarize(
     records: Sequence[RequestRecord],
     *,
@@ -164,10 +217,20 @@ def summarize(
         "goodput_rps": round(len(good) / duration_s, 4) if duration_s > 0 else 0.0,
         "prefix_cache_hit_ratio": round(sum(r.cached_tokens for r in ok) / prompt, 4) if prompt else 0.0,
     }
+    out["requests_per_s"] = round(len(ok) / duration_s, 4) if duration_s > 0 else 0.0
+    out["output_tokens_per_s"] = round(sum(r.completion_tokens for r in ok) / duration_s, 2) if duration_s > 0 else 0.0
     ttfts = [r.ttft_s * 1000 for r in ok if r.ttft_s is not None]
     if ttfts:
         out["ttft"] = {k: round(v, 1) for k, v in latency_summary(ttfts).items()}
         out["e2e"] = {k: round(v, 1) for k, v in latency_summary([r.e2e_s * 1000 for r in ok]).items()}
+    # Time per output token after the first: decode speed as the client sees it.
+    tpots = [
+        (r.e2e_s - r.ttft_s) * 1000 / (r.completion_tokens - 1)
+        for r in ok
+        if r.ttft_s is not None and r.e2e_s is not None and r.completion_tokens > 1
+    ]
+    if tpots:
+        out["tpot"] = {k: round(v, 2) for k, v in latency_summary(tpots).items()}
     return out
 
 

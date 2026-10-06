@@ -13,6 +13,8 @@ import time
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
+from maxionbench.harness.secrets import Secret
+
 
 @dataclass(frozen=True)
 class CompletionResult:
@@ -34,8 +36,13 @@ def chat_completion(
     timeout_s: float,
     temperature: float = 0.0,
     extra_body: Mapping[str, Any] | None = None,
+    headers: Mapping[str, Any] | None = None,
+    chat_path: str = "/v1/chat/completions",
 ) -> CompletionResult:
-    """Send one streaming chat request; never raises for transport or server failures."""
+    """Send one streaming chat request; never raises for transport or server failures.
+
+    Header values may be `Secret` objects; they are revealed only when the request is sent.
+    """
     parts = urlsplit(base_url)
     body: dict[str, Any] = {
         "messages": list(messages),
@@ -49,14 +56,13 @@ def chat_completion(
     ttft: float | None = None
     chunks: list[str] = []
     usage: Mapping[str, Any] = {}
-    conn = http.client.HTTPConnection(parts.hostname or "localhost", parts.port or 80, timeout=timeout_s)
+    send_headers = {"content-type": "application/json"}
+    for name, value in (headers or {}).items():
+        send_headers[name] = value.reveal() if isinstance(value, Secret) else str(value)
+    conn_cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    conn = conn_cls(parts.hostname or "localhost", parts.port, timeout=timeout_s)
     try:
-        conn.request(
-            "POST",
-            (parts.path.rstrip("/") or "") + "/v1/chat/completions",
-            body=json.dumps(body),
-            headers={"content-type": "application/json"},
-        )
+        conn.request("POST", parts.path.rstrip("/") + chat_path, body=json.dumps(body), headers=send_headers)
         response = conn.getresponse()
         if response.status != 200:
             detail = response.read(300).decode("utf-8", "replace")

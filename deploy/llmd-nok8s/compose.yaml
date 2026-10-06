@@ -1,0 +1,42 @@
+# llm-d routing stack without Kubernetes (llm-d guides/no-kubernetes-deployment), adapted for macOS:
+# the EPP (endpoint picker) and Envoy run as Linux containers; vLLM workers run natively on the host
+# (vllm-metal on the Apple GPU) and are reached through Docker Desktop's host gateway (192.168.65.254),
+# so they can stay bound to 127.0.0.1. All published ports bind to 127.0.0.1 only.
+#
+# LLMD_RUN_DIR must contain epp/config.yaml, epp/endpoints.yaml (rendered per trial by the harness).
+name: maxionbench-llmd
+
+services:
+  epp:
+    image: ${EPP_IMAGE:-ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.11.0}
+    command:
+      - --config-file=/etc/epp/config.yaml
+      - --pool-name=file-discovery
+      - --pool-namespace=default
+      - --grpc-port=9002
+      - --grpc-health-port=9003
+      - --metrics-port=9090
+      - --secure-serving=false
+      - --v=2
+    volumes:
+      - ${LLMD_RUN_DIR:?set LLMD_RUN_DIR}/epp:/etc/epp:ro
+    ports:
+      - "127.0.0.1:${EPP_METRICS_PORT:-9090}:9090"
+
+  envoy:
+    image: ${ENVOY_IMAGE:-docker.io/envoyproxy/envoy:distroless-v1.33.2}
+    command:
+      - --service-node=envoy-proxy
+      - --log-level=warn
+      - --concurrency=4
+      - --drain-strategy=immediate
+      - --drain-time-s=5
+      - -c
+      - /etc/envoy/envoy.yaml
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8081}:8081"
+      - "127.0.0.1:${ENVOY_ADMIN_PORT:-19000}:19000"
+    depends_on:
+      - epp

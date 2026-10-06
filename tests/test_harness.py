@@ -178,3 +178,61 @@ def test_parse_llama_version_ignores_log_lines() -> None:
     text = "0.00.000.579 I srv  llama_server: initializing ...\nversion: 0.5.0 (build 11146, commit 7fe450e19)\nbuilt with AppleClang"
     assert parse_llama_version(text) == "0.5.0 (build 11146, commit 7fe450e19)"
     assert parse_llama_version("no version here") == "unknown"
+
+
+def test_foreign_engine_detection_excludes_own_process_tree() -> None:
+    from maxionbench.harness.runner import foreign_engine_pids
+
+    ps = "\n".join(
+        [
+            "  100     1 python -m maxionbench.harness run spec.yaml",  # the harness itself
+            "  101   100 llama-server -m model.gguf --port 8100",  # ours (child)
+            "  102   100 /venv/bin/vllm serve model.gguf --port 8200",  # ours (child)
+            "  103   102 python -c from multiprocessing.spawn import spawn_main",  # ours (grandchild)
+            "  200     1 /venv/bin/vllm serve Qwen/Qwen3-0.6B --port 8200",  # another session
+            "  201     1 python -m mlx_lm.server --model x",  # another session
+            "  202     1 /opt/homebrew/bin/Python3.12 /h/.venv-vllm-metal/bin/vllm serve m --port 8300",  # another session
+            "  300     1 zsh -c pgrep -f 'vllm serve'",  # a shell mentioning the words, not an engine
+        ]
+    )
+    assert foreign_engine_pids(ps, self_pid=100) == [200, 201, 202]
+
+
+def test_foreign_engine_containers_ignore_own_and_non_engines() -> None:
+    from maxionbench.harness.runner import foreign_engine_containers
+
+    ps = "\n".join(
+        [
+            "memtrace-vllm-cpu\tvllm/vllm-openai-cpu:latest-arm64",
+            "maxionbench-sim-8300\tghcr.io/llm-d/llm-d-inference-sim:v0.11.4",
+            "maxionbench-llmd-envoy-1\tdocker.io/envoyproxy/envoy:distroless-v1.33.2",
+            "postgres\tpgvector/pgvector:0.8.2-pg16-trixie",
+            "other-sim\tghcr.io/llm-d/llm-d-inference-sim:v0.9.0",
+        ]
+    )
+    assert foreign_engine_containers(ps) == ["memtrace-vllm-cpu", "other-sim"]
+
+
+def test_available_memory_parses_vm_stat() -> None:
+    from maxionbench.harness.runner import available_memory_gb
+
+    vm = (
+        "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+        "Pages free:                               65536.\n"
+        "Pages active:                            999999.\n"
+        "Pages inactive:                           65536.\n"
+        "Pages speculative:                            0.\n"
+        "Pages purgeable:                              0.\n"
+    )
+    assert available_memory_gb(vm) == pytest.approx(2.0)
+    assert available_memory_gb("garbage") == float("inf")
+
+
+def test_memory_gate_refuses_to_start_engine(tmp_path: Path, fake_urls: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    import maxionbench.harness.runner as runner
+
+    monkeypatch.setattr(runner, "available_memory_gb", lambda: 1.5)
+    spec = parse_spec(_spec(repeats=1, target={"kind": "static_endpoints", "params": {"urls": fake_urls}},
+                            quiet_host={"max_load_1m": 1000, "wait_s": 0, "min_available_gb": 4}))
+    _, result = run_experiment(spec, tmp_path, log=lambda msg: None)
+    assert all(t.status == "failed" and "insufficient memory" in (t.error or "") for t in result.trials)

@@ -1,0 +1,61 @@
+schema_version: maxionbench-experiment-v1
+name: e1-engines-gpu
+description: >
+  E1: vLLM (vllm-metal) vs llama.cpp on the Apple M4 GPU, same Qwen3-0.6B Q8_0 GGUF file, closed-loop
+  concurrency sweep. Fixed 128 output tokens (ignore_eos), prefix caching off on both engines so trials
+  are independent and servers can be reused within a repeat. Thinking disabled. Qwen3-0.6B so each engine fits the memory left on a shared 16 GB Mac
+  (another project's kind cluster and desktop apps); larger models are deferred, not dropped.
+seed: 42
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: true
+target:
+  kind: vllm_metal
+  params: {model: ~/models/Qwen3-0.6B-Q8_0.gguf}
+target_variants:
+  vllm_metal:
+    kind: vllm_metal
+    params:
+      model: ~/models/Qwen3-0.6B-Q8_0.gguf
+      tokenizer: Qwen/Qwen3-0.6B
+      max_model_len: 2048
+      gpu_memory_utilization: 0.35
+      max_num_seqs: 16
+      enable_prefix_caching: false
+      base_port: 8200
+  llamacpp_metal:
+    kind: llamacpp_replicas
+    params:
+      model: ~/models/Qwen3-0.6B-Q8_0.gguf
+      device: metal
+      replicas: 1
+      threads: 4
+      slots: 16
+      ctx: 16384
+      cache_ram_mib: 0
+      cache_prompt: false
+      disable_thinking: true
+      base_port: 8100
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 32
+    turns: 1
+    k: 3
+    window: 32
+    concurrency: 1
+    max_tokens: 128
+    ignore_eos: true
+    warmup_requests: 3
+    timeout_s: 300
+slo:
+  ttft_s: 2.0
+  e2e_s: 10.0
+matrix:
+  target.variant: [vllm_metal, llamacpp_metal]
+  workload.concurrency: [1, 2, 4, 8, 16]
+quiet_host:
+  max_load_1m: 4.0
+  wait_s: 90
+  min_available_gb: 3.0

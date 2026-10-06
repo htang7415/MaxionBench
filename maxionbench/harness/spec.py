@@ -28,6 +28,7 @@ class SLOPolicy:
 class QuietHost:
     max_load_1m: float = 3.0
     wait_s: float = 60.0
+    min_available_gb: float = 0.0  # 0 disables; checked before starting a fresh engine
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,8 @@ class ExperimentSpec:
     slo: SLOPolicy
     matrix: dict[str, list[Any]]
     quiet_host: QuietHost
+    target_variants: dict[str, ComponentSpec] = field(default_factory=dict)
+    reuse_targets: bool = False  # keep a started target across consecutive trials with identical config
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,7 +58,15 @@ class ExperimentSpec:
             "workload": {"kind": self.workload.kind, "params": dict(self.workload.params)},
             "slo": {"ttft_s": self.slo.ttft_s, "e2e_s": self.slo.e2e_s},
             "matrix": {k: list(v) for k, v in self.matrix.items()},
-            "quiet_host": {"max_load_1m": self.quiet_host.max_load_1m, "wait_s": self.quiet_host.wait_s},
+            "quiet_host": {
+                "max_load_1m": self.quiet_host.max_load_1m,
+                "wait_s": self.quiet_host.wait_s,
+                "min_available_gb": self.quiet_host.min_available_gb,
+            },
+            "reuse_targets": self.reuse_targets,
+            "target_variants": {
+                name: {"kind": v.kind, "params": dict(v.params)} for name, v in self.target_variants.items()
+            },
         }
 
 
@@ -69,7 +80,7 @@ def load_spec(path: Path) -> ExperimentSpec:
 def parse_spec(payload: Mapping[str, Any]) -> ExperimentSpec:
     allowed = {
         "schema_version", "name", "description", "seed", "repeats", "seed_strategy",
-        "target", "workload", "slo", "matrix", "quiet_host",
+        "target", "workload", "slo", "matrix", "quiet_host", "target_variants", "reuse_targets",
     }
     unknown = set(payload) - allowed
     if unknown:
@@ -91,6 +102,10 @@ def parse_spec(payload: Mapping[str, Any]) -> ExperimentSpec:
     slo = SLOPolicy(ttft_s=float(slo_raw["ttft_s"]), e2e_s=float(slo_raw["e2e_s"]))
     if slo.ttft_s <= 0 or slo.e2e_s <= 0:
         raise ValueError("slo thresholds must be > 0")
+    variants_raw = payload.get("target_variants") or {}
+    if not isinstance(variants_raw, Mapping):
+        raise ValueError("target_variants must be a mapping of name -> {kind, params}")
+    target_variants = {str(name): _component(variants_raw, str(name)) for name in variants_raw}
     matrix_raw = payload.get("matrix") or {}
     matrix: dict[str, list[Any]] = {}
     for key, values in matrix_raw.items():
@@ -99,6 +114,8 @@ def parse_spec(payload: Mapping[str, Any]) -> ExperimentSpec:
             raise ValueError(f"matrix key {key!r} must look like 'target.<param>' or 'workload.<param>'")
         if not isinstance(values, list) or not values:
             raise ValueError(f"matrix axis {key!r} must be a non-empty list")
+        if key == "target.variant" and set(map(str, values)) - set(target_variants):
+            raise ValueError(f"target.variant values must be defined in target_variants: {sorted(target_variants)}")
         matrix[str(key)] = list(values)
     qh = payload.get("quiet_host") or {}
     return ExperimentSpec(
@@ -114,7 +131,10 @@ def parse_spec(payload: Mapping[str, Any]) -> ExperimentSpec:
         quiet_host=QuietHost(
             max_load_1m=float(qh.get("max_load_1m", QuietHost.max_load_1m)),
             wait_s=float(qh.get("wait_s", QuietHost.wait_s)),
+            min_available_gb=float(qh.get("min_available_gb", QuietHost.min_available_gb)),
         ),
+        target_variants=target_variants,
+        reuse_targets=bool(payload.get("reuse_targets", False)),
     )
 
 

@@ -1,0 +1,70 @@
+schema_version: maxionbench-experiment-v1
+name: e2-prefix-caching
+description: >
+  E2: effect of prefix caching on multi-turn RAG sessions (3 turns share a 5-paragraph HotpotQA
+  context) for vLLM automatic prefix caching (vllm-metal) and llama.cpp prompt caching, Qwen3-0.6B Q8,
+  closed loop at concurrency 4. Fresh server per trial (no reuse) so no warm cache carries across trials.
+seed: 7
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: false
+target:
+  kind: vllm_metal
+  params: {model: ~/models/Qwen3-0.6B-Q8_0.gguf}
+target_variants:
+  vllm_apc_on:
+    kind: vllm_metal
+    params: &vllm
+      model: ~/models/Qwen3-0.6B-Q8_0.gguf
+      tokenizer: Qwen/Qwen3-0.6B
+      max_model_len: 2048
+      gpu_memory_utilization: 0.35
+      max_num_seqs: 16
+      enable_prefix_caching: true
+      base_port: 8200
+  vllm_apc_off:
+    kind: vllm_metal
+    params:
+      <<: *vllm
+      enable_prefix_caching: false
+  llamacpp_cache_on:
+    kind: llamacpp_replicas
+    params: &llama
+      model: ~/models/Qwen3-0.6B-Q8_0.gguf
+      device: metal
+      replicas: 1
+      threads: 4
+      slots: 4
+      ctx: 8192
+      cache_ram_mib: 512
+      cache_prompt: true
+      disable_thinking: true
+      base_port: 8100
+  llamacpp_cache_off:
+    kind: llamacpp_replicas
+    params:
+      <<: *llama
+      cache_ram_mib: 0
+      cache_prompt: false
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 16
+    turns: 3
+    k: 5
+    window: 4
+    concurrency: 4
+    max_tokens: 32
+    ignore_eos: true
+    warmup_requests: 2
+    timeout_s: 300
+slo:
+  ttft_s: 1.0
+  e2e_s: 5.0
+matrix:
+  target.variant: [vllm_apc_on, vllm_apc_off, llamacpp_cache_on, llamacpp_cache_off]
+quiet_host:
+  max_load_1m: 4.0
+  wait_s: 90
+  min_available_gb: 3.0
