@@ -50,4 +50,4 @@ matrix:
   workload.concurrency: [4, 12, 24]
 quiet_host:
   max_load_1m: 8.0
-  wait_s: 10
+  wait_s: 600  # wait up to 10 min per trial if MEMTRACE resumes; quiet_ok is recorded either way
