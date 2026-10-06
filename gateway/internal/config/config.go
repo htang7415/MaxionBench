@@ -15,9 +15,10 @@ import (
 
 // Policy values.
 const (
-	LocalOnly  = "local_only"
-	LocalFirst = "local_first"
-	RemoteOnly = "remote_only"
+	LocalOnly     = "local_only"
+	LocalFirst    = "local_first"
+	LocalFirstSLO = "local_first_slo" // overflow when the predicted local wait exceeds the TTFT SLO
+	RemoteOnly    = "remote_only"
 )
 
 type Local struct {
@@ -25,6 +26,10 @@ type Local struct {
 	Model       string   `yaml:"model"`        // optional: rewrite the request's model field
 	MaxInflight int      `yaml:"max_inflight"` // local_first overflows beyond this many in-flight requests
 	TimeoutS    float64  `yaml:"timeout_s"`
+	// local_first_slo: overflow when in-flight x recent per-request service time > SLOTTFTS.
+	SLOTTFTS   float64 `yaml:"slo_ttft_s"`
+	WindowS    float64 `yaml:"window_s"`    // service-time window
+	MinSamples int     `yaml:"min_samples"` // completions needed before predicting; until then only MaxInflight applies
 }
 
 type Remote struct {
@@ -69,7 +74,7 @@ func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Listen: "127.0.0.1:8090",
 		Policy: LocalFirst,
-		Local:  Local{MaxInflight: 8, TimeoutS: 300},
+		Local:  Local{MaxInflight: 8, TimeoutS: 300, WindowS: 10, MinSamples: 8},
 		Remote: Remote{ChatPath: "/chat/completions", TimeoutS: 120,
 			StripFields: []string{"chat_template_kwargs", "ignore_eos", "cache_prompt"}},
 		Budget: Budget{LedgerPath: "~/.maxionbench/budget/gemini_ledger.jsonl"},
@@ -80,9 +85,12 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	switch cfg.Policy {
-	case LocalOnly, LocalFirst, RemoteOnly:
+	case LocalOnly, LocalFirst, LocalFirstSLO, RemoteOnly:
 	default:
-		return nil, fmt.Errorf("policy must be %s, %s or %s", LocalOnly, LocalFirst, RemoteOnly)
+		return nil, fmt.Errorf("policy must be %s, %s, %s or %s", LocalOnly, LocalFirst, LocalFirstSLO, RemoteOnly)
+	}
+	if cfg.Policy == LocalFirstSLO && (cfg.Local.SLOTTFTS <= 0 || cfg.Local.WindowS <= 0 || cfg.Local.MinSamples < 1) {
+		return nil, fmt.Errorf("policy %s needs local.slo_ttft_s > 0, window_s > 0 and min_samples >= 1", LocalFirstSLO)
 	}
 	if cfg.Policy != RemoteOnly && len(cfg.Local.Upstreams) == 0 {
 		return nil, fmt.Errorf("local.upstreams is required for policy %s", cfg.Policy)

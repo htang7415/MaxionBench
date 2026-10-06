@@ -1,0 +1,53 @@
+schema_version: maxionbench-experiment-v1
+name: e4b-slo-overflow
+description: >
+  E4b (Phase 4h): E4's fleet and workload, comparing the fixed overflow threshold (local_first:
+  overflow beyond 12 in flight) with SLO-aware overflow (local_first_slo: overflow when in-flight x
+  recent per-request service time exceeds the 1 s TTFT SLO; same 12 in-flight cap). E4 found the
+  fixed threshold never triggered at concurrency 12 while local SLO attainment was 77 %.
+  Local latencies are simulated (calibrated to E1/E2); Gemini latency and spend are real.
+seed: 17
+repeats: 3
+seed_strategy: per_repeat
+reuse_targets: false
+target:
+  kind: ai_gateway
+  params:
+    policy: local_first
+    failover: true
+    max_inflight: 12
+    slo_ttft_s: 1.0  # used by local_first_slo only; matches slo.ttft_s
+    port: 8090
+    remote: {enabled: true, model: gemini-3.5-flash-lite, reasoning_effort: minimal}
+    local:
+      kind: llmd
+      params:
+        workers: sim
+        model: qwen3
+        scorer_profile: optimized-baseline
+        worker_params:
+          replicas: 4
+          base_port: 8300
+          args: ["--enable-kvcache", "--kv-cache-size", "512", "--block-size", "16", "--max-num-seqs", "4",
+                 "--prefill-time-per-token", "1400us", "--inter-token-latency", "11ms",
+                 "--time-factor-under-load", "2.0", "--max-model-len", "4096"]
+workload:
+  kind: rag_sessions
+  params:
+    dataset: dataset/processed/hotpot_portable
+    sessions: 48
+    turns: 3
+    k: 5
+    window: 16
+    concurrency: 4
+    max_tokens: 32
+    timeout_s: 120
+slo:
+  ttft_s: 1.0
+  e2e_s: 3.0
+matrix:
+  target.policy: [local_first, local_first_slo]
+  workload.concurrency: [4, 12, 24]
+quiet_host:
+  max_load_1m: 8.0
+  wait_s: 10

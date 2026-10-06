@@ -211,3 +211,59 @@ func TestProviderErrorIsRedactedAndNotBilled(t *testing.T) {
 		t.Fatal("metrics leaked key or missing route counters")
 	}
 }
+
+func TestSLOPolicyOverflowsOnPredictedWait(t *testing.T) {
+	h := newHarness(t, okLocal, config.LocalFirstSLO, 100, 10)
+	h.gw.cfg.Local.SLOTTFTS = 1.0
+	now := time.Now()
+	h.gw.est = newServiceEstimator(10*time.Second, 4, now.Add(-time.Minute))
+	if r := h.gw.overflowReason(now); r != "" {
+		t.Fatalf("no samples yet: got %q", r)
+	}
+	for i := 0; i < 20; i++ { // 20 completions in 10 s -> 0.5 s per request
+		h.gw.est.record(now.Add(-time.Duration(i) * 400 * time.Millisecond))
+	}
+	h.gw.local.Store(2) // 2 x 0.5 = 1.0 s: at the SLO, stay local
+	if r := h.gw.overflowReason(now); r != "" {
+		t.Fatalf("predicted 1.0 s: got %q", r)
+	}
+	h.gw.local.Store(3) // 1.5 s > 1.0 s
+	if r := h.gw.overflowReason(now); r != "slo_predicted" {
+		t.Fatalf("predicted 1.5 s: got %q", r)
+	}
+	h.gw.local.Store(100) // the in-flight cap still applies
+	if r := h.gw.overflowReason(now); r != "local_saturated" {
+		t.Fatalf("at cap: got %q", r)
+	}
+	h.gw.local.Store(0)
+
+	lf := newHarness(t, okLocal, config.LocalFirst, 100, 10) // fixed threshold ignores the prediction
+	lf.gw.est = h.gw.est
+	lf.gw.local.Store(50)
+	if r := lf.gw.overflowReason(now); r != "" {
+		t.Fatalf("local_first below cap: got %q", r)
+	}
+}
+
+func TestSLOPolicyRoutesRemoteEndToEnd(t *testing.T) {
+	release := make(chan struct{})
+	slowLocal := func(w http.ResponseWriter, r *http.Request) { <-release; okLocal(w, r) }
+	h := newHarness(t, slowLocal, config.LocalFirstSLO, 100, 10)
+	h.gw.cfg.Local.SLOTTFTS = 0.1
+	h.gw.est = newServiceEstimator(10*time.Second, 1, time.Now().Add(-10*time.Second))
+	h.gw.est.record(time.Now()) // 1 completion in 10 s -> 10 s per request
+	done := make(chan struct{})
+	go func() { h.post(t); close(done) }() // one in flight -> predicted wait 10 s
+	time.Sleep(100 * time.Millisecond)
+	resp, _ := h.post(t)
+	close(release)
+	<-done
+	if resp.Header.Get(BackendHeader) != "remote" || resp.Header.Get(ReasonHeader) != "slo_predicted" {
+		t.Fatalf("headers: %v", resp.Header)
+	}
+	m, _ := http.Get(h.srv.URL + "/metrics")
+	mb, _ := io.ReadAll(m.Body)
+	if !strings.Contains(string(mb), "maxion_gateway_predicted_local_wait_seconds 10") {
+		t.Fatal("predicted wait gauge missing")
+	}
+}

@@ -59,7 +59,8 @@ def scrape_gateway_metrics(base_url: str) -> dict[str, Any]:
 
 class AIGateway(Target):
     kind = "ai_gateway"
-    KEYS = {"local", "policy", "failover", "max_inflight", "port", "remote", "local_model", "binary"}
+    KEYS = {"local", "policy", "failover", "max_inflight", "port", "remote", "local_model", "binary",
+            "slo_ttft_s", "window_s", "min_samples"}
 
     def __init__(self, params: Mapping[str, Any], log_dir: Path) -> None:
         _check_keys(self.kind, params, self.KEYS)
@@ -70,6 +71,8 @@ class AIGateway(Target):
         self.policy = str(params.get("policy", "local_first"))
         self.failover = bool(params.get("failover", True))
         self.max_inflight = int(params.get("max_inflight", 8))
+        # local_first_slo: overflow when in-flight x recent per-request service time exceeds slo_ttft_s
+        self.slo = {k: params[k] for k in ("slo_ttft_s", "window_s", "min_samples") if k in params}
         self.port = int(params.get("port", 8090))
         self.remote = dict(params.get("remote") or {})
         self.local_model = params.get("local_model")
@@ -89,6 +92,7 @@ class AIGateway(Target):
             "budget": {"ledger_path": str(ledger_dir / "gemini_ledger.jsonl")},  # same ledger as Python
             "remote": {"enabled": remote_enabled},
         }
+        cfg["local"].update(self.slo)
         if self.local_model:
             cfg["local"]["model"] = str(self.local_model)
         if remote_enabled:

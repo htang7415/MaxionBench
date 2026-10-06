@@ -125,3 +125,39 @@ def test_gateway_overflow_end_to_end_with_shared_ledger(
     for path in out_dir.rglob("*"):
         if path.is_file():
             assert FAKE_KEY not in path.read_text(encoding="utf-8", errors="replace"), path
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="Go toolchain not installed")
+def test_gateway_slo_overflow_end_to_end(servers: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    local_url, remote_url = servers
+    monkeypatch.setenv("GEMINI_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("MAXIONBENCH_BUDGET_DIR", str(tmp_path / "budget"))
+    spec = parse_spec(
+        {
+            "schema_version": "maxionbench-experiment-v1",
+            "name": "gateway-slo",
+            "repeats": 1,
+            "target": {
+                "kind": "ai_gateway",
+                "params": {
+                    "local": {"kind": "static_endpoints", "params": {"urls": [local_url]}},
+                    "policy": "local_first_slo",
+                    "max_inflight": 100,  # never reached: only the prediction can overflow
+                    "slo_ttft_s": 0.1,  # below the local 0.4 s service time
+                    "min_samples": 1,
+                    "port": 18091,
+                    "remote": {"enabled": True, "model": "gemini-3.5-flash-lite", "base_url": remote_url},
+                },
+            },
+            "workload": {"kind": "synthetic_chat", "params": {"requests": 12, "concurrency": 3, "max_tokens": 8}},
+            "slo": {"ttft_s": 5, "e2e_s": 5},
+            "quiet_host": {"max_load_1m": 1000, "wait_s": 0},
+        }
+    )
+    _, result = run_experiment(spec, tmp_path / "runs", log=lambda msg: None)
+    trial = result.trials[0]
+    assert trial.status == "ok", trial.error
+    assert trial.target["config"]["local"]["slo_ttft_s"] == 0.1
+    routes = trial.target["collected"]["gateway"]["route_decisions"]
+    assert routes.get("local:capacity", 0) >= 3 and routes.get("remote:slo_predicted", 0) >= 1
+    assert "remote:local_saturated" not in routes and sum(routes.values()) == 12

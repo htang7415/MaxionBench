@@ -41,6 +41,7 @@ type metrics struct {
 	ttfb      *prometheus.HistogramVec
 	spend     prometheus.Counter
 	remaining prometheus.Gauge
+	predicted prometheus.Gauge
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -58,8 +59,10 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "maxion_gateway_remote_spend_usd_total", Help: "Committed remote spend in USD."}),
 		remaining: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "maxion_gateway_budget_remaining_usd", Help: "Remaining remote budget (cap - spend - holds)."}),
+		predicted: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "maxion_gateway_predicted_local_wait_seconds", Help: "Last predicted local wait (local_first_slo)."}),
 	}
-	reg.MustRegister(m.requests, m.routes, m.inflight, m.ttfb, m.spend, m.remaining)
+	reg.MustRegister(m.requests, m.routes, m.inflight, m.ttfb, m.spend, m.remaining, m.predicted)
 	return m
 }
 
@@ -72,6 +75,7 @@ type Gateway struct {
 	m        *metrics
 	local    atomic.Int64
 	upstream []atomic.Int64
+	est      *serviceEstimator
 	log      *slog.Logger
 }
 
@@ -82,6 +86,7 @@ func New(cfg *config.Config, key string, ledger *budget.Ledger, reg *prometheus.
 		client:   &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 64}},
 		m:        newMetrics(reg),
 		upstream: make([]atomic.Int64, len(cfg.Local.Upstreams)),
+		est:      newServiceEstimator(seconds(cfg.Local.WindowS), cfg.Local.MinSamples, time.Now()),
 	}
 	g.refreshRemaining()
 	return g
@@ -115,15 +120,37 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		}
 	case config.LocalOnly:
 		g.serveLocal(r.Context(), w, body, "policy", false)
-	default: // local_first
-		if g.local.Load() < int64(g.cfg.Local.MaxInflight) || !remoteOK {
+	default: // local_first, local_first_slo
+		reason := g.overflowReason(time.Now())
+		if reason == "" || !remoteOK {
 			g.serveLocal(r.Context(), w, body, "capacity", remoteOK && g.cfg.Failover)
 			return
 		}
-		if err := g.serveRemote(r.Context(), w, body, "local_saturated"); errors.Is(err, errBudget) {
+		if err := g.serveRemote(r.Context(), w, body, reason); errors.Is(err, errBudget) {
 			g.serveLocal(r.Context(), w, body, "budget_exhausted", false) // queue locally instead of overspending
 		}
 	}
+}
+
+// overflowReason returns why a new request should go remote, or "" to serve it locally.
+func (g *Gateway) overflowReason(now time.Time) string {
+	inflight := g.local.Load()
+	if inflight >= int64(g.cfg.Local.MaxInflight) {
+		return "local_saturated"
+	}
+	if g.cfg.Policy != config.LocalFirstSLO {
+		return ""
+	}
+	perReq, ok := g.est.perRequest(now)
+	if !ok {
+		return "" // too few recent completions to predict; the in-flight cap still applies
+	}
+	wait := float64(inflight) * perReq
+	g.m.predicted.Set(wait)
+	if wait > g.cfg.Local.SLOTTFTS {
+		return "slo_predicted"
+	}
+	return ""
 }
 
 func (g *Gateway) pickUpstream() int {
@@ -184,6 +211,9 @@ func (g *Gateway) serveLocal(ctx context.Context, w http.ResponseWriter, body ma
 	w.WriteHeader(resp.StatusCode)
 	g.m.requests.WithLabelValues("local", fmt.Sprint(resp.StatusCode)).Inc()
 	streamCopy(w, resp.Body, func() { g.m.ttfb.WithLabelValues("local").Observe(time.Since(start).Seconds()) }, nil)
+	if resp.StatusCode < 400 {
+		g.est.record(time.Now())
+	}
 }
 
 // serveRemote reserves the worst-case cost, proxies to the paid provider, and commits actual usage.

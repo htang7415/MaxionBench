@@ -37,6 +37,7 @@ func TestLoadRejectsUnpricedModelUnknownFieldsAndBadPolicy(t *testing.T) {
 		"no price":      "local: {upstreams: [\"http://a\"]}\nremote: {enabled: true, base_url: \"https://x\", model: m9, pricing_file: \"" + pricing + "\"}\n",
 		"unknown field": "local: {upstreams: [\"http://a\"]}\nbogus: 1\n",
 		"bad policy":    "policy: cheapest\nlocal: {upstreams: [\"http://a\"]}\n",
+		"slo no target": "policy: local_first_slo\nlocal: {upstreams: [\"http://a\"]}\n",
 		"no upstreams":  "policy: local_only\n",
 	}
 	for name, body := range cases {
