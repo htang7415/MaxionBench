@@ -107,7 +107,7 @@ def test_key_never_reaches_result_bundle_or_logs(tmp_path: Path, monkeypatch: py
 def test_cost_model_bills_cached_tokens_at_cached_rate() -> None:
     table = load_prices()
     price = table.price("gemini-3.5-flash-lite")
-    assert table.budget_cap_usd == 20.0
+    assert table.budget_cap_usd == 25.0
     assert cost_usd(price, input_tokens=1_000_000, output_tokens=0) == pytest.approx(0.30)
     assert cost_usd(price, input_tokens=1_000_000, output_tokens=1_000_000, cached_tokens=500_000) == pytest.approx(
         0.5 * 0.30 + 0.5 * 0.03 + 2.50
