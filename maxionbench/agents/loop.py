@@ -21,6 +21,7 @@ from typing import Any, Callable, Sequence
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from maxionbench.agents.context import Policy as ContextPolicy
 from maxionbench.agents.hotpot_env import DEFAULT_DATASET, AgentTask, HotpotCorpus, build_tasks
 from maxionbench.rag.answer_metrics import normalize_answer
 
@@ -65,7 +66,8 @@ def openai_tools(mcp_tools: Sequence[Any]) -> list[dict[str, Any]]:
 
 
 async def run_agent(session: ClientSession, policy: Policy, task: AgentTask, max_steps: int = 8,
-                    system_prompt: str = SYSTEM_PROMPT) -> AgentRun:
+                    system_prompt: str = SYSTEM_PROMPT, context: ContextPolicy | None = None) -> AgentRun:
+    """Run `task`; the model sees `context.view(history)` each step (the full history by default)."""
     tools = openai_tools((await session.list_tools()).tools)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
@@ -74,7 +76,7 @@ async def run_agent(session: ClientSession, policy: Policy, task: AgentTask, max
     run = AgentRun(task.task_id, "max_steps")
     try:
         for _ in range(max_steps):
-            out = policy(messages, tools)
+            out = policy(context.view(messages) if context else messages, tools)
             if out.answer is not None:
                 run.status, run.answer = "answered", out.answer
                 return run
