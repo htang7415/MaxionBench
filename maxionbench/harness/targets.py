@@ -52,6 +52,7 @@ VLLM_COUNTERS = (
     "vllm:prompt_tokens_total",
     "vllm:prefix_cache_queries_total",
     "vllm:prefix_cache_hits_total",
+    "vllm:external_prefix_cache_hits_total",  # KV-connector (CPU tier) loads
 )
 
 

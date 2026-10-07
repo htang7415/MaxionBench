@@ -1,0 +1,659 @@
+diff --git a/pkg/common/config.go b/pkg/common/config.go
+index b927a4b..f5e653c 100644
+--- a/pkg/common/config.go
++++ b/pkg/common/config.go
+@@ -219,6 +219,11 @@ type Configuration struct {
+ 	EnableKVCache bool `yaml:"enable-kvcache" json:"enable-kvcache"`
+ 	//  KVCacheSize is the maximum number of token blocks in kv cache, the default value is 1024
+ 	KVCacheSize int `yaml:"kv-cache-size" json:"kv-cache-size"`
++	// CPUKVCacheSize is the number of token blocks in a host-memory KV tier (vLLM KV offloading);
++	// 0 disables it. Blocks are written through to it when computed and loaded back on a GPU miss.
++	CPUKVCacheSize int `yaml:"cpu-kv-cache-size" json:"cpu-kv-cache-size"`
++	// CPUKVLoadTimePerToken is the time to load one token's KV from the CPU tier into the GPU tier
++	CPUKVLoadTimePerToken time.Duration `yaml:"cpu-kv-load-time-per-token" json:"cpu-kv-load-time-per-token"`
+ 	// GlobalCacheHitThreshold is the default cache hit threshold (0-1] for all requests.
+ 	// If a request specifies cache_hit_threshold, it takes precedence over this global value.
+ 	GlobalCacheHitThreshold float64 `yaml:"global-cache-hit-threshold" json:"global-cache-hit-threshold"`
+@@ -571,6 +576,9 @@ func (c *Configuration) validate() error {
+ 	if c.KVCacheSize < 0 {
+ 		return errors.New("KV cache size cannot be negative")
+ 	}
++	if c.CPUKVCacheSize < 0 || c.CPUKVLoadTimePerToken < 0 {
++		return errors.New("CPU KV cache size and load time cannot be negative")
++	}
+ 	if c.EventBatchSize < 1 {
+ 		return errors.New("event batch size cannot less than 1")
+ 	}
+diff --git a/pkg/common/parser.go b/pkg/common/parser.go
+index 8446a1d..87fa93a 100644
+--- a/pkg/common/parser.go
++++ b/pkg/common/parser.go
+@@ -151,6 +151,8 @@ func ParseCommandParamsAndLoadConfig() (*Configuration, error) {
+ 
+ 	f.BoolVar(&config.EnableKVCache, "enable-kvcache", config.EnableKVCache, "Defines if KV cache feature is enabled")
+ 	f.IntVar(&config.KVCacheSize, "kv-cache-size", config.KVCacheSize, "Maximum number of token blocks in kv cache")
++	f.IntVar(&config.CPUKVCacheSize, "cpu-kv-cache-size", config.CPUKVCacheSize, "Number of token blocks in a CPU (host memory) KV tier; 0 disables it")
++	f.DurationVar(&config.CPUKVLoadTimePerToken, "cpu-kv-load-time-per-token", config.CPUKVLoadTimePerToken, "Time to load one token's KV from the CPU tier, e.g. 5us")
+ 	f.Float64Var(&config.GlobalCacheHitThreshold, "global-cache-hit-threshold", 0, "Default cache hit threshold [0, 1] for all requests. If a request specifies cache_hit_threshold, it takes precedence")
+ 	f.IntVar(&config.TokenBlockSize, "block-size", config.TokenBlockSize, "Token block size for contiguous chunks of tokens, possible values: 8,16,32,64,128")
+ 	f.StringVar(&config.HashSeed, "hash-seed", config.HashSeed,
+diff --git a/pkg/kvcache/block_cache.go b/pkg/kvcache/block_cache.go
+index 1c690ef..9a12884 100644
+--- a/pkg/kvcache/block_cache.go
++++ b/pkg/kvcache/block_cache.go
+@@ -16,9 +16,11 @@ limitations under the License.
+ package kvcache
+ 
+ import (
++	"container/list"
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"sort"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+@@ -50,12 +52,26 @@ type blockKey struct {
+ 	modelName string
+ }
+ 
++// CPU is the device tier of blocks held in the host-memory KV tier
++var CPU string = "CPU"
++
++// unusedEntry is a cached block with no running request, in release order
++type unusedEntry struct {
++	key blockKey
++	t   time.Time // last usage timestamp
++}
++
+ // blockCache represents a thread-safe cache for blocks with eviction policy
+ type blockCache struct {
+ 	mu              sync.RWMutex
+ 	requestToBlocks map[string][]blockKey              // request id -> array of it blocks (block hashes)
+ 	usedBlocks      map[blockKey]int                   // block hash -> reference count
+-	unusedBlocks    map[blockKey]time.Time             // block hash -> last usage timestamp
++	unusedBlocks    map[blockKey]*list.Element         // block hash -> its entry in unusedLoaded or unusedUnloaded
++	unusedLoaded    *list.List                         // unused blocks of loaded models, oldest first
++	unusedUnloaded  *list.List                         // unused blocks of unloaded models, oldest first
++	cpuBlocks       map[blockKey]*list.Element         // CPU tier: block hash -> its entry in cpuLRU
++	cpuLRU          *list.List                         // CPU tier blocks, least recently used first
++	maxCPUBlocks    int                                // capacity of the CPU tier; 0 disables it
+ 	blockToTokens   map[blockKey][]uint32              // block hash -> block tokens
+ 	loadedModels    map[string]struct{}                // models currently loaded (base model + loaded loras)
+ 	maxBlocks       int                                // maximum number of blocks in the cache
+@@ -100,7 +116,12 @@ func newBlockCache(ctx context.Context, config *common.Configuration, logger log
+ 	bCache := blockCache{
+ 		requestToBlocks: make(map[string][]blockKey),
+ 		usedBlocks:      make(map[blockKey]int),
+-		unusedBlocks:    make(map[blockKey]time.Time),
++		unusedBlocks:    make(map[blockKey]*list.Element),
++		unusedLoaded:    list.New(),
++		unusedUnloaded:  list.New(),
++		cpuBlocks:       make(map[blockKey]*list.Element),
++		cpuLRU:          list.New(),
++		maxCPUBlocks:    config.CPUKVCacheSize,
+ 		blockToTokens:   make(map[blockKey][]uint32),
+ 		loadedModels:    make(map[string]struct{}),
+ 		maxBlocks:       config.KVCacheSize,
+@@ -138,12 +159,21 @@ func (bc *blockCache) discard() {
+ 
+ 	bc.requestToBlocks = make(map[string][]blockKey)
+ 	bc.usedBlocks = make(map[blockKey]int)
+-	bc.unusedBlocks = make(map[blockKey]time.Time)
++	bc.unusedBlocks = make(map[blockKey]*list.Element)
++	bc.unusedLoaded = list.New()
++	bc.unusedUnloaded = list.New()
+ 	bc.blockToTokens = make(map[blockKey][]uint32)
+ 
+ 	common.WriteToChannel(bc.eventChan,
+ 		EventData{action: eventActionAllBlocksCleared},
+ 		bc.logger)
++	if bc.maxCPUBlocks > 0 {
++		bc.cpuBlocks = make(map[blockKey]*list.Element)
++		bc.cpuLRU = list.New()
++		common.WriteToChannel(bc.eventChan,
++			EventData{action: eventActionAllBlocksCleared, tier: CPU},
++			bc.logger)
++	}
+ }
+ 
+ func (bc *blockCache) activate() {
+@@ -159,21 +189,28 @@ func (bc *blockCache) activate() {
+ // and returns the number of blocks that were already in the cache
+ // model name is the name of the model for the current request, used for eviction policy
+ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockTokens [][]uint32) (int, error) {
++	cached, _, err := bc.startRequestTiered(req, blockHashes, blockTokens)
++	return cached, err
++}
++
++// startRequestTiered is startRequest that also returns the number of blocks loaded from the CPU
++// tier instead of computed. Newly computed blocks are written through to the CPU tier.
++func (bc *blockCache) startRequestTiered(req Request, blockHashes []uint64, blockTokens [][]uint32) (int, int, error) {
+ 	bc.mu.Lock()
+ 	defer bc.mu.Unlock()
+ 
+ 	if bc.disabled {
+ 		bc.logger.V(logging.TRACE).Info("KV cache is disabled, request is not added to the kv cache")
+-		return 0, nil
++		return 0, 0, nil
+ 	}
+ 
+ 	if _, exists := bc.requestToBlocks[req.GetRequestID()]; exists {
+ 		// request with the same id already exists
+-		return 0, fmt.Errorf("request already exists for id %s", req.GetRequestID())
++		return 0, 0, fmt.Errorf("request already exists for id %s", req.GetRequestID())
+ 	}
+ 
+ 	if len(blockHashes) != len(blockTokens) {
+-		return 0, fmt.Errorf("invalid input parameters, %d block hashes, %d block tokens", len(blockHashes), len(blockTokens))
++		return 0, 0, fmt.Errorf("invalid input parameters, %d block hashes, %d block tokens", len(blockHashes), len(blockTokens))
+ 	}
+ 
+ 	// divide list of blocks to three lists:
+@@ -186,6 +223,7 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 	type newBlock struct {
+ 		key      blockKey
+ 		tokenIdx int
++		loaded   bool // held in the CPU tier: loaded, not computed
+ 	}
+ 	blocksToAdd := make([]newBlock, 0)
+ 	blockToMoveToUsed := make([]blockKey, 0)
+@@ -209,7 +247,8 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 		} else if _, exists := bc.usedBlocks[bKey]; !exists {
+ 			// new block — record its index so tokens can be written after
+ 			// the capacity check passes, preventing orphaned entries on error.
+-			blocksToAdd = append(blocksToAdd, newBlock{key: bKey, tokenIdx: i})
++			_, inCPU := bc.cpuBlocks[bKey]
++			blocksToAdd = append(blocksToAdd, newBlock{key: bKey, tokenIdx: i, loaded: inCPU})
+ 		} else {
+ 			blockAlreadyInUse = append(blockAlreadyInUse, bKey)
+ 			lastCachedIdx = i
+@@ -217,7 +256,7 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 	}
+ 
+ 	if len(bc.usedBlocks)+len(blocksToAdd)+len(blockToMoveToUsed) > bc.maxBlocks {
+-		return 0, errors.New(capacityError)
++		return 0, 0, errors.New(capacityError)
+ 	}
+ 
+ 	// for blocks that are already in use - update the reference
+@@ -228,7 +267,7 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 	// for block used in the past - move them to the used blocks collection
+ 	for _, block := range blockToMoveToUsed {
+ 		bc.usedBlocks[block] = 1
+-		delete(bc.unusedBlocks, block)
++		bc.removeUnused(block)
+ 	}
+ 
+ 	// for new block - add them, if there is no empty slots - evict a block using priority:
+@@ -236,12 +275,13 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 	// 2. oldest unused block of any model
+ 	hashes := []uint64{}
+ 	tokens := []uint32{}
++	nLoaded := 0
+ 
+ 	for _, block := range blocksToAdd {
+ 		if len(bc.usedBlocks)+len(bc.unusedBlocks) == bc.maxBlocks {
+ 			// cache is full but contains unused blocks - evict one block
+ 			evictHash := bc.pickBlockToEvict()
+-			delete(bc.unusedBlocks, evictHash)
++			bc.removeUnused(evictHash)
+ 			common.WriteToChannel(bc.eventChan,
+ 				EventData{action: eventActionRemove, hashes: []uint64{evictHash.hash},
+ 					tokens: bc.blockToTokens[evictHash]},
+@@ -257,6 +297,10 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 
+ 		hashes = append(hashes, block.key.hash)
+ 		tokens = append(tokens, bc.blockToTokens[block.key]...)
++		if block.loaded {
++			nLoaded++
++			bc.cpuLRU.MoveToBack(bc.cpuBlocks[block.key])
++		}
+ 	}
+ 
+ 	if len(hashes) > 0 {
+@@ -277,6 +321,48 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 			}, bc.logger)
+ 	}
+ 
++	// write-through: computed blocks are offloaded to the CPU tier, one store event per contiguous run
++	if bc.maxCPUBlocks > 0 {
++		for start := 0; start < len(blocksToAdd); {
++			if blocksToAdd[start].loaded {
++				start++
++				continue
++			}
++			end := start + 1
++			for end < len(blocksToAdd) && !blocksToAdd[end].loaded &&
++				blocksToAdd[end].tokenIdx == blocksToAdd[end-1].tokenIdx+1 {
++				end++
++			}
++			run := blocksToAdd[start:end]
++			var parentHash *uint64
++			if first := run[0].tokenIdx; first > 0 {
++				ph := blockHashes[first-1]
++				parentHash = &ph
++			}
++			runHashes := make([]uint64, 0, len(run))
++			runTokens := make([]uint32, 0, len(run)*len(blockTokens[run[0].tokenIdx]))
++			for _, block := range run {
++				bc.cpuBlocks[block.key] = bc.cpuLRU.PushBack(block.key)
++				runHashes = append(runHashes, block.key.hash)
++				runTokens = append(runTokens, blockTokens[block.tokenIdx]...)
++			}
++			common.WriteToChannel(bc.eventChan,
++				EventData{action: eventActionStore, hashes: runHashes, tokens: runTokens, parentHash: parentHash,
++					loraName: req.GetLoraName(), loraID: req.GetLoraID(), tier: CPU}, bc.logger)
++			start = end
++		}
++		var evicted []uint64
++		for bc.cpuLRU.Len() > bc.maxCPUBlocks {
++			key := bc.cpuLRU.Remove(bc.cpuLRU.Front()).(blockKey)
++			delete(bc.cpuBlocks, key)
++			evicted = append(evicted, key.hash)
++		}
++		if len(evicted) > 0 {
++			common.WriteToChannel(bc.eventChan,
++				EventData{action: eventActionRemove, hashes: evicted, tier: CPU}, bc.logger)
++		}
++	}
++
+ 	// store the request mapping
+ 	// store blockKeys and not only plain uint64
+ 	bc.requestToBlocks[req.GetRequestID()] = make([]blockKey, len(blockHashes))
+@@ -291,7 +377,7 @@ func (bc *blockCache) startRequest(req Request, blockHashes []uint64, blockToken
+ 		}
+ 		common.WriteToChannel(*bc.usageChan, usage, bc.logger)
+ 	}
+-	return len(blockAlreadyInUse) + len(blockToMoveToUsed), nil
++	return len(blockAlreadyInUse) + len(blockToMoveToUsed), nLoaded, nil
+ }
+ 
+ // finishRequest processes the completion of a request, decreasing reference counts
+@@ -312,16 +398,18 @@ func (bc *blockCache) finishRequest(requestID string) error {
+ 
+ 	now := time.Now()
+ 
+-	// Decrease reference count for each block
++	// Decrease reference count for each block, tail first: like vLLM's free queue, the end of a
++	// prompt becomes evictable before its start, so a partly evicted prefix keeps its head
+ 	errBlocks := make([]blockKey, 0)
+-	for _, blockHash := range blockHashes {
++	for i := len(blockHashes) - 1; i >= 0; i-- {
++		blockHash := blockHashes[i]
+ 		if refCount, exists := bc.usedBlocks[blockHash]; exists {
+ 			if refCount > 1 {
+ 				// this block is in use by another request, just update reference count
+ 				bc.usedBlocks[blockHash] = refCount - 1
+ 			} else {
+ 				// this was the last block usage - move this block to unused
+-				bc.unusedBlocks[blockHash] = now
++				bc.addUnused(blockHash, now)
+ 				delete(bc.usedBlocks, blockHash)
+ 			}
+ 		} else {
+@@ -411,48 +499,61 @@ func (bc *blockCache) countCachedBlockPrefix(blockHashes []uint64, modelName str
+ // pickBlockToEvict selects the best unused block to evict using priority:
+ // 1. oldest unused block of an unloaded model
+ // 2. oldest unused block of any model
+-// Must be called with bc.mu held.
++// Must be called with bc.mu held and at least one unused block.
+ func (bc *blockCache) pickBlockToEvict() blockKey {
+-	var bestLoadedHash blockKey
+-	bestLoadedTime := time.Now()
+-	var bestUnloadedHash blockKey
+-	bestUnloadedTime := bestLoadedTime
+-	hasUnloadedCandidate := false
+-
+-	for blockKey, t := range bc.unusedBlocks {
+-		if _, exists := bc.loadedModels[blockKey.modelName]; exists {
+-			// this is a block with loaded model,
+-			// check if it's the best candidate among loaded models
+-			if t.Before(bestLoadedTime) {
+-				bestLoadedHash = blockKey
+-				bestLoadedTime = t
+-			}
+-		} else {
+-			// this is a block with unloaded model,
+-			// check if it's the best candidate among unloaded models
+-			if t.Before(bestUnloadedTime) {
+-				bestUnloadedHash = blockKey
+-				bestUnloadedTime = t
+-				hasUnloadedCandidate = true
+-			}
++	if e := bc.unusedUnloaded.Front(); e != nil {
++		return e.Value.(unusedEntry).key
++	}
++	return bc.unusedLoaded.Front().Value.(unusedEntry).key
++}
++
++// addUnused records a block with no running request, newest last. Must be called with bc.mu held.
++func (bc *blockCache) addUnused(key blockKey, t time.Time) {
++	l := bc.unusedUnloaded
++	if _, loaded := bc.loadedModels[key.modelName]; loaded {
++		l = bc.unusedLoaded
++	}
++	bc.unusedBlocks[key] = l.PushBack(unusedEntry{key: key, t: t})
++}
++
++// removeUnused forgets an unused block. Must be called with bc.mu held.
++func (bc *blockCache) removeUnused(key blockKey) {
++	if e, ok := bc.unusedBlocks[key]; ok {
++		bc.unusedLoaded.Remove(e) // no-op unless e is in this list
++		bc.unusedUnloaded.Remove(e)
++		delete(bc.unusedBlocks, key)
++	}
++}
++
++// repartitionUnused re-sorts unused blocks into the loaded/unloaded lists after the set of loaded
++// models changed, keeping their age order. Must be called with bc.mu held.
++func (bc *blockCache) repartitionUnused() {
++	entries := make([]unusedEntry, 0, len(bc.unusedBlocks))
++	for _, l := range []*list.List{bc.unusedLoaded, bc.unusedUnloaded} {
++		for e := l.Front(); e != nil; e = e.Next() {
++			entries = append(entries, e.Value.(unusedEntry))
+ 		}
+ 	}
+-	if hasUnloadedCandidate {
+-		return bestUnloadedHash
++	sort.SliceStable(entries, func(i, j int) bool { return entries[i].t.Before(entries[j].t) })
++	bc.unusedLoaded.Init()
++	bc.unusedUnloaded.Init()
++	for _, entry := range entries {
++		bc.addUnused(entry.key, entry.t)
+ 	}
+-	return bestLoadedHash
+ }
+ 
+ func (bc *blockCache) setModelLoaded(model string) {
+ 	bc.mu.Lock()
+ 	defer bc.mu.Unlock()
+ 	bc.loadedModels[model] = struct{}{}
++	bc.repartitionUnused()
+ }
+ 
+ func (bc *blockCache) setModelUnloaded(model string) {
+ 	bc.mu.Lock()
+ 	defer bc.mu.Unlock()
+ 	delete(bc.loadedModels, model)
++	bc.repartitionUnused()
+ }
+ 
+ // CreateKVEventsTopic builds the ZMQ topic used to publish KV-cache events.
+diff --git a/pkg/kvcache/cpu_tier_test.go b/pkg/kvcache/cpu_tier_test.go
+new file mode 100644
+index 0000000..1f76706
+--- /dev/null
++++ b/pkg/kvcache/cpu_tier_test.go
+@@ -0,0 +1,120 @@
++/*
++Copyright 2025 The llm-d-inference-sim Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++	http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package kvcache
++
++import (
++	"context"
++
++	"github.com/llm-d/llm-d-inference-sim/pkg/common"
++	. "github.com/onsi/ginkgo/v2"
++	. "github.com/onsi/gomega"
++)
++
++// drainEvents returns the events queued so far (the sender is not running in these tests).
++func drainEvents(bc *blockCache) []EventData {
++	var out []EventData
++	for {
++		select {
++		case ev := <-bc.eventChan.Channel:
++			out = append(out, ev)
++		default:
++			return out
++		}
++	}
++}
++
++var _ = Describe("CPU KV tier", func() {
++	newCache := func(gpuBlocks, cpuBlocks int) *blockCache {
++		config := &common.Configuration{
++			IP: "localhost", Port: 1234, Model: "model", KVCacheSize: gpuBlocks, CPUKVCacheSize: cpuBlocks,
++			EventBatchSize: 1,
++		}
++		bc, err := newBlockCache(context.Background(), config, GinkgoLogr, nil)
++		Expect(err).NotTo(HaveOccurred())
++		return bc
++	}
++	toks := [][]uint32{{1}, {2}, {3}}
++
++	It("writes computed blocks through to the CPU tier and loads them back after GPU eviction", func() {
++		bc := newCache(4, 8)
++		req1 := testRequest{id: "r1", model: "model", blockHashes: []uint64{1, 2, 3}, tokens: toks}
++		cached, loaded, err := bc.startRequestTiered(&req1, req1.blockHashes, req1.tokens)
++		Expect(err).NotTo(HaveOccurred())
++		Expect([]int{cached, loaded}).To(Equal([]int{0, 0}))
++		Expect(bc.finishRequest("r1")).To(Succeed())
++
++		events := drainEvents(bc)
++		Expect(events).To(HaveLen(2)) // GPU store, then CPU store of the same chain
++		Expect(events[0].deviceTier()).To(Equal(GPU))
++		Expect(events[1].deviceTier()).To(Equal(CPU))
++		Expect(events[1].hashes).To(Equal([]uint64{1, 2, 3}))
++		Expect(events[1].parentHash).To(BeNil())
++
++		// 3 new blocks into a 4-block GPU tier holding 3 unused ones: evicts 3 and 2 (released tail first)
++		req2 := testRequest{id: "r2", model: "model", blockHashes: []uint64{4, 5, 6}, tokens: toks}
++		_, _, err = bc.startRequestTiered(&req2, req2.blockHashes, req2.tokens)
++		Expect(err).NotTo(HaveOccurred())
++		Expect(bc.finishRequest("r2")).To(Succeed())
++		drainEvents(bc)
++
++		_, gpuHasHead := bc.getBlockInfo(blockKey{hash: 1, modelName: "model"})
++		Expect(gpuHasHead).To(BeTrue())
++
++		// 1 is still on the GPU, 2 and 3 come back from the CPU tier
++		req3 := testRequest{id: "r3", model: "model", blockHashes: []uint64{1, 2, 3}, tokens: toks}
++		cached, loaded, err = bc.startRequestTiered(&req3, req3.blockHashes, req3.tokens)
++		Expect(err).NotTo(HaveOccurred())
++		Expect([]int{cached, loaded}).To(Equal([]int{1, 2}))
++		for _, ev := range drainEvents(bc) {
++			Expect(ev.deviceTier()).To(Equal(GPU)) // loads add GPU copies; the CPU tier already has them
++		}
++	})
++
++	It("evicts least recently used CPU blocks and announces the removal", func() {
++		bc := newCache(8, 4)
++		req1 := testRequest{id: "r1", model: "model", blockHashes: []uint64{1, 2, 3}, tokens: toks}
++		_, _, err := bc.startRequestTiered(&req1, req1.blockHashes, req1.tokens)
++		Expect(err).NotTo(HaveOccurred())
++		req2 := testRequest{id: "r2", model: "model", blockHashes: []uint64{4, 5}, tokens: toks[:2]}
++		_, _, err = bc.startRequestTiered(&req2, req2.blockHashes, req2.tokens)
++		Expect(err).NotTo(HaveOccurred())
++
++		events := drainEvents(bc)
++		last := events[len(events)-1]
++		Expect(last.action).To(Equal(eventActionRemove))
++		Expect(last.deviceTier()).To(Equal(CPU))
++		Expect(last.hashes).To(Equal([]uint64{1}))
++		Expect(bc.cpuLRU.Len()).To(Equal(4))
++		Expect(events[len(events)-2].parentHash).To(BeNil()) // r2's chain starts a new sequence
++	})
++
++	It("keeps the GPU tier's oldest-first eviction with the list-based index", func() {
++		bc := newCache(3, 0)
++		for i, hash := range []uint64{1, 2, 3} {
++			req := testRequest{id: string(rune('a' + i)), model: "model", blockHashes: []uint64{hash}, tokens: toks[:1]}
++			_, err := bc.startRequest(&req, req.blockHashes, req.tokens)
++			Expect(err).NotTo(HaveOccurred())
++			Expect(bc.finishRequest(req.id)).To(Succeed())
++		}
++		Expect(bc.pickBlockToEvict().hash).To(Equal(uint64(1)))
++		req := testRequest{id: "x", model: "model", blockHashes: []uint64{1}, tokens: toks[:1]}
++		_, err := bc.startRequest(&req, req.blockHashes, req.tokens) // reuses 1
++		Expect(err).NotTo(HaveOccurred())
++		Expect(bc.pickBlockToEvict().hash).To(Equal(uint64(2)))
++		Expect(bc.cpuLRU.Len()).To(Equal(0))
++	})
++})
+diff --git a/pkg/kvcache/kv_cache.go b/pkg/kvcache/kv_cache.go
+index dcd7d75..4009df0 100644
+--- a/pkg/kvcache/kv_cache.go
++++ b/pkg/kvcache/kv_cache.go
+@@ -36,6 +36,8 @@ type PrefixCacheStats struct {
+ 	QueriedTokens int
+ 	// CachedTokens is the number of prompt tokens that were already cached
+ 	CachedTokens int
++	// LoadedTokens is the number of prompt tokens loaded from the CPU tier instead of computed
++	LoadedTokens int
+ }
+ 
+ type KVCacheHelper struct {
+@@ -131,17 +133,20 @@ func (h *KVCacheHelper) OnRequestStart(req api.Request) (PrefixCacheStats, error
+ 		blockTokens[i] = tokens[i*h.blockSize : i*h.blockSize+h.blockSize]
+ 	}
+ 
+-	nBlocksAlreadyInCache, err := h.blockCache.startRequest(req, blockHashes, blockTokens)
++	nBlocksAlreadyInCache, nBlocksLoaded, err := h.blockCache.startRequestTiered(req, blockHashes, blockTokens)
+ 	if err != nil {
+ 		return PrefixCacheStats{}, err
+ 	}
+ 
+ 	cachedTokens := nBlocksAlreadyInCache * h.blockSize
+-	req.SetNumberOfCachedPromptTokens(cachedTokens)
++	loadedTokens := nBlocksLoaded * h.blockSize
++	// loaded blocks skip prefill like cached ones; their load time is charged by the caller
++	req.SetNumberOfCachedPromptTokens(cachedTokens + loadedTokens)
+ 
+ 	stats := PrefixCacheStats{
+ 		QueriedTokens: len(tokens),
+ 		CachedTokens:  cachedTokens,
++		LoadedTokens:  loadedTokens,
+ 	}
+ 	common.WriteToChannel(h.prefixCacheStatsChan, stats, h.logger)
+ 
+diff --git a/pkg/kvcache/kv_cache_sender.go b/pkg/kvcache/kv_cache_sender.go
+index 5c70fa0..d4d5cb1 100644
+--- a/pkg/kvcache/kv_cache_sender.go
++++ b/pkg/kvcache/kv_cache_sender.go
+@@ -114,6 +114,14 @@ type EventData struct {
+ 	parentHash *uint64 // nil means no parent (first block of sequence); non-nil is the last already-cached block hash
+ 	loraName   *string
+ 	loraID     *int
++	tier       string // device tier of the event; empty means GPU
++}
++
++func (e EventData) deviceTier() string {
++	if e.tier == "" {
++		return GPU
++	}
++	return e.tier
+ }
+ 
+ // batchEntry pairs a generic event with the original parentHash pointer so that
+@@ -197,7 +205,7 @@ func (s *KVEventSender) Run(ctx context.Context) error {
+ 					event: &kvevents.BlockStoredEvent{
+ 						BlockHashes: eventData.hashes,
+ 						Tokens:      eventData.tokens,
+-						DeviceTier:  GPU,
++						DeviceTier:  eventData.deviceTier(),
+ 						ParentHash:  ph,
+ 						LoraID:      eventData.loraID,
+ 						LoraName:    eventData.loraName,
+@@ -205,7 +213,7 @@ func (s *KVEventSender) Run(ctx context.Context) error {
+ 					parentHash: eventData.parentHash,
+ 				}
+ 			case eventActionRemove:
+-				entry = batchEntry{event: &kvevents.BlockRemovedEvent{BlockHashes: eventData.hashes, DeviceTier: GPU}}
++				entry = batchEntry{event: &kvevents.BlockRemovedEvent{BlockHashes: eventData.hashes, DeviceTier: eventData.deviceTier()}}
+ 			case eventActionAllBlocksCleared:
+ 				entry = batchEntry{event: &kvevents.AllBlocksClearedEvent{DeviceTier: GPU}}
+ 			default:
+diff --git a/pkg/simulator/metrics.go b/pkg/simulator/metrics.go
+index 6462ef6..bdb974e 100644
+--- a/pkg/simulator/metrics.go
++++ b/pkg/simulator/metrics.go
+@@ -58,6 +58,8 @@ const (
+ 	CacheConfigName                   = "vllm:cache_config_info"
+ 	PrefixCacheHitsTotalMetricName    = "vllm:prefix_cache_hits_total"
+ 	PrefixCacheQueriesTotalMetricName = "vllm:prefix_cache_queries_total"
++	// KV-connector (CPU tier) hits, as vLLM reports them
++	ExternalPrefixCacheHitsTotalMetricName = "vllm:external_prefix_cache_hits_total"
+ )
+ 
+ const (
+@@ -162,6 +164,8 @@ type metricsData struct {
+ 	prefixCacheHitsTotal *prometheus.CounterVec
+ 	// prefixCacheQueriesTotal is prometheus counter for total queried tokens (prefix cache queries)
+ 	prefixCacheQueriesTotal *prometheus.CounterVec
++	// externalPrefixCacheHitsTotal is prometheus counter for prompt tokens loaded from the CPU tier
++	externalPrefixCacheHitsTotal *prometheus.CounterVec
+ 	// prefixCacheStatsChan is a channel to update prefix cache hit/query counters
+ 	prefixCacheStatsChan common.Channel[kvcache.PrefixCacheStats]
+ 
+@@ -351,6 +355,20 @@ func (s *SimContext) createAndRegisterPrometheus(ctx context.Context) error {
+ 		return err
+ 	}
+ 
++	if s.Config().CPUKVCacheSize > 0 {
++		s.metrics.externalPrefixCacheHitsTotal = prometheus.NewCounterVec(
++			prometheus.CounterOpts{
++				Name: ExternalPrefixCacheHitsTotalMetricName,
++				Help: "Prompt tokens loaded from the CPU KV tier instead of computed.",
++			},
++			[]string{api.PromLabelModelName},
++		)
++		if err := s.metrics.registry.Register(s.metrics.externalPrefixCacheHitsTotal); err != nil {
++			s.logger.Error(err, "prometheus external_prefix_cache_hits counter register failed")
++			return err
++		}
++	}
++
+ 	s.metrics.prefixCacheStatsChan = common.Channel[kvcache.PrefixCacheStats]{
+ 		Channel: make(chan kvcache.PrefixCacheStats, maxNumberOfRunningRequests),
+ 		Name:    "metrics.prefixCacheStatsChan",
+@@ -578,6 +596,9 @@ func (s *SimContext) reportPrefixCacheStats(stats kvcache.PrefixCacheStats) {
+ 	if s.metrics.prefixCacheHitsTotal != nil {
+ 		s.metrics.prefixCacheHitsTotal.WithLabelValues(s.Config().DisplayModelName).Add(float64(stats.CachedTokens))
+ 	}
++	if s.metrics.externalPrefixCacheHitsTotal != nil {
++		s.metrics.externalPrefixCacheHitsTotal.WithLabelValues(s.Config().DisplayModelName).Add(float64(stats.LoadedTokens))
++	}
+ }
+ 
+ // ttftUpdater updates the time to first token metric by listening on the relevant channel
+diff --git a/pkg/simulator/request.go b/pkg/simulator/request.go
+index eb7c5ee..38ce6f1 100644
+--- a/pkg/simulator/request.go
++++ b/pkg/simulator/request.go
+@@ -255,7 +255,8 @@ func (reqCtx *baseRequestContext) handleRequest() (ResponseContext, *api.Error)
+ 		CompletionTokens: completionTokens,
+ 		TotalTokens:      numOfInputTokens + completionTokens,
+ 		PromptTokensDetails: &api.PromptTokensDetails{
+-			CachedTokens: prefixCacheStats.CachedTokens,
++			// like vLLM, tokens loaded through the KV connector (CPU tier) count as cached
++			CachedTokens: prefixCacheStats.CachedTokens + prefixCacheStats.LoadedTokens,
+ 		},
+ 	}
+ 
+@@ -314,6 +315,10 @@ func (reqCtx *baseRequestContext) kvCacheOnRequestStart() (stat kvcache.PrefixCa
+ 			serverError := api.NewError(err.Error(), fasthttp.StatusInternalServerError, nil)
+ 			return kvcache.PrefixCacheStats{}, &serverError
+ 		}
++		// loading KV from the CPU tier happens before prefill and delays the first token
++		if loadPerToken := reqCtx.sim.Config().CPUKVLoadTimePerToken; stat.LoadedTokens > 0 && loadPerToken > 0 {
++			time.Sleep(time.Duration(stat.LoadedTokens) * loadPerToken)
++		}
+ 		return stat, nil
+ 	}
+ 	return kvcache.PrefixCacheStats{}, nil
