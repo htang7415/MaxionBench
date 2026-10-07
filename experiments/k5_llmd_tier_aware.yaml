@@ -1,0 +1,30 @@
+schema_version: maxionbench-kvlive-v1
+name: k5-llmd-tier-aware
+description: >
+  K5: K4 on the real llm-d router. AgentX agent sessions replayed live (open loop, 64 active
+  sessions, trace time compressed 4x) through llm-d EPP v0.11 + Envoy over 4 llm-d-inference-sim
+  workers patched with a CPU KV tier (deploy/inference-sim). Each 64-token trace block is 16 token ids;
+  worker latencies are per scaled token and divided by the time scale (prefill 50 us, decode 25 ms,
+  CPU load 10 us per token = 0.2 x prefill). GPU tier 31,250 blocks (2M trace tokens), CPU tier 0 or
+  125,000 blocks (8M). Arms: llm-d's default approximate prefix scorer; the precise KV-event scorer
+  ignoring the CPU tier; and the precise scorer weighting CPU-held blocks 0.8 (llm-d's default tier
+  weights). All arms of a repeat replay the same arrivals. TTFT and SLO are in compressed time.
+trace: agentx/cc_traces_256k.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+replay: {concurrency: 64, horizon_s: 720, warmup_s: 120, time_scale: 4, tokens_per_block: 16, output_scale: 0.25,
+         max_output_tokens: 256, ttft_slo_s: 1.0, timeout_s: 120}
+target:
+  replicas: 4
+  base_port: 8300
+  image: maxionbench/llm-d-inference-sim:v0.11.4-cpukv
+  gpu_kv_blocks: 31250
+  sim_args: [--block-size, "16", --max-num-seqs, "32", --prefill-time-per-token, 50us, --inter-token-latency, 25ms,
+             --cpu-kv-load-time-per-token, 10us, --time-factor-under-load, "1.0", --max-model-len, "100000"]
+cells:
+  - {scorer_profile: optimized-baseline, cpu_kv_blocks: 0}
+  - {scorer_profile: precise-gpu-only, cpu_kv_blocks: 0}
+  - {scorer_profile: optimized-baseline, cpu_kv_blocks: 125000}
+  - {scorer_profile: precise-gpu-only, cpu_kv_blocks: 125000}
+  - {scorer_profile: precise-tiered, cpu_kv_blocks: 125000}

@@ -22,6 +22,7 @@ services:
       - ${LLMD_RUN_DIR:?set LLMD_RUN_DIR}/epp:/etc/epp:ro
     ports:
       - "127.0.0.1:${EPP_METRICS_PORT:-9090}:9090"
+      - "127.0.0.1:${KV_EVENTS_PORT:-5557}:5557"  # precise profiles: workers publish KV events here
 
   envoy:
     image: ${ENVOY_IMAGE:-docker.io/envoyproxy/envoy:distroless-v1.33.2}
