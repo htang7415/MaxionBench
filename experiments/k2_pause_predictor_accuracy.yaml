@@ -1,0 +1,21 @@
+schema_version: maxionbench-kvsim-v1
+name: k2-pause-predictor-accuracy
+description: >
+  K2: how accurate must a pause-length predictor be? Same replay as K1 (AgentX traces, 4 replicas,
+  prefix+load routing, 64 active sessions) at the two capacities where K1's oracle cut prefill
+  recompute ~28% vs LRU. Retention uses the true gap to each stream's next call times a log-normal
+  error exp(N(0, sigma)); sigma 0 is the oracle (K1). Share of predictions within 2x of the true gap:
+  sigma 0.25 -> 99%, 0.5 -> 83%, 1.0 -> 51%, 2.0 -> 27%.
+trace: agentx/cc_traces_256k.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+params:
+  replicas: 4
+  concurrency: 64
+  routing: prefix_load
+  eviction: predicted
+  warmup_s: 1800.0
+matrix:
+  capacity_tokens: [2000000, 3000000]
+  noise_sigma: [0.25, 0.5, 1.0, 2.0]
