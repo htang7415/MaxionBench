@@ -1,0 +1,23 @@
+schema_version: maxionbench-kvsim-v1
+name: k3-cpu-kv-tier
+description: >
+  K3: what does a host-memory KV tier add for agent traffic, alone and with pause-aware retention?
+  Same replay as K1 (AgentX traces, 4 replicas, prefix+load routing, 64 active sessions). Blocks
+  evicted from the GPU tier are demoted to a per-replica LRU CPU tier of 0-8x the GPU capacity and
+  loaded back (not recomputed) on reuse. Prefill cost counts a loaded token as 0.2 of a recomputed
+  one (assumed PCIe-vs-prefill ratio; loaded shares are reported so other ratios can be applied).
+  cpu_capacity_tokens 0 repeats K1's cells as a check.
+trace: agentx/cc_traces_256k.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+params:
+  replicas: 4
+  concurrency: 64
+  routing: prefix_load
+  load_cost: 0.2
+  warmup_s: 1800.0
+matrix:
+  capacity_tokens: [2000000, 3000000]
+  cpu_capacity_tokens: [0, 4000000, 8000000, 16000000]
+  eviction: [lru, oracle]

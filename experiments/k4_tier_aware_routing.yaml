@@ -1,0 +1,22 @@
+schema_version: maxionbench-kvsim-v1
+name: k4-tier-aware-routing
+description: >
+  K4: K3 showed that with a CPU KV tier most remaining avoidable misses are routing misses: the
+  router scores only GPU-resident prefixes, so a session whose context was demoted to one replica's
+  CPU tier is sent elsewhere and recomputes. Same replay as K1/K3 with an 8M-token CPU tier per
+  replica: GPU-only prefix+load routing vs tier-aware prefix+load (CPU-held prefix counts as cached)
+  vs sticky session routing, under LRU and oracle retention.
+trace: agentx/cc_traces_256k.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+params:
+  replicas: 4
+  concurrency: 64
+  cpu_capacity_tokens: 8000000
+  load_cost: 0.2
+  warmup_s: 1800.0
+matrix:
+  capacity_tokens: [2000000, 3000000]
+  routing: [prefix_load, tiered_prefix_load, session]
+  eviction: [lru, oracle]
