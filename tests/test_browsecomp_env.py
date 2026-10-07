@@ -12,6 +12,7 @@ import pytest
 
 from maxionbench.agents import browsecomp_env
 from maxionbench.agents.browsecomp_env import CANARY, SHARDS, BrowseTask, DocCorpus, decrypt, load_tasks
+from maxionbench.agents.hotpot_env import SearchHit
 from maxionbench.agents.loop import PolicyOutput, ToolCall
 from maxionbench.eval.agent_trial import run_task, summarize
 
@@ -66,8 +67,10 @@ def test_load_tasks_decrypts_seeded_sample_with_its_own_documents(shards: Path) 
 
 
 def test_doc_corpus_ranks_matches_and_caps_reads() -> None:
-    corpus = DocCorpus({"a": "the harbor film by Brandt", "b": "paper mill on the river", "c": "x" * 50_000})
-    assert corpus.search("Brandt film", k=1)[0].doc_id == "a"
+    corpus = DocCorpus({"a": "the harbor film by Brandt", "b": "paper mill on the river", "c": "lighthouse " * 5_000})
+    assert corpus.search("Brandt film", k=1)[0] == SearchHit("a", "the harbor film by Brandt")  # whole page
+    assert len(corpus.search("lighthouse", k=1)[0].snippet) == browsecomp_env.READ_CHARS
+    assert len(corpus.search("film mill lighthouse", k=9)) == 3  # k is capped at the corpus size
     assert corpus.search("the", k=3) == []  # stopwords only
     assert len(corpus.read("c") or "") == browsecomp_env.READ_CHARS
     assert corpus.read("missing") is None
