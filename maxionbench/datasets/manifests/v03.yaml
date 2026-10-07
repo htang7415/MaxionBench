@@ -81,6 +81,14 @@ files:
     bytes: 74601
     sha256: df4d2c16238c1465dc04697c273cf3ab4a450075fcd274e3dc86ad5bf0049b75
     license: Apache-2.0
+  agentx/cc_traces_256k.jsonl:
+    group: agentx
+    # SemiAnalysis AgentX corpus (Claude Code proxy traces, 256k cap): 393 sessions, 68,266 calls
+    # with timing and 64-token KV block hash ids; the workload vLLM's AgentX work replays.
+    url: https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126-256k/resolve/8fecd2fc56694469f758f0afbbb6335ad3043740/traces.jsonl
+    bytes: 568864747
+    sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
+    license: Apache-2.0
 derived:
   crag/crag_task_1_and_2_dev_v4.first_500.jsonl:
     group: crag

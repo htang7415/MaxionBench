@@ -1,0 +1,23 @@
+schema_version: maxionbench-kvsim-v1
+name: k1-agent-kv-retention
+description: >
+  K1: does pause-aware KV retention cut prefill recompute for agent traffic? Replays the AgentX
+  Claude Code traces (393 sessions, idle gaps capped at 300 s) at trace timing over 4 replicas with
+  llm-d-style prefix+load routing, 64 sessions active at once (16 per replica), sweeping KV capacity
+  per replica. Eviction: vLLM-like LRU vs per-stream EWMA retention vs an ideal "back within 60 s"
+  hint vs an oracle that knows each stream's next call. Below ~2M tokens per replica the in-flight
+  prompts alone overflow the cache, so those capacities are excluded.
+trace: agentx/cc_traces_256k.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+params:
+  replicas: 4
+  concurrency: 64
+  routing: prefix_load
+  ewma_k: 4.0
+  hint_s: 60.0
+  warmup_s: 1800.0
+matrix:
+  capacity_tokens: [2000000, 3000000, 4000000, 6000000]
+  eviction: [lru, ewma, hint, oracle]
