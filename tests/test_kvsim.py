@@ -122,3 +122,38 @@ def test_predicted_without_error_matches_oracle():
     common = dict(replicas=1, concurrency=2, capacity_tokens=64 * 16, routing="session", warmup_s=0.0)
     oracle = simulate(sessions, SimParams(**common, eviction="oracle"), 3)
     assert simulate(sessions, SimParams(**common, eviction="predicted", noise_sigma=0.0), 3) == oracle
+
+
+def test_cpu_tier_turns_evictions_into_loads():
+    sessions = _two_agents()
+    common = dict(replicas=1, concurrency=2, capacity_tokens=64 * 16, routing="session", warmup_s=0.0,
+                  eviction="lru")
+    seed = next(s for s in range(100) if _first_two(s, len(sessions)) == {0, 1})
+    gpu_only = simulate(sessions, SimParams(**common), seed)
+    tiered = simulate(sessions, SimParams(**common, cpu_capacity_tokens=64 * 64, load_cost=0.25), seed)
+    assert gpu_only["cpu_loaded_share"] == 0 and gpu_only["miss_evicted_share"] > 0
+    assert tiered["cpu_loaded_share"] > 0 and tiered["miss_evicted_share"] == 0
+    assert tiered["token_hit_rate"] == gpu_only["token_hit_rate"]  # GPU hits unchanged; loads replace recompute
+    assert tiered["recomputed_tokens_per_request"] < gpu_only["recomputed_tokens_per_request"]
+    loaded_per_request = tiered["cpu_loaded_share"] * tiered["prompt_tokens_per_request"]
+    assert tiered["prefill_cost_tokens_per_request"] == pytest.approx(
+        tiered["recomputed_tokens_per_request"] + 0.25 * loaded_per_request)
+
+
+def test_tiered_routing_follows_kv_demoted_to_cpu():
+    r0 = Replica(capacity_blocks=4, cpu_blocks=8)
+    r0.cpu.update({1: None, 2: None, 3: None})
+    assert r0.cached_prefix([1, 2, 3]) == 0 and r0.cpu_run([1, 2, 3], 0) == 3
+    # A runs on replica 0 and pauses; B's long call on replica 0 pushes A's context to its CPU tier.
+    # When A returns, GPU-only routing prefers idle replica 1 and recomputes; tier-aware routing
+    # goes back to replica 0 and loads A's prefix from CPU.
+    a = _session("a", [_req(0, 1, range(0, 8), next_t=30), _req(30, 1, range(0, 9))])
+    b = _session("b", [_req(2, 100, range(100, 108))])
+    filler = [_session(f"f{i}", [_req(200, 1, [1000 + i])]) for i in range(3)]
+    sessions = [a, b, *filler]
+    seed = next(s for s in range(100) if _first_two(s, len(sessions)) == {0, 1})
+    common = dict(replicas=2, concurrency=2, capacity_tokens=64 * 10, cpu_capacity_tokens=64 * 64, warmup_s=0.0)
+    gpu_only = simulate(sessions, SimParams(**common, routing="prefix_load"), seed)
+    tiered = simulate(sessions, SimParams(**common, routing="tiered_prefix_load"), seed)
+    assert gpu_only["miss_routing_share"] > 0 and gpu_only["cpu_loaded_share"] == 0
+    assert tiered["miss_routing_share"] == 0 and tiered["cpu_loaded_share"] > 0

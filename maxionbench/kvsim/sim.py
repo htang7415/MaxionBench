@@ -19,8 +19,15 @@ Eviction (unreferenced blocks only):
 A uniform TTL for every block would order evictions exactly like LRU, so retention only helps when it
 differs between sessions; that is what the three pause-aware policies test.
 
+CPU tier (cpu_capacity_tokens > 0): a block evicted from the GPU tier is demoted to a per-replica
+LRU tier in host memory (vLLM KV offloading / LMCache style) instead of dropped. A request then
+reuses its GPU-resident prefix, loads the continuing run found in the CPU tier back to the GPU
+(exclusive: it leaves the CPU tier), and recomputes only the rest. `load_cost` prices a loaded token
+relative to a recomputed one (PCIe transfer vs prefill; an assumption, reported with the results).
+
 Routing: round_robin (per request), session (sticky, random assignment, like prompt_cache_key
-hashing), prefix_load (llm-d style: 3 x cached-prefix fraction + 2 x free in-flight capacity).
+hashing), prefix_load (llm-d style: 3 x cached-prefix fraction + 2 x free in-flight capacity),
+tiered_prefix_load (the same, counting the prefix held in the replica's CPU tier as cached).
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ from typing import Sequence
 
 from maxionbench.kvsim.traces import BLOCK_TOKENS, Request, Session
 
-ROUTINGS = ("round_robin", "session", "prefix_load")
+ROUTINGS = ("round_robin", "session", "prefix_load", "tiered_prefix_load")
 EVICTIONS = ("lru", "ewma", "hint", "oracle", "predicted")
 EWMA_ALPHA = 0.3
 EWMA_PRIOR_S = 2.0  # median gap between calls in the AgentX corpus
@@ -51,12 +58,16 @@ class SimParams:
     hint_s: float = 60.0
     noise_sigma: float = 0.0
     warmup_s: float = 1800.0  # requests before this are not measured
+    cpu_capacity_tokens: int = 0  # host-memory KV tier per replica; 0 = none
+    load_cost: float = 0.2  # cost of loading a token from the CPU tier, relative to recomputing it
 
     def __post_init__(self) -> None:
         if self.routing not in ROUTINGS:
             raise ValueError(f"routing {self.routing!r} not in {ROUTINGS}")
         if self.eviction not in EVICTIONS:
             raise ValueError(f"eviction {self.eviction!r} not in {EVICTIONS}")
+        if self.cpu_capacity_tokens < 0 or self.load_cost < 0:
+            raise ValueError("cpu_capacity_tokens and load_cost must be non-negative")
         if self.replicas < 1 or self.concurrency < 1 or self.capacity_tokens < BLOCK_TOKENS:
             raise ValueError("replicas, concurrency, and capacity_tokens must be positive")
 
@@ -118,8 +129,10 @@ class FreeBlocks:
 
 
 class Replica:
-    def __init__(self, capacity_blocks: int) -> None:
+    def __init__(self, capacity_blocks: int, cpu_blocks: int = 0) -> None:
         self.capacity = capacity_blocks
+        self.cpu_capacity = cpu_blocks
+        self.cpu: OrderedDict[int, None] = OrderedDict()  # host-memory tier, LRU
         self.ref: dict[int, int] = {}  # resident prompt blocks -> reference count
         self.resident = 0  # prompt blocks + in-flight output blocks
         self.free = FreeBlocks()
@@ -136,6 +149,21 @@ class Replica:
             n += 1
         return n
 
+    def demote(self, key: int) -> None:
+        if self.cpu_capacity:
+            self.cpu[key] = None
+            self.cpu.move_to_end(key)
+            if len(self.cpu) > self.cpu_capacity:
+                self.cpu.popitem(last=False)
+
+    def cpu_run(self, keys: Sequence[int], start: int) -> int:
+        """End index of the run of `keys` from `start` held in the CPU tier."""
+        cpu = self.cpu
+        j = start
+        while j < len(keys) and keys[j] in cpu:
+            j += 1
+        return j
+
 
 @dataclass
 class _Stream:
@@ -148,6 +176,7 @@ class _Totals:
         self.requests = 0
         self.prompt_tokens = 0
         self.hit_tokens = 0
+        self.loaded_tokens = 0
         self.miss_cold = 0.0
         self.miss_evicted = 0.0
         self.miss_routing = 0.0
@@ -163,7 +192,8 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
     rng.shuffle(order)
     if len(order) <= p.concurrency:
         raise ValueError(f"need more than {p.concurrency} sessions to reach steady state, have {len(order)}")
-    replicas = [Replica(p.capacity_tokens // BLOCK_TOKENS) for _ in range(p.replicas)]
+    replicas = [Replica(p.capacity_tokens // BLOCK_TOKENS, p.cpu_capacity_tokens // BLOCK_TOKENS)
+                for _ in range(p.replicas)]
     events: list[tuple[float, int, int, tuple]] = []  # (time, kind, seq, payload); kind 0 = done first
     seq = 0
     streams: dict[tuple[int, int], _Stream] = {}
@@ -196,9 +226,13 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
             return replicas[sticky[s_idx]]
         most = max(r.inflight for r in replicas) + 1
         n = max(len(keys), 1)
+
+        def prefix(r: Replica) -> int:
+            gpu = r.cached_prefix(keys)
+            return r.cpu_run(keys, gpu) if p.routing == "tiered_prefix_load" else gpu
+
         best = max(range(p.replicas), key=lambda i: (
-            3 * replicas[i].cached_prefix(keys) / n + 2 * (1 - replicas[i].inflight / most), -replicas[i].inflight,
-            -i))
+            3 * prefix(replicas[i]) / n + 2 * (1 - replicas[i].inflight / most), -replicas[i].inflight, -i))
         return replicas[best]
 
     for s_idx in (next(pending) for _ in range(p.concurrency)):
@@ -241,16 +275,19 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
             if c == 0:
                 free.take(k)
             ref[k] = c + 1
-        missed = keys[hit:]
+        loaded_end = rep.cpu_run(keys, hit)
+        for k in keys[hit:loaded_end]:
+            del rep.cpu[k]  # moves back to the GPU tier below
+        missed = keys[loaded_end:]
         cold = routed = 0
         for k in missed:
             if k not in seen:
                 cold += 1
                 seen.add(k)
-            elif any(k in other.ref for other in replicas if other is not rep):
+            elif any(k in other.ref or k in other.cpu for other in replicas if other is not rep):
                 routed += 1
         out_blocks = -(-req.out_tokens // BLOCK_TOKENS)
-        need = len(missed) + out_blocks
+        need = len(keys) - hit + out_blocks
         overflow = False
         while rep.resident + need > rep.capacity:
             victim = free.evict(now)
@@ -258,9 +295,10 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
                 overflow = True
                 break
             del ref[victim]
+            rep.demote(victim)
             rep.resident -= 1
             evictions += 1
-        for k in missed:
+        for k in keys[hit:]:
             c = ref.get(k)
             if c is None:
                 ref[k] = 1
@@ -274,10 +312,12 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
         rep.requests += 1
         if now >= p.warmup_s:
             hit_tokens = min(hit * BLOCK_TOKENS, req.in_tokens)
-            miss_tokens = req.in_tokens - hit_tokens
+            loaded_tokens = min(loaded_end * BLOCK_TOKENS, req.in_tokens) - hit_tokens
+            miss_tokens = req.in_tokens - hit_tokens - loaded_tokens
             tot.requests += 1
             tot.prompt_tokens += req.in_tokens
             tot.hit_tokens += hit_tokens
+            tot.loaded_tokens += loaded_tokens
             if missed:
                 per_block = miss_tokens / len(missed)
                 tot.miss_cold += cold * per_block
@@ -300,8 +340,12 @@ def simulate(sessions: Sequence[Session], p: SimParams, seed: int) -> dict[str, 
     return {
         "requests_measured": float(tot.requests),
         "window_s": float(last_start - p.warmup_s) if math.isfinite(last_start) else float("nan"),
+        "prompt_tokens_per_request": prompt / tot.requests,
         "token_hit_rate": tot.hit_tokens / prompt,
-        "recomputed_tokens_per_request": (prompt - tot.hit_tokens) / tot.requests,
+        "recomputed_tokens_per_request": (prompt - tot.hit_tokens - tot.loaded_tokens) / tot.requests,
+        "cpu_loaded_share": tot.loaded_tokens / prompt,
+        "prefill_cost_tokens_per_request":
+            (prompt - tot.hit_tokens - (1 - p.load_cost) * tot.loaded_tokens) / tot.requests,
         "miss_cold_share": tot.miss_cold / prompt,
         "miss_evicted_share": tot.miss_evicted / prompt,
         "miss_routing_share": tot.miss_routing / prompt,
