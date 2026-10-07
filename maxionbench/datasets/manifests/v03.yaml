@@ -89,6 +89,88 @@ files:
     bytes: 568864747
     sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
     license: Apache-2.0
+  copilot/date.2026-06-01.tar.gz:
+    group: copilot
+    # GitHub Copilot coding-agent traces 2026 (Azure Public Dataset): 301K sessions, June 1-7 2026,
+    # metadata only (LLM calls with segment token counts and cached tokens, tool batches). One archive per day.
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-01.tar.gz
+    bytes: 594479134
+    sha256: cacad69f23d3c87ac54d788fec3f8e9c84df82c0cc9638d693340423c14e68e9
+    license: CC-BY-4.0
+  copilot/date.2026-06-02.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-02.tar.gz
+    bytes: 621345734
+    sha256: 95b0450041095dbe88181b88841c64b1e42f55a0127aa7abe91c1c9d3b424240
+    license: CC-BY-4.0
+  copilot/date.2026-06-03.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-03.tar.gz
+    bytes: 618403924
+    sha256: 622a5b0742eeb196d69d9a5ee5f6457cf82d432ddc435b9eb76eb5bb4363f1d0
+    license: CC-BY-4.0
+  copilot/date.2026-06-04.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-04.tar.gz
+    bytes: 572771629
+    sha256: fd81d45e0149cae10aa193f2c2536ae709a5eba61b5aa886e534587e80473028
+    license: CC-BY-4.0
+  copilot/date.2026-06-05.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-05.tar.gz
+    bytes: 548375182
+    sha256: ababba256966dc8bb005c98fbb4b72faea5301e17dcd949fd5b69e71b8239c50
+    license: CC-BY-4.0
+  copilot/date.2026-06-06.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-06.tar.gz
+    bytes: 124247983
+    sha256: 9546e3fd156d379e2420b8a0ada496ff507cf74aab32b9fc97bd1b6b353fa182
+    license: CC-BY-4.0
+  copilot/date.2026-06-07.tar.gz:
+    group: copilot
+    url: https://github.com/Azure/AzurePublicDataset/releases/download/ghcp-coding-agent-2026/date.2026-06-07.tar.gz
+    bytes: 139262550
+    sha256: 8b6da125b486aea3eb37c752adf6be14d61dd1e6a584f5967bca7077fafe8c3c
+    license: CC-BY-4.0
+  browsecomp_plus/test-00000-of-00006.parquet:
+    group: browsecomp_plus
+    # BrowseComp-Plus queries (830) with per-query gold, evidence and hard-negative web documents.
+    # Fields other than query_id are XOR-obfuscated (canary: never publish plain text).
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00000-of-00006.parquet
+    bytes: 508023004
+    sha256: 4ff9e93054eaee61b8d079a89b7ec4d02f16c9d05fa6e2fef7185b0786427a3a
+    license: MIT
+  browsecomp_plus/test-00001-of-00006.parquet:
+    group: browsecomp_plus
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00001-of-00006.parquet
+    bytes: 439458597
+    sha256: 70cc3a6781693bb013c6855f231d15159222dddf826eb19947f6f85fcabccd4e
+    license: MIT
+  browsecomp_plus/test-00002-of-00006.parquet:
+    group: browsecomp_plus
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00002-of-00006.parquet
+    bytes: 447012029
+    sha256: f4fab28dcd293231da1b9da48680a19c7cdcb831df889d0691304de66016d194
+    license: MIT
+  browsecomp_plus/test-00003-of-00006.parquet:
+    group: browsecomp_plus
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00003-of-00006.parquet
+    bytes: 415470437
+    sha256: e738eb7a2e76feebe60632fc279a99773586d75ce5344e205c9c53fc3071c126
+    license: MIT
+  browsecomp_plus/test-00004-of-00006.parquet:
+    group: browsecomp_plus
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00004-of-00006.parquet
+    bytes: 473281326
+    sha256: 25535ff3d41be25d8b213b903c478f34c18082af3cbfe0a4a3925989b84c87e4
+    license: MIT
+  browsecomp_plus/test-00005-of-00006.parquet:
+    group: browsecomp_plus
+    url: https://huggingface.co/datasets/Tevatron/browsecomp-plus/resolve/144cff8e35b5eaef7e526346aa60774a9deb941f/data/test-00005-of-00006.parquet
+    bytes: 498182760
+    sha256: 3a87031c5214322344b358db1d5f44d773b4d634ae43c60ce53ad582ccc47646
+    license: MIT
 derived:
   crag/crag_task_1_and_2_dev_v4.first_500.jsonl:
     group: crag

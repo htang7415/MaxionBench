@@ -8,7 +8,6 @@ import time
 import pytest
 
 from maxionbench.rag.answer_metrics import exact_match, normalize_answer, token_f1
-from maxionbench.rag.fusion import reciprocal_rank_fusion
 from maxionbench.rag.llm_client import CompletionResult, chat_completion
 from maxionbench.rag.loadgen import RequestSpec, poisson_arrivals, run_open_loop, summarize
 from maxionbench.rag.routing import LeastOutstanding, PrefixAffinity, RoundRobin
@@ -19,12 +18,6 @@ def test_answer_metrics_follow_squad_normalization() -> None:
     assert exact_match("the Animorphs", "Animorphs") == 1.0
     assert token_f1("Chief of Protocol of the US", "Chief of Protocol") == pytest.approx(0.75)
     assert token_f1("", "yes") == 0.0
-
-
-def test_rrf_rewards_agreement_and_breaks_ties_stably() -> None:
-    fused = reciprocal_rank_fusion([["a", "b", "c"], ["b", "d", "a"]], top_k=3)
-    assert fused[:2] == ["b", "a"]
-    assert reciprocal_rank_fusion([["x"], ["y"]], top_k=2) == ["x", "y"]
 
 
 def test_round_robin_and_least_outstanding() -> None:
@@ -168,7 +161,7 @@ def test_chat_completion_reports_connection_failure_without_raising() -> None:
 
 
 def test_serving_workload_shares_session_prefix_and_preserves_turn_order(tmp_path) -> None:
-    from maxionbench.tools.serving_bench import build_workload
+    from maxionbench.harness.workloads import build_workload
 
     (tmp_path / "corpus.jsonl").write_text(
         "".join(json.dumps({"doc_id": f"d{i}", "text": f"paragraph {i}"}) + "\n" for i in range(20)), encoding="utf-8"
@@ -191,18 +184,3 @@ def test_serving_workload_shares_session_prefix_and_preserves_turn_order(tmp_pat
         contexts = {s.messages[1]["content"].rsplit("\n\nQuestion:", 1)[0] for s in turns}
         assert len(contexts) == 1  # identical prefix across turns -> cacheable
         assert len({s.prefix_key for s in turns}) == 1
-
-
-def test_paired_generation_deltas_pairs_by_query() -> None:
-    from maxionbench.rag.stats import paired_generation_deltas
-
-    recs = [
-        {"status": "ok", "pipeline": p, "k": 3, "query_id": f"q{i}", "em": em, "f1": em}
-        for i in range(20)
-        for p, em in (("dense", 0.0), ("rerank", 1.0 if i < 15 else 0.0))
-    ]
-    out = paired_generation_deltas(recs, [("rerank@k3", "dense@k3"), ("missing@k3", "dense@k3")])
-    assert list(out) == ["rerank@k3 - dense@k3"]
-    em = out["rerank@k3 - dense@k3"]["em"]
-    assert (em["n"], em["delta"], em["wins"], em["losses"]) == (20, 0.75, 15, 0)
-    assert em["ci95"][0] > 0

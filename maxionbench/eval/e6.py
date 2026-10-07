@@ -41,7 +41,7 @@ from maxionbench.harness.targets import GeminiTarget
 from maxionbench.metrics.latency import latency_summary
 from maxionbench.rag.llm_client import CompletionResult, chat_completion
 from maxionbench.schemas.result_schema import utc_now_iso
-from maxionbench.tools.rag_eval import SYSTEM_PROMPT
+from maxionbench.eval.qa import SYSTEM_PROMPT
 
 MODEL = "gemini-3.5-flash-lite"
 REST = "https://generativelanguage.googleapis.com/v1beta"

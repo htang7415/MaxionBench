@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 import random
 from typing import Any, Mapping
@@ -57,10 +58,74 @@ def make_workload(kind: str, params: Mapping[str, Any], seed: int) -> Workload:
     )
 
 
-def _rag_sessions(params: Mapping[str, Any], seed: int) -> list[RequestSpec]:
-    """Multi-turn HotpotQA sessions sharing a k-paragraph context (see serving_bench.build_workload)."""
-    from maxionbench.tools.serving_bench import build_workload
+FOLLOW_UPS = (
+    "Which document numbers support your answer? Reply with the numbers only.",
+    "Quote the single most relevant sentence from the documents.",
+    "Name one entity from the documents that is relevant to the question.",
+)
 
+
+def build_workload(dataset_dir: Path, *, sessions: int, turns: int, k: int, window: int, seed: int) -> list[RequestSpec]:
+    """Sessions share a k-paragraph context (gold evidence + random distractors) across turns."""
+    from maxionbench.eval.qa import build_messages
+
+    rng = random.Random(seed)
+    docs: dict[str, str] = {}
+    with (dataset_dir / "corpus.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            docs[row["doc_id"]] = row["text"]
+    gold: dict[str, list[str]] = {}
+    with (dataset_dir / "qrels.tsv").open(encoding="utf-8") as fh:
+        next(fh)
+        for line in fh:
+            qid, doc_id, _ = line.rstrip("\n").split("\t")
+            gold.setdefault(qid, []).append(doc_id)
+    questions = []
+    with (dataset_dir / "queries.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row["query_id"] in gold:
+                questions.append(row)
+    doc_ids = list(docs)
+    chosen = rng.sample(questions, sessions)
+    per_session: list[list[RequestSpec]] = []
+    for s, q in enumerate(chosen):
+        ctx_ids = gold[q["query_id"]][:k]
+        ctx_ids += [d for d in rng.sample(doc_ids, k) if d not in ctx_ids][: k - len(ctx_ids)]
+        rng.shuffle(ctx_ids)
+        ctx = [docs[d] for d in ctx_ids]
+        prompts = [q["text"], *FOLLOW_UPS][:turns]
+        per_session.append(
+            [
+                RequestSpec(
+                    request_id=f"s{s}-t{t}",
+                    session_id=f"s{s}",
+                    prefix_key=f"s{s}",
+                    messages=tuple(build_messages(prompt, ctx)),
+                    fallback_text=ctx[0][:200],  # retrieval-only degraded answer
+                )
+                for t, prompt in enumerate(prompts)
+            ]
+        )
+    # Interleave: `window` sessions are active at once; each request is the next turn of a random active session.
+    order: list[RequestSpec] = []
+    pending = list(range(sessions))
+    active = [pending.pop(0) for _ in range(min(window, sessions))]
+    cursor = [0] * sessions
+    while active:
+        s = rng.choice(active)
+        order.append(per_session[s][cursor[s]])
+        cursor[s] += 1
+        if cursor[s] == len(per_session[s]):
+            active.remove(s)
+            if pending:
+                active.append(pending.pop(0))
+    return order
+
+
+def _rag_sessions(params: Mapping[str, Any], seed: int) -> list[RequestSpec]:
+    """Multi-turn HotpotQA sessions sharing a k-paragraph context (see build_workload)."""
     _check_keys("rag_sessions", params, LOADGEN_KEYS | {"dataset", "sessions", "turns", "k", "window"})
     return build_workload(
         Path(str(params.get("dataset", "dataset/processed/hotpot_portable"))),

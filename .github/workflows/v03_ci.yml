@@ -41,12 +41,8 @@ jobs:
       - name: Result schema is current
         run: python -m maxionbench.harness schema --check
       - name: Pytest
-        # test_repo_hygiene predates v0.3 and asserts AGENTS.md/docs/ are tracked, which the
-        # project deliberately keeps local; dataset-dependent tests skip without dataset/.
-        run: |
-          python -m pytest -q \
-            --deselect tests/test_repo_hygiene.py::test_gitignore_blocks_generated_and_local_artifacts \
-            --deselect tests/test_repo_hygiene.py::test_only_explicit_local_docs_are_gitignored
+        # dataset-dependent tests skip without dataset/.
+        run: python -m pytest -q
 
   go:
     runs-on: ubuntu-latest
