@@ -24,6 +24,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from maxionbench.agents.context import Policy as ContextPolicy
 from maxionbench.agents.browsecomp_env import SYSTEM_PROMPT, BrowseTask, load_tasks, write_docs
 from maxionbench.agents.loop import AgentRun, ChatPolicy, run_agent
 from maxionbench.eval.batch import Call, bound_send, metered, retryable, run_calls
@@ -44,7 +45,8 @@ def _log(msg: str) -> None:
     print(f"[agent-trial] {msg}", file=sys.stderr, flush=True)
 
 
-def run_task(task: BrowseTask, policy: ChatPolicy, max_steps: int, workdir: Path) -> AgentRun:
+def run_task(task: BrowseTask, policy: ChatPolicy, max_steps: int, workdir: Path,
+             context: ContextPolicy | None = None) -> AgentRun:
     """One agent run against an MCP server holding only this task's documents."""
     docs = workdir / f"{task.task_id}.json"
     write_docs(task, docs)
@@ -54,7 +56,7 @@ def run_task(task: BrowseTask, policy: ChatPolicy, max_steps: int, workdir: Path
     async def main() -> AgentRun:
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
-            return await run_agent(session, policy, task, max_steps, SYSTEM_PROMPT)
+            return await run_agent(session, policy, task, max_steps, SYSTEM_PROMPT, context)
 
     try:
         return asyncio.run(main())

@@ -12,6 +12,7 @@ import pytest
 
 from maxionbench.agents import browsecomp_env
 from maxionbench.agents.browsecomp_env import CANARY, SHARDS, BrowseTask, DocCorpus, decrypt, load_tasks
+from maxionbench.agents.context import MASK_TEXT, Mask
 from maxionbench.agents.hotpot_env import SearchHit
 from maxionbench.agents.loop import PolicyOutput, ToolCall
 from maxionbench.eval.agent_trial import run_task, summarize
@@ -82,9 +83,11 @@ class ScriptedPolicy:
     def __init__(self) -> None:
         self.results: list[Any] = []
         self.step = 0
+        self.seen: list[list[dict[str, Any]]] = []
 
     def __call__(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> PolicyOutput:
         self.step += 1
+        self.seen.append(messages)
         last = messages[-1]["content"]
         if self.step == 1:
             return PolicyOutput(tool_calls=(ToolCall("c1", "search", {"query": "mill river"}),))
@@ -100,6 +103,15 @@ def test_run_task_serves_only_the_tasks_documents_over_mcp(tmp_path: Path) -> No
     assert (run.status, run.answer) == ("answered", "paper")
     assert [c["name"] for c in run.tool_calls] == ["search", "read"]
     assert list(tmp_path.iterdir()) == []  # the decrypted document file is removed
+
+
+def test_context_policy_shapes_what_the_model_sees(tmp_path: Path) -> None:
+    task = BrowseTask("7", "Which mill?", "paper", {"m": "paper mill on the river", "h": "harbor film"}, ("m",))
+    agent = ScriptedPolicy()
+    run = run_task(task, agent, max_steps=5, workdir=tmp_path, context=Mask(keep=1))  # type: ignore[arg-type]
+    assert run.answer == "paper"  # the newest result (the page read) stays visible
+    search_result = [m for m in agent.seen[2] if m["role"] == "tool"][0]
+    assert search_result["content"] == MASK_TEXT  # the older search result was masked in the third call
 
 
 def test_summarize_applies_both_gates() -> None:
