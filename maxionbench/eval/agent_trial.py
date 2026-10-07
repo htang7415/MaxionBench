@@ -46,7 +46,7 @@ def _log(msg: str) -> None:
 
 
 def run_task(task: BrowseTask, policy: ChatPolicy, max_steps: int, workdir: Path,
-             context: ContextPolicy | None = None) -> AgentRun:
+             context: ContextPolicy | None = None, system_prompt: str = SYSTEM_PROMPT) -> AgentRun:
     """One agent run against an MCP server holding only this task's documents."""
     docs = workdir / f"{task.task_id}.json"
     write_docs(task, docs)
@@ -56,7 +56,7 @@ def run_task(task: BrowseTask, policy: ChatPolicy, max_steps: int, workdir: Path
     async def main() -> AgentRun:
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
-            return await run_agent(session, policy, task, max_steps, SYSTEM_PROMPT, context)
+            return await run_agent(session, policy, task, max_steps, system_prompt, context)
 
     try:
         return asyncio.run(main())
