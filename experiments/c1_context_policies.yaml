@@ -1,0 +1,22 @@
+schema_version: maxionbench-context-v1
+name: c1-context-policies
+description: >
+  Context policies on agentic BrowseComp-Plus (pool of 10 queries' pages per task, search returns the top
+  3 pages): gemini-3.5-flash-lite (reasoning minimal) as the agent, the calibrated judge (qa-judge-v1)
+  for correctness. Policy settings are scaled to this suite (3-10 model calls, median peak ~45k tokens).
+seed: 0
+pool: 10
+tasks: 50
+max_steps: 15
+shards: 5
+budget_usd: 12.0
+model: {model: gemini-3.5-flash-lite, reasoning_effort: minimal}
+policies:
+  full: {}
+  truncate: {max_tokens: 2000}
+  window: {keep: 2}
+  mask: {keep: 1}
+  summarize: {trigger_tokens: 32000, keep: 1}
+  # budget well above the ~25k tokens one search adds, so edits are rare (pilot: 32k edited nearly every call)
+  window+cache: {keep: 2, budget_tokens: 96000}
+  mask+cache: {keep: 1, budget_tokens: 96000}
