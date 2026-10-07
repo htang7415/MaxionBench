@@ -13,8 +13,6 @@ secrets.
 | `dashboard` | `npm ci`; generated TypeScript types match the result schema; Vitest; production build |
 | `perf-smoke` | Runs `experiments/ci_smoke_sim.yaml` (llm-d-inference-sim) and `experiments/ci_smoke_llamacpp.yaml` (pinned llama.cpp CPU build, Qwen3-0.6B Q8_0, both SHA-256 verified), then `python -m maxionbench.harness.perf_gate ci/perf_baseline.yaml` |
 
-pytest deselects two `tests/test_repo_hygiene.py` checks that predate v0.3 and assert that
-`AGENTS.md` and local-only `docs/` files are tracked, which the project deliberately does not do.
 Playwright tests (`cd dashboard && npm run e2e`) need exported results and run locally only.
 
 ## Performance gate
@@ -36,15 +34,7 @@ these status checks:
 - `v03-ci / dashboard`
 - `v03-ci / perf-smoke`
 
-These are the defaults of the verifier:
-
-```bash
-maxionbench verify-branch-protection --repo <owner>/<repo> --branch main --json
-```
-
-It uses `GITHUB_TOKEN` (or `--token`) and exits `0` when every required check is configured and `2`
-when some are missing. If a job is renamed, update `DEFAULT_REQUIRED_CHECKS` in
-`maxionbench/tools/verify_branch_protection.py`, this document, and the pull request template together.
+If a job is renamed, update this document and the pull request template together.
 
 ## Retired in v0.3
 

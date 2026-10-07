@@ -16,17 +16,47 @@ import functools
 import json
 from pathlib import Path
 import random
+import shutil
 import sys
+import tempfile
 from typing import Any, Callable, Iterator
+from urllib.request import Request, urlopen
 
 import yaml
 
 from maxionbench.datasets.cache_integrity import sha256_file, verify_file_sha256
-from maxionbench.tools.download_datasets import download_file
 
 DATASET_ROOT = Path("dataset/v03")
 MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "v03.yaml"
 MANIFEST_SCHEMA = "maxionbench-datasets-v03"
+DEFAULT_HTTP_HEADERS = {"User-Agent": "MaxionBench/0.1"}
+
+
+def download_file(*, url: str, dest: Path, timeout_s: float = 60.0, force: bool = False) -> dict[str, str]:
+    if timeout_s <= 0:
+        raise ValueError("timeout_s must be > 0")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size > 0 and not force:
+        return {"url": url, "path": str(dest.resolve()), "source": "cache_hit"}
+
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=dest.parent,
+            prefix=f"{dest.name}.",
+            suffix=".part",
+            delete=False,
+        ) as handle:
+            tmp_path = Path(handle.name)
+            request = Request(url, headers=dict(DEFAULT_HTTP_HEADERS))
+            with urlopen(request, timeout=float(timeout_s)) as response:
+                shutil.copyfileobj(response, handle)
+        tmp_path.replace(dest)
+    except Exception:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    return {"url": url, "path": str(dest.resolve()), "source": "download"}
 
 
 @functools.cache

@@ -9,7 +9,20 @@ from pathlib import Path
 import random
 
 from maxionbench.datasets.loaders.v03 import CragExample
-from maxionbench.tools.rag_eval import build_messages
+
+SYSTEM_PROMPT = (
+    "Answer the question using only the numbered documents. Reply with the shortest possible answer "
+    "phrase and no explanation. For yes/no questions reply yes or no."
+)
+
+
+def build_messages(question: str, docs: list[str]) -> list[dict[str, str]]:
+    context = "\n\n".join(f"[{i}] {text}" for i, text in enumerate(docs, start=1))
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"{context}\n\nQuestion: {question}"},
+    ]
+
 
 CRAG_SYSTEM = (
     "Answer the question using the web search results. Reply with the shortest possible answer and "

@@ -9,7 +9,7 @@ python3.12 -m venv ~/.venvs/maxionbench
 . ~/.venvs/maxionbench/bin/activate
 python -m pip install --require-hashes -r requirements-dev.lock
 python -m pip install --no-deps --no-build-isolation -e .
-python -m pip install -e ".[rag,agents]"   # RAG/serving tools; MCP agent server and BM25 search
+python -m pip install -e ".[agents]"       # MCP agent server and BM25 search
 ```
 
 The Go gateway needs the Go version in `gateway/go.mod`; the dashboard needs Node 24.
@@ -47,7 +47,6 @@ results), and the CPU performance smoke runs in `experiments/ci_smoke_*.yaml` fo
 
 Keep changes focused. Add tests for behavior changes. When the result dataclasses change, regenerate
 the schema (`python -m maxionbench.harness schema --write`) and the dashboard types (`npm run types`).
-Document v0.1 artifact schema or benchmark-policy changes under `docs/migrations/`.
 
 Generated files under `artifacts/`, `results/`, `release/`, and `dashboard/public/data/` are not
 source files and should not be committed. Experiments that call paid APIs must go through the spend
@@ -58,7 +57,6 @@ After changing dependencies, regenerate the lock file with Python 3.12:
 ```bash
 python -m piptools compile \
   --extra dev \
-  --extra reporting \
   --allow-unsafe \
   --generate-hashes \
   --strip-extras \

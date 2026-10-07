@@ -18,54 +18,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-conformance = [
-  "pytest>=8.0,<9",
-]
 dev = [
   "build>=1.2,<2",
   "pip-tools>=7.4,<8",
   "pytest>=8.0,<9",
   "ruff>=0.9,<1",
 ]
-datasets = [
-  "ansicolors==1.1.8",
-  "docker==7.1.0",
-  "Jinja2==3.1.*",
-  "matplotlib==3.10.*",
-  "numpy==1.26.*",
-  "pandas==2.3.*",
-  "psutil==7.1.*",
-  "pytz==2023.3.post1",
-  "PyYAML==6.0.*",
-  "scikit-learn==1.7.*",
-  "scipy==1.16.*",
-]
-engines = [
-  "faiss-cpu>=1.8.0",
-  "lancedb>=0.7.0",
-  "psycopg[binary]>=3.2.0",
-  "qdrant-client>=1.9.0",
-]
-reporting = [
-  "matplotlib>=3.8",
-]
-embeddings = [
-  "torch>=2.2",
-  "numpy==1.26.*; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-  "transformers<5; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-  "transformers>=4.41.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
-]
-rag = [
-  "bm25s>=0.2,<1",
-  "sentence-transformers>=3,<6",
-  "torch>=2.2",
-]
 agents = [
   "bm25s>=0.2,<1",
   "mcp>=1.9,<2",
 ]
-[project.scripts]
-maxionbench = "maxionbench.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["maxionbench*"]
@@ -75,7 +37,7 @@ include = ["maxionbench*"]
 "maxionbench.graders" = ["calibration/*.jsonl"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "maxionbench/conformance"]
+testpaths = ["tests"]
 norecursedirs = [
   ".git",
   ".pytest_cache",
@@ -97,8 +59,3 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
-
-[tool.ruff.lint.per-file-ignores]
-"maxionbench/conformance/test_conformance.py" = ["F811"]
-# Legacy compatibility helpers remain in runner.py but are outside the active three-scenario path.
-"maxionbench/orchestration/runner.py" = ["F821"]
