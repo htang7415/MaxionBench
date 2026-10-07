@@ -4,8 +4,9 @@ Measures what context policies and prefix caching act on: context size and growt
 by segment type, context drops between consecutive calls (compaction or truncation by the product),
 cache hits after drops, model switches and pauses, and the tool and user pauses between calls.
 
-Calls without token accounting (the `tool-model` helper) are left out. Consecutive calls are taken in
-timestamp order within a session.
+Calls without token accounting (the `tool-model` helper) are left out. A call's `timestamp` marks its
+end (start = timestamp - duration): read that way, consecutive calls in a session almost never overlap
+(`overlapping_pair_share`), so a session is one sequential chain of calls.
 
     python -m maxionbench.eval.copilot_characterize [--days 2026-06-01 ...] [--limit 1000] [--jobs 7]
 """
@@ -29,6 +30,7 @@ DROP_RATIO = 0.7  # next prompt below 70% of the previous one: context was cut, 
 MIN_DROP_PROMPT = 2_000
 GAP_BINS_S = (0, 10, 60, 300, 3600, float("inf"))
 GROWTH_INDEXES = (1, 2, 4, 8, 16, 32, 64, 128)
+RESULT_SIZE_THRESHOLDS = (2_000, 8_000, 32_000)
 CALL_FIELDS = ("prompt", "cached", "completion", "index")  # index: position among the session's calls (1-based)
 PAIR_FIELDS = ("gap_s", "ratio", "prev_prompt", "next_cached_frac", "same_turn", "model_switch")
 
@@ -51,6 +53,7 @@ def profile_day(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -
     turns_per_session: list[int] = []
     sessions_with_drop = 0
     batch_ms: list[float] = []
+    new_tool_results: list[int] = []  # tokens of each tool result, counted in the call where it first appears
     for session in iter_sessions(day, root, limit):
         counts["sessions"] += 1
         turns = session["turns"] or []
@@ -65,8 +68,8 @@ def profile_day(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -
                     continue
                 n_turn += 1
                 prompt, cached = int(tok["prompt"]), int(tok.get("cached") or 0)
-                start = _epoch(c["timestamp"])
-                chain.append((start, start + (c["duration_ms"] or 0) / 1000, t_i, c["model"], prompt, cached,
+                end = _epoch(c["timestamp"])
+                chain.append((end - (c["duration_ms"] or 0) / 1000, end, t_i, c["model"], prompt, cached,
                               int(tok.get("completion") or 0)))
                 models[c["model"]] += 1
                 model_tokens[c["model"]] += prompt
@@ -78,6 +81,7 @@ def profile_day(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -
                     if prompt >= 100_000:
                         segments_long[key] += n
                 counts["segment_tokens"] += seg_total
+                new_tool_results += _new_tool_results(c["message_metadata"] or [])
                 counts["segment_prompt_tokens"] += prompt if seg_total else 0
             calls_per_turn.append(n_turn)
             for b in turn["tool_batches"] or []:
@@ -96,6 +100,7 @@ def profile_day(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -
                 continue
             _, p_end, p_turn, p_model, p_prompt, _, _ = chain[i - 1]
             ratio = prompt / p_prompt
+            counts["overlapping_pairs"] += start < p_end - 0.5
             pairs["gap_s"].append(max(0.0, start - p_end))
             pairs["ratio"].append(ratio)
             pairs["prev_prompt"].append(p_prompt)
@@ -111,8 +116,16 @@ def profile_day(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -
         "segments": segments, "segments_long": segments_long, "models": models, "model_tokens": model_tokens,
         "tools": tools, "tool_failures": tool_failures, "counts": counts,
         "calls_per_turn": np.asarray(calls_per_turn), "turns_per_session": np.asarray(turns_per_session),
-        "batch_ms": np.asarray(batch_ms),
+        "batch_ms": np.asarray(batch_ms), "new_tool_results": np.asarray(new_tool_results),
     }
+
+
+def _new_tool_results(metadata: list[dict[str, Any]]) -> list[int]:
+    """Token lengths of the tool messages after the prompt's last assistant message: the results of the
+    tool batch just run. Earlier tool messages were new in an earlier call."""
+    ordered = sorted(metadata, key=lambda m: m["sequenceId"])
+    last_assistant = max((i for i, m in enumerate(ordered) if m["role"] == "assistant"), default=-1)
+    return [int(m["token_len"] or 0) for m in ordered[last_assistant + 1:] if m["role"] == "tool"]
 
 
 def merge(parts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -127,10 +140,10 @@ def merge(parts: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
-def _pct(values: np.ndarray, qs: tuple[int, ...] = (50, 90, 99)) -> dict[str, float]:
+def _pct(values: np.ndarray, qs: tuple[float, ...] = (50, 90, 99)) -> dict[str, float]:
     if len(values) == 0:
         return {}
-    return {f"p{q}": round(float(np.percentile(values, q)), 3) for q in qs} | {"mean": round(float(values.mean()), 3)}
+    return {f"p{q:g}": round(float(np.percentile(values, q)), 3) for q in qs} | {"mean": round(float(values.mean()), 3)}
 
 
 def _mean(values: np.ndarray, mask: np.ndarray) -> float | None:
@@ -144,6 +157,7 @@ def _shares(counter: Counter[str], top: int | None = None) -> dict[str, float]:
 
 def summarize(d: dict[str, Any]) -> dict[str, Any]:
     c, p, n = d["calls"], d["pairs"], d["counts"]
+    results = d["new_tool_results"]
     prompt, cached = c["prompt"], c["cached"]
     order = np.sort(prompt)
     token_weighted_median = float(order[np.searchsorted(np.cumsum(order), order.sum() / 2)])
@@ -161,6 +175,7 @@ def summarize(d: dict[str, Any]) -> dict[str, Any]:
         "scale": {
             "sessions": n["sessions"], "turns": int(len(d["calls_per_turn"])), "llm_calls": int(len(prompt)),
             "calls_without_tokens": n["calls_without_tokens"], "tool_calls": int(sum(d["tools"].values())),
+            "overlapping_pair_share": round(n["overlapping_pairs"] / max(1, len(p["ratio"])), 6),
             "prompt_tokens": int(prompt.sum()), "cached_tokens": int(cached.sum()),
             "completion_tokens": int(c["completion"].sum()),
             "calls_per_turn": _pct(d["calls_per_turn"]), "turns_per_session": _pct(d["turns_per_session"]),
@@ -177,6 +192,10 @@ def summarize(d: dict[str, Any]) -> dict[str, Any]:
             "token_share": _shares(d["segments"]),
             "token_share_prompts_over_100k": _shares(d["segments_long"]),
             "segment_coverage": round(n["segment_tokens"] / max(1, n["segment_prompt_tokens"]), 4),
+            "new_tool_result_tokens": _pct(results, (50, 90, 99, 99.9)) | {"count": int(len(results))},
+            "tool_result_token_share_from_results_over": {
+                f"{k // 1000}k": round(float(results[results > k].sum() / max(1, results.sum())), 4)
+                for k in RESULT_SIZE_THRESHOLDS},
         },
         "drops": {
             "definition": f"same model, prompt < {DROP_RATIO} x previous, previous >= {MIN_DROP_PROMPT} tokens",
