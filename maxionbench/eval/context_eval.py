@@ -7,6 +7,7 @@ Gemini bills: input at the cached or uncached rate as reported, plus output and 
 summarizer calls. Correctness comes from the calibrated judge. Outputs hold ids and numbers only.
 
     python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml [--limit 3]
+    python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml --resume artifacts/context_eval/<run>
 """
 
 from __future__ import annotations
@@ -98,62 +99,134 @@ def _call_cost(price: ModelPrice, results: Sequence[Any]) -> float:
                         cached_tokens=r.cached_tokens) for r in results if r.status == "ok")
 
 
-def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = None) -> Path:
+class CreditsExhausted(RuntimeError):
+    """The provider refused a request for billing or quota reasons; the run stops and can be resumed."""
+
+
+def _fatal(error: str | None) -> bool:
+    return bool(error) and (error.startswith("http 402") or "RESOURCE_EXHAUSTED" in error)
+
+
+def _write_jsonl(path: Path, rows: Sequence[dict[str, Any]]) -> None:
+    scrub, _ = scrubber()
+    path.write_text("".join(scrub(json.dumps(r)) + "\n" for r in rows), encoding="utf-8")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+
+def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = None,
+                     resume: Path | None = None) -> Path:
+    """Run (or, with `resume`, finish) an evaluation. `items.jsonl` and the local-only `answers.jsonl` are
+    saved after every task group, so a stopped run resumes without repeating finished tasks."""
+    if resume is not None:
+        out_dir = Path(resume)
+        spec = yaml.safe_load((out_dir / "spec.yaml").read_text(encoding="utf-8"))
+        limit = spec.get("_task_limit")
+    else:
+        out_dir = out_root / f"{datetime.now(tz=timezone.utc):%Y%m%dT%H%M%SZ}-{spec['name']}"
+        out_dir.mkdir(parents=True)
+        (out_dir / "spec.yaml").write_text(yaml.safe_dump({**spec, "_task_limit": limit}, sort_keys=False),
+                                           encoding="utf-8")
     started_at = utc_now_iso()
-    run_id = f"{datetime.now(tz=timezone.utc):%Y%m%dT%H%M%SZ}-{spec['name']}"
-    out_dir = out_root / run_id
-    out_dir.mkdir(parents=True)
-    (out_dir / "spec.yaml").write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
     n = int(spec["tasks"]) if limit is None else min(int(spec["tasks"]), limit)
     seed, pool, max_steps, budget = int(spec["seed"]), int(spec["pool"]), int(spec["max_steps"]), float(spec["budget_usd"])
     policies: dict[str, dict[str, Any]] = {name: dict(params or {}) for name, params in spec["policies"].items()}
     tasks = load_tasks(n, seed, pool=pool)
+    by_id = {t.task_id: t for t in tasks}
+
+    # keep only complete task groups from earlier attempts; a partial group is rerun
+    items = _read_jsonl(out_dir / "items.jsonl")
+    if items and not (out_dir / "answers.jsonl").exists():
+        raise ValueError(f"{out_dir} has no answers.jsonl (made before resume support); start a new run")
+    done = {tid for tid in {it["task_id"] for it in items}
+            if {it["policy"] for it in items if it["task_id"] == tid} == set(policies)}
+    items = [it for it in items if it["task_id"] in done]
+    answers = {(a["task_id"], a["policy"]): a["answer"] for a in _read_jsonl(out_dir / "answers.jsonl")
+               if a["task_id"] in done}
+    spent_before = float(spec.get("_agent_spend_usd", 0.0))
+
     target, judge = GeminiTarget(spec["model"]), GeminiTarget(JUDGE)
     price = target.pricing()[1]
     send_tools, send_text = bound_send(target, chat_tools), bound_send(target, chat_completion)
+    stop: list[str] = []
 
-    def estimate(p: ModelPrice) -> float:  # the budget plus one task group at 60k uncached tokens per step
-        return budget + len(policies) * max_steps * cost_usd(p, input_tokens=60_000, output_tokens=MAX_TOKENS)
+    def estimate(p: ModelPrice) -> float:  # the remaining budget plus one task group at 60k uncached tokens per step
+        return max(0.0, budget - spent_before) + len(policies) * max_steps * cost_usd(
+            p, input_tokens=60_000, output_tokens=MAX_TOKENS)
 
     def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, **kwargs: Any) -> Any:
         for attempt in range(3):
             r = fn(target.base_urls[0], messages, max_tokens=max_tokens, timeout_s=120.0, **kwargs)
             meter.add(r, messages, max_tokens)
+            if _fatal(r.error):
+                stop.append(scrubber()[0](r.error or "")[:200])
+                return r
             if r.status == "ok" or not retryable(r.error):
                 return r
             time.sleep(2.0 * (attempt + 1))
         return r
 
-    items: list[dict[str, Any]] = []
+    def save() -> None:
+        _write_jsonl(out_dir / "items.jsonl", items)
+        _write_jsonl(out_dir / "answers.jsonl",  # local only: answers can contain benchmark text
+                     [{"task_id": k[0], "policy": k[1], "answer": v} for k, v in answers.items()])
+
     with target, metered(target, estimate, f"context-eval/{spec['name']}") as meter, \
             tempfile.TemporaryDirectory() as tmp:
         for i, task in enumerate(tasks):
-            if meter.spend_usd >= budget:
+            if task.task_id in done:
+                continue
+            if spent_before + meter.spend_usd >= budget:
                 _log(f"budget ${budget:.2f} reached after {i} tasks")
                 break
+            group = []
             for name, params in policies.items():
-                items.append(run_one(task, name, params, max_steps, Path(tmp), meter, price, with_retries,
-                                     send_tools, send_text))
-            _log(f"task {i + 1}/{len(tasks)} done, spend ${meter.spend_usd:.4f}")
-    agent_spend = meter.spend_usd
+                item, answer = run_one(task, name, params, max_steps, Path(tmp), meter, price, with_retries,
+                                       send_tools, send_text)
+                if stop:
+                    break
+                group.append((item, answer))
+            if stop:  # this group saw a refused request: discard it so a resume reruns the task
+                break
+            for item, answer in group:
+                items.append(item)
+                if answer is not None:
+                    answers[(item["task_id"], item["policy"])] = answer
+            done.add(task.task_id)
+            save()
+            _log(f"task {i + 1}/{len(tasks)} done, spend ${spent_before + meter.spend_usd:.4f}")
+    agent_spend = spent_before + meter.spend_usd
+    (out_dir / "spec.yaml").write_text(yaml.safe_dump({**spec, "_agent_spend_usd": round(agent_spend, 6)},
+                                                      sort_keys=False), encoding="utf-8")
+    if stop:
+        raise CreditsExhausted(f"provider refused requests ({stop[0]}); finished task groups are saved in "
+                               f"{out_dir}; add credit, then rerun with --resume {out_dir}")
 
-    calls = [Call(f"{it['task_id']}|{it['policy']}", judge_messages(it["_question"], [it["_gold"]], it["_text"]),
-                  max_tokens=512) for it in items if it["_answer"]]
+    pending = [it for it in items if it.get("judge_label") in (None, "judge_error")
+               and (it["task_id"], it["policy"]) in answers]
+    calls = [Call(f"{it['task_id']}|{it['policy']}",
+                  judge_messages(by_id[it["task_id"]].question, [by_id[it["task_id"]].answer],
+                                 answers[(it["task_id"], it["policy"])]), max_tokens=512) for it in pending]
     with judge:
         verdicts, judge_usage = run_calls(judge, calls, f"context-eval/{spec['name']}/judge", workers=8) \
             if calls else ({}, {"spend_usd": 0.0})
-    for it in items:  # drop task text before anything is written
-        for k in ("_question", "_gold", "_text", "_answer"):
-            del it[k]
-        verdict = verdicts.get(f"{it['task_id']}|{it['policy']}")
-        it["judge_label"] = (parse_label(verdict.text) if verdict else None) or "unjudged"
+    for it in items:
+        key = (it["task_id"], it["policy"])
+        if key not in answers:
+            it["judge_label"] = "unanswered"
+        elif it.get("judge_label") in (None, "judge_error"):
+            verdict = verdicts.get(f"{key[0]}|{key[1]}")
+            label = parse_label(verdict.text) if verdict is not None and verdict.status == "ok" else None
+            it["judge_label"] = label or "judge_error"
         it["correct"] = it["judge_label"] == "correct"
+    save()
+    failed = sum(it["judge_label"] == "judge_error" for it in items)
+    if failed:
+        raise CreditsExhausted(f"{failed} answers could not be judged; rerun with --resume {out_dir}")
 
-    scrub, key_present = scrubber()
-    with (out_dir / "items.jsonl").open("w", encoding="utf-8") as fh:
-        for it in items:
-            fh.write(scrub(json.dumps(it)) + "\n")
-    task_ids = list(dict.fromkeys(it["task_id"] for it in items))
+    task_ids = [t.task_id for t in tasks if t.task_id in done]
     shards = max(1, min(int(spec.get("shards", 5)), len(task_ids)))
     trials = []
     for name in policies:
@@ -164,16 +237,18 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                 trial_id=f"{name}-shard{s}", cell_id=name, repeat=s, seed=seed, status="ok", started_at=started_at,
                 duration_s=0.0, host_load_1m_before=0.0, quiet_host_ok=True, metrics=metrics(shard),
                 requests_per_endpoint=[sum(it["model_calls"] for it in shard)], target=target.describe(), error=None))
+    scrub, key_present = scrubber()
+    spend = {"agent": round(agent_spend, 4), "judge": judge_usage["spend_usd"]}
+    public_spec = {k: v for k, v in spec.items() if not k.startswith("_")}
     result = ExperimentResult(
-        schema_version=RESULT_SCHEMA_VERSION, run_id=run_id, name=spec["name"],
-        description=str(spec.get("description", "")), spec=spec,
-        provenance=make_provenance(spec, started_at, {
+        schema_version=RESULT_SCHEMA_VERSION, run_id=out_dir.name, name=spec["name"],
+        description=str(spec.get("description", "")), spec=public_spec,
+        provenance=make_provenance(public_spec, started_at, {
             "gemini_key_present": key_present, "judge_rubric": RUBRIC_VERSION, "task_limit": limit,
-            "tasks_completed": len(task_ids), "spend_usd": {"agent": round(agent_spend, 4),
-                                                             "judge": judge_usage["spend_usd"]}}),
+            "tasks_completed": len(task_ids), "resumed": resume is not None, "spend_usd": spend}),
         trials=trials, cells=aggregate_cells(trials, {name: {"policy": name, **p} for name, p in policies.items()}))
     (out_dir / "results.json").write_text(scrub(json.dumps(result.to_dict(), indent=2)) + "\n", encoding="utf-8")
-    summary = {"tasks": len(task_ids), "spend_usd": {"agent": round(agent_spend, 4), "judge": judge_usage["spend_usd"]},
+    summary = {"tasks": len(task_ids), "spend_usd": spend,
                "overall": {name: metrics([it for it in items if it["policy"] == name]) for name in policies},
                "paired_vs_full": paired_vs_full(items, list(policies))}
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
@@ -182,7 +257,9 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
 
 
 def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int, workdir: Path, meter: Meter,
-            price: ModelPrice, with_retries: Any, send_tools: Any, send_text: Any) -> dict[str, Any]:
+            price: ModelPrice, with_retries: Any, send_tools: Any, send_text: Any,
+            ) -> tuple[dict[str, Any], str | None]:
+    """One agent run: (item with ids and numbers only, the answer text or None)."""
     summaries: list[Any] = []
 
     def summarizer(messages: Sequence[Message]) -> str:
@@ -198,7 +275,7 @@ def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int,
     steps = [r for r in agent.results if r.status == "ok"]
     prompt = sum(r.prompt_tokens for r in steps)
     history_tokens = sum(h for h, _ in context.steps)
-    return {
+    item = {
         "task_id": task.task_id, "policy": name, "run_status": run.status,
         "error_type": (run.error or "").split(":", 1)[0] or None,  # type only: messages may quote task text
         "model_calls": len(agent.results), "summary_calls": len(summaries),
@@ -210,9 +287,8 @@ def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int,
         "edits": getattr(context.policy, "edits", getattr(context.policy, "compactions", 0)),  # rewrites of the view
         "cost_usd": round(_call_cost(price, agent.results) + _call_cost(price, summaries), 6),
         "summary_cost_usd": round(_call_cost(price, summaries), 6),
-        "_answer": run.status == "answered" and bool(run.answer), "_text": run.answer or "",
-        "_question": task.question, "_gold": task.answer,
     }
+    return item, (run.answer if run.status == "answered" and run.answer else None)
 
 
 def metrics(items: Sequence[dict[str, Any]]) -> dict[str, float]:
@@ -261,11 +337,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path("artifacts/context_eval"))
     parser.add_argument("--limit", type=int, help="cap tasks (pilot)")
     parser.add_argument("--budget-usd", type=float, help="override the spec budget (pilot)")
+    parser.add_argument("--resume", type=Path, help="finish a stopped run in this directory (uses its spec.yaml)")
     args = parser.parse_args(argv)
     spec = load_spec(args.spec)
     if args.budget_usd is not None:
         spec["budget_usd"] = args.budget_usd
-    out_dir = run_context_eval(spec, args.out, args.limit)
+    try:
+        out_dir = run_context_eval(spec, args.out, args.limit, args.resume)
+    except CreditsExhausted as exc:
+        _log(str(exc))
+        return 2
     print(json.dumps(json.loads((out_dir / "summary.json").read_text())["overall"], indent=2))
     return 0
 

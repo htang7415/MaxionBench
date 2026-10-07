@@ -49,9 +49,10 @@ def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, **kwargs
                                          ("summarize", {"trigger_tokens": 3_000, "keep": 1})])
 def test_run_one_records_cost_and_isolates_each_run(tmp_path: Path, name: str, params: dict[str, Any]) -> None:
     model = FakeModel()
-    item = context_eval.run_one(TASK, name, params, 6, tmp_path, Meter(PRICE), PRICE, with_retries,
-                                model.tools, model.text)
-    assert item["run_status"] == "answered" and item["_text"] == "paper" and item["model_calls"] == 4
+    item, answer = context_eval.run_one(TASK, name, params, 6, tmp_path, Meter(PRICE), PRICE, with_retries,
+                                        model.tools, model.text)
+    assert item["run_status"] == "answered" and answer == "paper" and item["model_calls"] == 4
+    assert "paper" not in json.dumps(item)  # items hold ids and numbers only
     assert model.prompts[0][0]["content"].startswith("run ")  # unique run id leads the system prompt
     agent_cost = sum((1_000 * s - 500 * s) * 1.0 + 500 * s * 0.1 + 10 * 10.0 for s in range(1, 5)) / 1e6
     assert item["cost_usd"] == pytest.approx(agent_cost + item["summary_cost_usd"], abs=1e-6)
@@ -87,3 +88,75 @@ def test_transcript_renders_calls_and_results_as_text() -> None:
         {"role": "tool", "content": "page"},
     ])
     assert text == "[user] task\n[agent called search({})]\n[tool result] page"
+
+
+class FakeTarget:
+    base_urls = ["http://unused"]
+
+    def __init__(self, params: Any) -> None:
+        pass
+
+    def __enter__(self) -> "FakeTarget":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass
+
+    def pricing(self) -> tuple[str, ModelPrice, float]:
+        return "fake", PRICE, 100.0
+
+    def describe(self) -> dict[str, Any]:
+        return {"kind": "fake"}
+
+
+def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tasks = [BrowseTask(str(i), f"Which mill {i}?", "paper", dict(TASK.docs), ("d0",)) for i in range(3)]
+    state: dict[str, Any] = {"refuse_after": None, "calls": 0, "judged": []}
+
+    def tools(base_url: str, messages: Any, *, max_tokens: int, timeout_s: float, tools: Any) -> CompletionResult:
+        state["calls"] += 1
+        if state["refuse_after"] is not None and state["calls"] > state["refuse_after"]:
+            return CompletionResult("", "error", None, 0.1, 0, 0, 0, "http 402: prepayment credits are depleted")
+        searched = sum(m["role"] == "tool" for m in messages)
+        message = ({"role": "assistant", "content": "paper"} if searched else
+                   {"role": "assistant", "content": None, "tool_calls": [
+                       {"id": "c1", "type": "function", "function": {"name": "search", "arguments": '{"query": "mill"}'}}]})
+        return CompletionResult(json.dumps(message), "ok", None, 0.1, 1_000, 0, 10)
+
+    def judge(target: Any, calls: Any, label: str, **kwargs: Any) -> Any:
+        state["judged"] += [c.id for c in calls]
+        return ({c.id: CompletionResult('{"label": "correct"}', "ok", None, 0.1, 10, 0, 5) for c in calls},
+                {"spend_usd": 0.0})
+
+    class FakeMeter:
+        def __enter__(self) -> Meter:
+            return Meter(PRICE)
+
+        def __exit__(self, *exc: object) -> None:
+            pass
+
+    monkeypatch.setattr(context_eval, "load_tasks", lambda n, seed, pool: tasks[:n])
+    monkeypatch.setattr(context_eval, "GeminiTarget", FakeTarget)
+    monkeypatch.setattr(context_eval, "bound_send", lambda target, send: tools if send.__name__ == "chat_tools" else None)
+    monkeypatch.setattr(context_eval, "metered", lambda *a, **k: FakeMeter())
+    monkeypatch.setattr(context_eval, "run_calls", judge)
+    spec = {"schema_version": context_eval.SCHEMA, "name": "t", "seed": 0, "pool": 1, "tasks": 3, "max_steps": 4,
+            "shards": 3, "budget_usd": 10.0, "model": {}, "policies": {"full": {}, "mask": {"keep": 1}}}
+    # each run makes 2 model calls (search, answer): tasks 0 and 1 finish (8 calls); task 2's first run is refused
+    state["refuse_after"] = 9
+    with pytest.raises(context_eval.CreditsExhausted, match="--resume"):
+        context_eval.run_context_eval(spec, tmp_path)
+    run_dir = next(tmp_path.iterdir())
+    saved = [json.loads(line) for line in (run_dir / "items.jsonl").read_text().splitlines()]
+    assert sorted({i["task_id"] for i in saved}) == ["0", "1"] and len(saved) == 4  # task 2's partial group dropped
+    assert not (run_dir / "results.json").exists() and state["judged"] == []
+
+    state["refuse_after"], calls_before = None, state["calls"]
+    out = context_eval.run_context_eval({}, tmp_path, resume=run_dir)
+    assert state["calls"] - calls_before == 4  # only task 2 reran (2 policies x 2 calls)
+    assert len(state["judged"]) == 6
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["tasks"] == 3 and summary["overall"]["full"]["accuracy"] == 1.0
+    answers = (out / "answers.jsonl").read_text()
+    assert answers.count("paper") == 6 and "paper" not in (out / "results.json").read_text()
