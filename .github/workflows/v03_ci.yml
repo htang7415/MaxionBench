@@ -100,7 +100,7 @@ jobs:
           python -m pip install --require-hashes -r requirements-dev.lock
           python -m pip install --no-deps --no-build-isolation -e .
       - name: Cache model and llama.cpp
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/models/Qwen3-0.6B-Q8_0.gguf
