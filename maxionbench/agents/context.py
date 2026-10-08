@@ -167,11 +167,16 @@ class Summarize:
 
 class CacheAware:
     """Append-only view of a stateless `base`: new messages are appended as `base` renders them, and the
-    whole view is re-rendered by `base` only when it passes `budget_tokens`."""
+    whole view is re-rendered by `base` only when it passes `budget_tokens`.
 
-    def __init__(self, base: Policy, budget_tokens: int = 64_000, count: TokenCounter = estimate_tokens) -> None:
+    With `min_growth` > 0, a re-rendered view must also grow by `min_growth` tokens before the next re-render:
+    when the base policy cannot bring a long history under the budget, re-rendering every call would break
+    the cached prefix every call."""
+
+    def __init__(self, base: Policy, budget_tokens: int = 64_000, count: TokenCounter = estimate_tokens,
+                 min_growth: int = 0) -> None:
         self.name = f"{base.name}+cache{budget_tokens // 1000}k"
-        self.base, self.budget, self.count = base, budget_tokens, count
+        self.base, self.budget, self.count, self.min_growth = base, budget_tokens, count, min_growth
         self.reset()
 
     def reset(self) -> None:
@@ -179,17 +184,20 @@ class CacheAware:
         self.prev: list[Message] | None = None
         self.seen = 0  # history messages already reflected in `prev`
         self.edits = 0
+        self.trigger = self.budget
 
     def view(self, history: Sequence[Message]) -> list[Message]:
         base_view = self.base.view(history)
         if self.prev is not None:
             new = len(history) - self.seen  # the newest messages render the same in both views
             appended = self.prev + (base_view[-new:] if new else [])
-            if self.count(appended) <= self.budget:
+            if self.count(appended) <= self.trigger:
                 self.prev, self.seen = appended, len(history)
                 return appended
             self.edits += 1
         self.prev, self.seen = base_view, len(history)
+        if self.min_growth:
+            self.trigger = max(self.budget, self.count(base_view) + self.min_growth)
         return base_view
 
 
@@ -197,6 +205,7 @@ def make_policy(name: str, summarizer: Summarizer | None = None, **params: Any) 
     """`full`, `truncate`, `window`, `mask`, `summarize`; `<name>+cache` wraps it in CacheAware."""
     base_name, _, wrapper = name.partition("+")
     budget = params.pop("budget_tokens", 64_000)
+    min_growth = params.pop("min_growth", 0)
     if base_name == "summarize":
         if summarizer is None:
             raise ValueError("summarize needs a summarizer")
@@ -206,7 +215,7 @@ def make_policy(name: str, summarizer: Summarizer | None = None, **params: Any) 
     else:
         policy = {"full": Full, "truncate": Truncate, "window": Window, "mask": Mask}[base_name](**params)
     if wrapper == "cache":
-        return CacheAware(policy, budget)
+        return CacheAware(policy, budget, min_growth=min_growth)
     if wrapper:
         raise ValueError(f"unknown wrapper {wrapper!r}")
     return policy

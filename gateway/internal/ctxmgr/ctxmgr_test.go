@@ -21,6 +21,7 @@ type parityFixture struct {
 		Policy       string  `json:"policy"`
 		Keep         int     `json:"keep"`
 		BudgetTokens int     `json:"budget_tokens"`
+		MinGrowth    int     `json:"min_growth"`
 		Views        [][]any `json:"views"`
 	} `json:"cases"`
 }
@@ -58,7 +59,7 @@ func TestParityWithPython(t *testing.T) {
 	}
 	for ci, c := range fx.Cases {
 		h := fx.Histories[c.History]
-		m := New(Config{Policy: c.Policy, Keep: c.Keep, BudgetTokens: c.BudgetTokens, MaxSessions: 10})
+		m := New(Config{Policy: c.Policy, Keep: c.Keep, BudgetTokens: c.BudgetTokens, MinGrowth: c.MinGrowth, MaxSessions: 10})
 		now := time.Unix(0, 0)
 		for si, n := range h.Steps {
 			got := m.Apply("s", h.History[:n], now)
@@ -103,6 +104,24 @@ func TestAppendOnlyUntilBudgetThenEdit(t *testing.T) {
 	}
 	if actions[0] != Start || !contains(actions, Append) || !contains(actions, Edit) {
 		t.Fatalf("actions %v: want start, appends and at least one edit", actions)
+	}
+}
+
+// When the masked view of a long history is itself over budget, every call would re-render it (and miss the
+// cache); min_growth makes the next re-render wait until the view has grown.
+func TestMinGrowthStopsRetrimEveryCall(t *testing.T) {
+	edits := func(growth int) int {
+		m := New(Config{Policy: "mask+cache", Keep: 1, BudgetTokens: 300, MinGrowth: growth, MaxSessions: 10})
+		n := 0
+		for e := 0; e <= 40; e++ { // each masked result still costs ~23 tokens, so the masked view passes 300
+			if r := m.Apply("s", agentHistory(e, 400), time.Unix(int64(e), 0)); r.Action == Edit {
+				n++
+			}
+		}
+		return n
+	}
+	if without, with := edits(0), edits(500); without < 30 || with > 10 {
+		t.Fatalf("edits without min_growth %d (want thrash), with %d (want few)", without, with)
 	}
 }
 
