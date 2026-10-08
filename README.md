@@ -58,22 +58,22 @@ cuts context (8.6% of sessions, at ~130k tokens), and the call after a cut is 27
 steady calls. Cache hits fall with the pause before a call: 93% under 10 s, 77% at 1–5 min, 23% at
 5–60 min; the median pause between turns is 170 s.
 
-**Accuracy and API cost (Gemini 3.5 Flash-Lite agent on BrowseComp-Plus, 49 tasks × 7 policies, each task
+**Accuracy and API cost (Gemini 3.5 Flash-Lite agent on BrowseComp-Plus, 50 tasks × 7 policies, each task
 searching ~800 web pages; difference vs `full` on the same tasks, 95% CI).**
 
 | Policy | Accuracy | Δ accuracy | Cost / task | Δ cost | Cost / correct | Cached |
 | --- | --- | --- | --- | --- | --- | --- |
-| `full` | 45% | – | $0.032 | – | $0.071 | 64% |
-| `truncate` | 41% | −4 pts [−18, +10] | $0.013 | **−59%** [−94%, −23%] | **$0.032** | 68% |
-| `window` | 57% | +12 [−1, +26] | $0.031 | −2% | $0.055 | 12% |
-| `mask` | 51% | +6 [−6, +18] | $0.024 | −25% | $0.047 | 0% |
-| `summarize` | **65%** | **+20 [+8, +33]** | $0.040 | +24% | $0.061 | 17% |
-| `window+cache` | 55% | +10 [−3, +23] | $0.023 | −30% | **$0.041** | 53% |
-| `mask+cache` | 55% | +10 [−4, +24] | $0.027 | −17% | $0.049 | 52% |
+| `full` | 46% | – | $0.032 | – | $0.069 | 64% |
+| `truncate` | 40% | −6 pts [−20, +8] | $0.013 | **−58%** [−93%, −22%] | **$0.033** | 68% |
+| `window` | 58% | +12 [−1, +25] | $0.031 | −2% | $0.053 | 12% |
+| `mask` | 52% | +6 [−6, +18] | $0.024 | −25% | $0.046 | 0% |
+| `summarize` | **66%** | **+20 [+7, +33]** | $0.039 | +24% | $0.059 | 17% |
+| `window+cache` | 56% | +10 [−3, +23] | $0.022 | −29% | **$0.040** | 53% |
+| `mask+cache` | 56% | +10 [−4, +24] | $0.026 | −17% | $0.047 | 52% |
 
 Less context made this agent more accurate (`summarize` +20 points), while the policies that rewrite
 earlier messages lost Gemini's implicit prompt cache (`mask` 0% cached). The cache-aware variants kept
-half the cache and cost 17–30% less than `full`.
+half the cache and cost 17–29% less than `full`.
 
 **Serving cost (Copilot sessions replayed under each policy as prefix-chained KV blocks; prefill
 recomputed vs `full`).** K6 is the offline KV simulator (4 replicas, 32 sessions, llm-d-style
