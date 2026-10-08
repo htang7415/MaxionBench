@@ -31,6 +31,16 @@ def test_schedule_replaces_finished_sessions_and_scales_time():
     assert schedule(sessions, 2, 30.0, 0.0, 2.0, seed=0) == arr  # deterministic
 
 
+def test_schedule_mid_life_joins_first_sessions_partway():
+    sessions = [_session(f"s{i}", [float(t) for t in range(0, 100, 10)], span=100.0) for i in range(3)]
+    arr = schedule(sessions, concurrency=2, horizon_s=1_000.0, stagger_s=0.0, time_scale=1.0, seed=3, mid_life=True)
+    first = [a for a in arr if a.session in {arr[0].session, arr[1].session}][:2]
+    assert all(a.t == 0.0 or a.t < 10.0 for a in first)  # each joins at its next call after the skip point
+    per = {s: [a.request.t for a in arr if a.session == s] for s in {a.session for a in arr}}
+    assert sum(len(v) < 10 for v in per.values()) == 2  # the two first sessions skip their earlier calls
+    assert any(len(v) == 10 for v in per.values())  # the replacement starts from its first call
+
+
 def test_trial_metrics_window_slo_and_cache_share():
     outcomes = [
         Outcome(scheduled_s=0.0, status="ok", ttft_s=9.0, e2e_s=9.0, prompt_tokens=100, cached_tokens=0),  # warm-up

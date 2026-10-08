@@ -60,7 +60,7 @@ def scrape_gateway_metrics(base_url: str) -> dict[str, Any]:
 class AIGateway(Target):
     kind = "ai_gateway"
     KEYS = {"local", "policy", "failover", "max_inflight", "port", "remote", "local_model", "binary",
-            "slo_ttft_s", "window_s", "min_samples"}
+            "slo_ttft_s", "window_s", "min_samples", "context"}
 
     def __init__(self, params: Mapping[str, Any], log_dir: Path) -> None:
         _check_keys(self.kind, params, self.KEYS)
@@ -76,6 +76,7 @@ class AIGateway(Target):
         self.port = int(params.get("port", 8090))
         self.remote = dict(params.get("remote") or {})
         self.local_model = params.get("local_model")
+        self.context = dict(params.get("context") or {})  # cache-aware context management (gateway `context:`)
         self.binary = Path(str(params.get("binary", DEFAULT_BINARY))).expanduser()
         self.log_dir = log_dir
         self.base_urls = [f"http://127.0.0.1:{self.port}"]
@@ -93,6 +94,8 @@ class AIGateway(Target):
             "remote": {"enabled": remote_enabled},
         }
         cfg["local"].update(self.slo)
+        if self.context:
+            cfg["context"] = self.context
         if self.local_model:
             cfg["local"]["model"] = str(self.local_model)
         if remote_enabled:
