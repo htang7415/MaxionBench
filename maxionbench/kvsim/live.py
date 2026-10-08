@@ -52,10 +52,11 @@ class Arrival:
 
 
 def schedule(sessions: Sequence[Session], concurrency: int, horizon_s: float, stagger_s: float, time_scale: float,
-             seed: int) -> list[Arrival]:
+             seed: int, mid_life: bool = False) -> list[Arrival]:
     """Arrivals before `horizon_s` with `concurrency` sessions active: the first ones start uniformly in
     [0, stagger_s), and a session that ends is replaced by the next (sessions shuffled by `seed`).
-    Trace times are divided by `time_scale`."""
+    Trace times are divided by `time_scale`. With `mid_life`, each first session joins at a uniform point
+    of its own span (its earlier calls are skipped), so the replay starts with sessions of mixed ages."""
     rng = random.Random(seed)
     order = list(range(len(sessions)))
     rng.shuffle(order)
@@ -63,15 +64,18 @@ def schedule(sessions: Sequence[Session], concurrency: int, horizon_s: float, st
     ends: list[tuple[float, int]] = []
     out: list[Arrival] = []
 
-    def start(s_idx: int, t0: float) -> None:
+    def start(s_idx: int, t0: float, skip: float = 0.0) -> None:
         s = sessions[s_idx]
-        out.extend(Arrival(t0 + r.t / time_scale, s_idx, r) for r in s.requests if t0 + r.t / time_scale < horizon_s)
+        t0 -= skip / time_scale
+        out.extend(Arrival(t0 + r.t / time_scale, s_idx, r) for r in s.requests
+                   if r.t >= skip and t0 + r.t / time_scale < horizon_s)
         heapq.heappush(ends, (t0 + s.span / time_scale, s_idx))
 
     for s_idx in (next(pending, None) for _ in range(concurrency)):
         if s_idx is None:
             break
-        start(s_idx, rng.uniform(0.0, stagger_s))
+        t0 = rng.uniform(0.0, stagger_s)
+        start(s_idx, t0, rng.uniform(0.0, sessions[s_idx].span) if mid_life else 0.0)
     while ends:
         t_end, _ = heapq.heappop(ends)
         nxt = next(pending, None)

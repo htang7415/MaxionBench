@@ -1,0 +1,35 @@
+schema_version: maxionbench-gwreplay-v1
+name: k9-gateway-context-qwen3-8b
+description: >
+  K9 (v0.5 Step 2): the gateway's cache-aware context management measured on a real engine. Copilot
+  coding-agent sessions (a Saturday and a Tuesday, 200 seeded sessions each) replayed as full chat
+  histories (message text is deterministic filler at 1/16 of each message's tokens) through the Go gateway
+  onto one vllm-metal replica of Qwen3-8B (MLX 4-bit, Apple M4 GPU, 24.7k-token KV cache, prefix caching
+  on). Arms: context management off (the client's full history), mask+cache (mask tool results older
+  than 4 exchanges once the view passes 100k full-scale tokens), window+cache (keep 8 exchanges), and
+  mask+cache with the pause trigger (trim at the first call after 120 s idle). The engine reports cached
+  prompt tokens and TTFT. Open loop in real trace time (idle gaps capped at 300 s); the first sessions join
+  at a random point of their life so the replica holds sessions of mixed ages from the start.
+days:
+  sat: copilot/date.2026-06-06.tar.gz
+  tue: copilot/date.2026-06-02.tar.gz
+sessions: 200
+seed: 0
+idle_cap_s: 300
+repeats: 2
+# budget_tokens is in the gateway's estimate units at 1/16 scale (100k / 16); pause_s is wall = trace time
+arms:
+  "off": {policy: "off"}
+  mask+cache: {policy: mask+cache, keep: 4, budget_tokens: 6250}
+  window+cache: {policy: window+cache, keep: 8, budget_tokens: 6250}
+  mask+cache+pause: {policy: mask+cache, keep: 4, budget_tokens: 6250, pause_s: 120}
+replay: {concurrency: 6, horizon_s: 1500, warmup_s: 300, time_scale: 1, mid_life: true, scale: 0.0625, output_scale: 0.05,
+         max_output_tokens: 16, ttft_slo_s: 5.0, timeout_s: 900}
+target:
+  model: mlx-community/Qwen3-8B-4bit
+  replicas: 1
+  base_port: 8210
+  max_model_len: 16384
+  gpu_memory_utilization: 0.75
+  max_num_seqs: 8
+  enable_prefix_caching: true
