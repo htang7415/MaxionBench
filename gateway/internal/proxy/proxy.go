@@ -25,10 +25,12 @@ import (
 
 	"github.com/htang7415/MaxionBench/gateway/internal/budget"
 	"github.com/htang7415/MaxionBench/gateway/internal/config"
+	"github.com/htang7415/MaxionBench/gateway/internal/ctxmgr"
 )
 
 const (
 	BackendHeader  = "X-Maxionbench-Backend"
+	ContextHeader  = "X-Maxionbench-Context"
 	ReasonHeader   = "X-Maxionbench-Route-Reason"
 	maxBodyBytes   = 8 << 20
 	defaultMaxToks = 256
@@ -45,6 +47,9 @@ type metrics struct {
 	spend     prometheus.Counter
 	remaining prometheus.Gauge
 	predicted prometheus.Gauge
+	ctxReqs   *prometheus.CounterVec
+	ctxToks   *prometheus.CounterVec
+	sessions  prometheus.Gauge
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -64,8 +69,16 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "maxion_gateway_budget_remaining_usd", Help: "Remaining remote budget (cap - spend - holds)."}),
 		predicted: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "maxion_gateway_predicted_local_wait_seconds", Help: "Last predicted local wait (local_first_slo)."}),
+		ctxReqs: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "maxion_gateway_context_requests_total", Help: "Context-managed requests by action."}, []string{"action"}),
+		ctxToks: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "maxion_gateway_context_tokens_total", Help: "Estimated prompt tokens received from clients (in) and sent upstream (out)."},
+			[]string{"direction"}),
+		sessions: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "maxion_gateway_context_sessions", Help: "Agent sessions tracked by the context manager."}),
 	}
-	reg.MustRegister(m.requests, m.routes, m.inflight, m.ttfb, m.spend, m.remaining, m.predicted)
+	reg.MustRegister(m.requests, m.routes, m.inflight, m.ttfb, m.spend, m.remaining, m.predicted, m.ctxReqs, m.ctxToks,
+		m.sessions)
 	return m
 }
 
@@ -79,6 +92,7 @@ type Gateway struct {
 	local    atomic.Int64
 	upstream []atomic.Int64
 	est      *serviceEstimator
+	ctx      *ctxmgr.Manager // nil when context management is off
 	log      *slog.Logger
 }
 
@@ -91,6 +105,9 @@ func New(cfg *config.Config, key string, ledger *budget.Ledger, reg *prometheus.
 		m:        newMetrics(reg),
 		upstream: make([]atomic.Int64, len(cfg.Local.Upstreams)),
 		est:      newServiceEstimator(seconds(cfg.Local.WindowS), cfg.Local.MinSamples, time.Now()),
+	}
+	if cfg.Context.Enabled() {
+		g.ctx = ctxmgr.New(cfg.Context)
 	}
 	g.refreshRemaining()
 	return g
@@ -116,6 +133,9 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "body must be a JSON object")
 		return
 	}
+	if g.ctx != nil {
+		g.manageContext(r.Context(), w, body)
+	}
 	remoteOK := g.cfg.Remote.Enabled
 	switch g.cfg.Policy {
 	case config.RemoteOnly:
@@ -134,6 +154,37 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 			g.serveLocal(r.Context(), w, body, "budget_exhausted", false) // queue locally instead of overspending
 		}
 	}
+}
+
+// manageContext replaces the body's messages with the session's cache-aware view. Requests whose messages
+// are not a list of objects pass through unchanged.
+func (g *Gateway) manageContext(ctx context.Context, w http.ResponseWriter, body map[string]any) {
+	raw, _ := body["messages"].([]any)
+	history := make([]ctxmgr.Message, len(raw))
+	for i, m := range raw {
+		msg, ok := m.(map[string]any)
+		if !ok {
+			return
+		}
+		history[i] = msg
+	}
+	if len(history) == 0 {
+		return
+	}
+	key, _ := body["prompt_cache_key"].(string)
+	res := g.ctx.Apply(ctxmgr.SessionKey(key, history), history, time.Now())
+	view := make([]any, len(res.View))
+	for i, m := range res.View {
+		view[i] = m
+	}
+	body["messages"] = view
+	g.m.ctxReqs.WithLabelValues(res.Action).Inc()
+	g.m.ctxToks.WithLabelValues("in").Add(float64(res.TokensIn))
+	g.m.ctxToks.WithLabelValues("out").Add(float64(res.TokensOut))
+	g.m.sessions.Set(float64(g.ctx.Sessions()))
+	w.Header().Set(ContextHeader, res.Action)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("maxion.context_action", res.Action),
+		attribute.Int("maxion.context_tokens_in", res.TokensIn), attribute.Int("maxion.context_tokens_out", res.TokensOut))
 }
 
 // overflowReason returns why a new request should go remote, or "" to serve it locally.

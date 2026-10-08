@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/htang7415/MaxionBench/gateway/internal/budget"
+	"github.com/htang7415/MaxionBench/gateway/internal/ctxmgr"
 )
 
 // Policy values.
@@ -58,6 +59,8 @@ type Config struct {
 	Local    Local  `yaml:"local"`
 	Remote   Remote `yaml:"remote"`
 	Budget   Budget `yaml:"budget"`
+	// Context is cache-aware context management for agent sessions (off by default).
+	Context ctxmgr.Config `yaml:"context"`
 }
 
 type pricingFile struct {
@@ -88,6 +91,9 @@ func Load(path string) (*Config, error) {
 	case LocalOnly, LocalFirst, LocalFirstSLO, RemoteOnly:
 	default:
 		return nil, fmt.Errorf("policy must be %s, %s, %s or %s", LocalOnly, LocalFirst, LocalFirstSLO, RemoteOnly)
+	}
+	if err := cfg.Context.Validate(); err != nil {
+		return nil, err
 	}
 	if cfg.Policy == LocalFirstSLO && (cfg.Local.SLOTTFTS <= 0 || cfg.Local.WindowS <= 0 || cfg.Local.MinSamples < 1) {
 		return nil, fmt.Errorf("policy %s needs local.slo_ttft_s > 0, window_s > 0 and min_samples >= 1", LocalFirstSLO)
