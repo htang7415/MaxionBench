@@ -39,11 +39,22 @@ func TestLoadRejectsUnpricedModelUnknownFieldsAndBadPolicy(t *testing.T) {
 		"bad policy":    "policy: cheapest\nlocal: {upstreams: [\"http://a\"]}\n",
 		"slo no target": "policy: local_first_slo\nlocal: {upstreams: [\"http://a\"]}\n",
 		"no upstreams":  "policy: local_only\n",
+		"bad context":   "local: {upstreams: [\"http://a\"]}\ncontext: {policy: summarize}\n",
 	}
 	for name, body := range cases {
 		if _, err := Load(write(t, dir, strings.ReplaceAll(name, " ", "_")+".yaml", body)); err == nil {
 			t.Errorf("%s: expected error", name)
 		}
+	}
+}
+
+func TestLoadContextDefaults(t *testing.T) {
+	c, err := Load(write(t, t.TempDir(), "gw.yaml", "local: {upstreams: [\"http://a\"]}\ncontext: {policy: mask+cache, pause_s: 300}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Context.Enabled() || c.Context.Keep != 4 || c.Context.BudgetTokens != 64_000 || c.Context.PauseS != 300 {
+		t.Fatalf("context %+v", c.Context)
 	}
 }
 

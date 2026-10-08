@@ -19,6 +19,7 @@ import (
 
 	"github.com/htang7415/MaxionBench/gateway/internal/budget"
 	"github.com/htang7415/MaxionBench/gateway/internal/config"
+	"github.com/htang7415/MaxionBench/gateway/internal/ctxmgr"
 )
 
 const fakeKey = "FAKE-key-0123456789abcdefghijklmnop"
@@ -285,5 +286,59 @@ func TestUsageBillsHiddenReasoningTokens(t *testing.T) {
 	parseUsageJSON([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`), &w)
 	if w.Reasoning != 0 {
 		t.Fatalf("consistent totals must add nothing: %+v", w)
+	}
+}
+
+func TestContextManagerRewritesAgentHistory(t *testing.T) {
+	var mu sync.Mutex
+	var seen [][]any
+	capture := func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+		mu.Lock()
+		seen = append(seen, body["messages"].([]any))
+		mu.Unlock()
+		sse(w, "ok", nil)
+	}
+	h := newHarness(t, capture, config.LocalOnly, 4, 10)
+	if resp, _ := h.post(t); resp.Header.Get(ContextHeader) != "" {
+		t.Fatal("context header set while context management is off")
+	}
+	h.gw.ctx = ctxmgr.New(ctxmgr.Config{Policy: "mask+cache", Keep: 1, BudgetTokens: 64_000, MaxSessions: 10})
+
+	history := []any{map[string]any{"role": "system", "content": "sys"}, map[string]any{"role": "user", "content": "task"}}
+	send := func() string {
+		b, _ := json.Marshal(map[string]any{"model": "m", "prompt_cache_key": "agent-1", "messages": history})
+		resp, err := http.Post(h.srv.URL+"/v1/chat/completions", "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
+		return resp.Header.Get(ContextHeader)
+	}
+	var actions []string
+	for e := range 3 {
+		actions = append(actions, send())
+		id := fmt.Sprint(e)
+		history = append(history,
+			map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{map[string]any{"id": id, "type": "function",
+				"function": map[string]any{"name": "read", "arguments": "{}"}}}},
+			map[string]any{"role": "tool", "tool_call_id": id, "content": strings.Repeat("z", 1000)})
+	}
+	if strings.Join(actions, ",") != "start,append,append" {
+		t.Fatalf("actions %v", actions)
+	}
+	if got := seen[len(seen)-1]; len(got) != 6 || got[3].(map[string]any)["content"] != strings.Repeat("z", 1000) {
+		t.Fatal("under budget the upstream must get the client's history unchanged")
+	}
+
+	h.gw.ctx = ctxmgr.New(ctxmgr.Config{Policy: "mask+cache", Keep: 1, BudgetTokens: 400, MaxSessions: 10})
+	if a := send(); a != ctxmgr.Start {
+		t.Fatalf("action %s", a)
+	}
+	got := seen[len(seen)-1]
+	if got[3].(map[string]any)["content"] != ctxmgr.MaskText || got[7].(map[string]any)["content"] == ctxmgr.MaskText {
+		t.Fatal("over budget: old tool results masked, the newest kept")
 	}
 }
