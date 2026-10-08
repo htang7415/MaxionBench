@@ -27,10 +27,11 @@ SUMMARY_PREFIX = "Summary of earlier work on this task:\n"
 
 
 def estimate_tokens(messages: Sequence[Message]) -> int:
-    """~4 characters per token plus per-message overhead; tool-call arguments count too."""
+    """~4 characters per token plus per-message overhead; tool-call arguments count too. A message with a
+    `tokens` field (metadata-only traces, e.g. the Copilot replay) counts that instead of its text."""
     total = 0
     for m in messages:
-        total += len(str(m.get("content") or "")) // 4 + 4
+        total += int(m["tokens"]) if "tokens" in m else len(str(m.get("content") or "")) // 4 + 4
         for call in m.get("tool_calls") or ():
             total += len(str(call.get("function", {}).get("arguments") or "")) // 4 + 4
     return total
@@ -47,6 +48,11 @@ def split(history: Sequence[Message]) -> tuple[list[Message], list[list[Message]
         else:
             exchanges[-1].append(m)
     return head, exchanges
+
+
+def _replace_content(m: Message, text: str) -> Message:
+    """`m` with new text; a `tokens` count no longer applies."""
+    return {**{k: v for k, v in m.items() if k != "tokens"}, "content": text}
 
 
 def _flat(head: list[Message], exchanges: Sequence[Sequence[Message]]) -> list[Message]:
@@ -82,7 +88,9 @@ class Truncate:
         out = []
         for m in history:
             text = str(m.get("content") or "")
-            if m["role"] == "tool" and len(text) > self.max_chars:
+            if m["role"] == "tool" and "tokens" in m and m["tokens"] > self.max_chars // 4:
+                m = {**m, "content": f"{text}[truncated]", "tokens": self.max_chars // 4 + 8}
+            elif m["role"] == "tool" and "tokens" not in m and len(text) > self.max_chars:
                 cut = (len(text) - self.max_chars) // 4
                 m = {**m, "content": f"{text[:self.max_chars]}\n[truncated: ~{cut} more tokens]"}
             out.append(m)
@@ -118,7 +126,7 @@ class Mask:
         head, exchanges = split(history)
         old = len(exchanges) - self.keep
         return _flat(head, [
-            [{**m, "content": MASK_TEXT} if i < old and m["role"] == "tool" else m for m in ex]
+            [_replace_content(m, MASK_TEXT) if i < old and m["role"] == "tool" else m for m in ex]
             for i, ex in enumerate(exchanges)
         ])
 
