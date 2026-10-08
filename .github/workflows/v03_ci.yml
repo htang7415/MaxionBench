@@ -27,7 +27,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.lock
-      - uses: actions/setup-go@v5  # gateway end-to-end tests build the Go binary
+      - uses: actions/setup-go@v7  # gateway end-to-end tests build the Go binary
         with:
           go-version-file: gateway/go.mod
           cache-dependency-path: gateway/go.sum
@@ -52,7 +52,7 @@ jobs:
         working-directory: gateway
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: gateway/go.mod
           cache-dependency-path: gateway/go.sum
