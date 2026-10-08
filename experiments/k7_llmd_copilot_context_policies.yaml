@@ -1,0 +1,31 @@
+schema_version: maxionbench-kvlive-v1
+name: k7-llmd-copilot-context-policies
+description: >
+  K7 (v0.4 Step 4, live check of K6): the K6 Copilot policy traces replayed live (open loop, 32 active
+  sessions, trace time compressed 4x) through llm-d EPP v0.11 + Envoy over 4 llm-d-inference-sim
+  workers, at K6's tight KV capacity (512k trace tokens per replica = 8,000 sim blocks of 16 scaled
+  tokens). Each 64-token trace block is 16 token ids; worker latencies are per scaled token and divided
+  by the time scale (prefill 50 us, decode 25 ms). All policies replay the same session schedule.
+  TTFT and SLO are in compressed time. One repeat: a check that K6's ranking holds through the real router.
+traces:
+  full: copilot/policy_traces/full.sessions600.jsonl
+  truncate: copilot/policy_traces/truncate.sessions600.jsonl
+  window: copilot/policy_traces/window.sessions600.jsonl
+  mask: copilot/policy_traces/mask.sessions600.jsonl
+  summarize: copilot/policy_traces/summarize.sessions600.jsonl
+  window+cache: copilot/policy_traces/window_cache.sessions600.jsonl
+  mask+cache: copilot/policy_traces/mask_cache.sessions600.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 1
+replay: {concurrency: 32, horizon_s: 720, warmup_s: 120, time_scale: 4, tokens_per_block: 16, output_scale: 0.25,
+         max_output_tokens: 256, ttft_slo_s: 1.0, timeout_s: 120}
+target:
+  replicas: 4
+  base_port: 8300
+  image: maxionbench/llm-d-inference-sim:v0.11.4-cpukv
+  gpu_kv_blocks: 8000
+  sim_args: [--block-size, "16", --max-num-seqs, "32", --prefill-time-per-token, 50us, --inter-token-latency, 25ms,
+             --time-factor-under-load, "1.0", --max-model-len, "100000"]
+cells:
+  - {scorer_profile: optimized-baseline, cpu_kv_blocks: 0}
