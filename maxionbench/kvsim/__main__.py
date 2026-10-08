@@ -28,7 +28,7 @@ from maxionbench.kvsim.traces import TRACE_FILE, Session, load_sessions
 from maxionbench.schemas.result_schema import utc_now_iso
 
 SPEC_SCHEMA = "maxionbench-kvsim-v1"
-_SESSIONS: list[Session] = []  # loaded once in the parent, shared with forked workers
+_SESSIONS: dict[str, list[Session]] = {}  # per trace, loaded once in the parent, shared with forked workers
 
 
 def load_spec(path: Path) -> dict[str, Any]:
@@ -36,7 +36,7 @@ def load_spec(path: Path) -> dict[str, Any]:
     if spec.get("schema_version") != SPEC_SCHEMA:
         raise ValueError(f"{path}: schema_version must be {SPEC_SCHEMA}")
     allowed = {f.name for f in fields(SimParams)}
-    unknown = (set(spec.get("params", {})) | set(spec.get("matrix", {}))) - allowed
+    unknown = (set(spec.get("params", {})) | set(spec.get("matrix", {}))) - allowed - {"trace"}
     if unknown:
         raise ValueError(f"{path}: unknown sim params {sorted(unknown)}")
     return spec
@@ -45,6 +45,8 @@ def load_spec(path: Path) -> dict[str, Any]:
 def plan(spec: dict[str, Any]) -> list[tuple[str, dict[str, Any], int, int]]:
     """(cell_id, cell params, repeat, seed) for every trial."""
     axes = list(spec.get("matrix", {}).items())
+    if "traces" in spec:  # several traces (e.g. one per context policy) compared on the same settings
+        axes = [("trace", list(spec["traces"]))] + axes
     combos = [dict(zip([k for k, _ in axes], c)) for c in itertools.product(*[v for _, v in axes])] or [{}]
     trials = []
     for cell in combos:
@@ -56,23 +58,29 @@ def plan(spec: dict[str, Any]) -> list[tuple[str, dict[str, Any], int, int]]:
 
 def _run(job: tuple[str, dict[str, Any], int, int, dict[str, Any]]) -> TrialResult:
     cell_id, cell, rep, seed, base = job
-    params = SimParams(**{**base, **cell})
+    trace = cell.get("trace", "default")
+    params = SimParams(**{**base, **{k: v for k, v in cell.items() if k != "trace"}})
     started, t0 = utc_now_iso(), time.perf_counter()
-    metrics = simulate(_SESSIONS, params, seed)
+    metrics = simulate(_SESSIONS[trace], params, seed)
+    metrics["recomputed_tokens_total"] = metrics["recomputed_tokens_per_request"] * metrics["requests_measured"]
     return TrialResult(
         trial_id=f"{cell_id}/r{rep}", cell_id=cell_id, repeat=rep, seed=seed, status="ok", started_at=started,
         duration_s=round(time.perf_counter() - t0, 3), host_load_1m_before=0.0, quiet_host_ok=True,
         metrics={k: round(v, 6) for k, v in metrics.items()}, requests_per_endpoint=[],
-        target={"kind": "kvsim", **{k: getattr(params, k) for k in (f.name for f in fields(SimParams))}}, error=None)
+        target={"kind": "kvsim", "trace": trace, **{k: getattr(params, k) for k in (f.name for f in fields(SimParams))}},
+        error=None)
 
 
 def run(spec_path: Path, jobs: int, out_root: Path) -> Path:
     global _SESSIONS
     spec = load_spec(spec_path)
     started_at = utc_now_iso()
-    trace = verified_path(spec.get("trace", TRACE_FILE))
-    _SESSIONS = load_sessions(trace, idle_cap_s=float(spec.get("idle_cap_s", 300.0)), limit=spec.get("sessions"))
-    print(f"loaded {len(_SESSIONS)} sessions from {trace}", file=sys.stderr)
+    traces = spec.get("traces") or {"default": spec.get("trace", TRACE_FILE)}
+    _SESSIONS = {}
+    for name, rel in traces.items():
+        _SESSIONS[name] = load_sessions(verified_path(rel), idle_cap_s=float(spec.get("idle_cap_s", 300.0)),
+                                        limit=spec.get("sessions"))
+        print(f"loaded {len(_SESSIONS[name])} sessions from {rel}", file=sys.stderr)
     trials = plan(spec)
     base = spec.get("params", {})
     with mp.get_context("fork").Pool(jobs) as pool:
@@ -93,7 +101,7 @@ def run(spec_path: Path, jobs: int, out_root: Path) -> Path:
     result = ExperimentResult(
         schema_version=RESULT_SCHEMA_VERSION, run_id=run_id, name=spec["name"], description=spec.get("description", ""),
         spec=spec, provenance=make_provenance(spec, started_at, {
-            "trace": spec.get("trace", TRACE_FILE), "sessions_loaded": len(_SESSIONS),
+            "traces": traces, "sessions_loaded": {k: len(v) for k, v in _SESSIONS.items()},
             "trials_planned": len(trials), "trials_completed": len(results)}),
         trials=results, cells=aggregate_cells(results, cells))
     (out_dir / "results.json").write_text(json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8")

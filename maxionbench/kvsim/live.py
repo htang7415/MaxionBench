@@ -204,25 +204,30 @@ def run(spec_path: Path, out_root: Path, log=lambda m: print(m, file=sys.stderr)
     spec = load_spec(spec_path)
     rp = spec["replay"]
     started_at = utc_now_iso()
-    sessions = load_sessions(verified_path(spec.get("trace", TRACE_FILE)), idle_cap_s=float(spec.get("idle_cap_s", 300)))
+    traces = spec.get("traces") or {"default": spec.get("trace", TRACE_FILE)}  # e.g. one trace per context policy
+    sessions = {name: load_sessions(verified_path(rel), idle_cap_s=float(spec.get("idle_cap_s", 300)))
+                for name, rel in traces.items()}
     run_id = f"{datetime.now(tz=timezone.utc):%Y%m%dT%H%M%SZ}-{spec['name']}"
     out_dir = Path(out_root) / run_id
     out_dir.mkdir(parents=True)
     (out_dir / "spec.yaml").write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
     cells = {"/".join(f"{k}={v}" for k, v in c.items()): c for c in spec["cells"]}
+    if "traces" in spec:
+        cells = {f"trace={name}/{cell_id}": {"trace": name, **c} for name in traces for cell_id, c in cells.items()}
     trials: list[TrialResult] = []
     for rep in range(int(spec.get("repeats", 1))):
         seed = int(spec.get("seed", 0)) * 1000 + rep
-        arrivals = schedule(sessions, int(rp["concurrency"]), float(rp["horizon_s"]), float(rp["warmup_s"]),
-                            float(rp.get("time_scale", 1.0)), seed)
-        for cell_id, cell in cells.items():  # every cell replays the same arrivals within a repeat
-            params = target_params(spec["target"], cell)
+        arrivals = {name: schedule(s, int(rp["concurrency"]), float(rp["horizon_s"]), float(rp["warmup_s"]),
+                                   float(rp.get("time_scale", 1.0)), seed) for name, s in sessions.items()}
+        for cell_id, cell in cells.items():  # every cell replays the same session schedule within a repeat
+            params = target_params(spec["target"], {k: v for k, v in cell.items() if k != "trace"})
+            trace_arrivals = arrivals[cell.get("trace", "default")]
             label = f"{cell_id}/r{rep}"
-            log(f"{label}: {len(arrivals)} arrivals over {rp['horizon_s']} s")
+            log(f"{label}: {len(trace_arrivals)} arrivals over {rp['horizon_s']} s")
             t_start, trial_started = time.perf_counter(), utc_now_iso()
             target = LlmdNoK8s(params, out_dir / "logs" / label.replace("/", "_"))
             with target:
-                outcomes = replay(arrivals, target.base_urls[0], params["model"],
+                outcomes = replay(trace_arrivals, target.base_urls[0], params["model"],
                                   tokens_per_block=int(rp["tokens_per_block"]), output_scale=float(rp["output_scale"]),
                                   max_output_tokens=int(rp["max_output_tokens"]), timeout_s=float(rp["timeout_s"]))
                 server = target.collect()
@@ -245,7 +250,7 @@ def run(spec_path: Path, out_root: Path, log=lambda m: print(m, file=sys.stderr)
     result = ExperimentResult(
         schema_version=RESULT_SCHEMA_VERSION, run_id=run_id, name=spec["name"], description=spec.get("description", ""),
         spec=spec, provenance=make_provenance(spec, started_at, {
-            "trace": spec.get("trace", TRACE_FILE), "trials_completed": len(trials)}),
+            "traces": traces, "trials_completed": len(trials)}),
         trials=trials, cells=aggregate_cells(trials, cells))
     (out_dir / "results.json").write_text(json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8")
     log(f"wrote {out_dir}")

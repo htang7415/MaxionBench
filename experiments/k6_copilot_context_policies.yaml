@@ -1,0 +1,29 @@
+schema_version: maxionbench-kvsim-v1
+name: k6-copilot-context-policies
+description: >
+  K6 (v0.4 Step 4): serving cost of context policies on production agent traffic. 600 sessions of the
+  GitHub Copilot coding-agent traces (June 6, 2026), each replayed under one context policy (full,
+  truncate tool results to 2k, window of 8 exchanges, mask results older than 4 exchanges, summarize
+  at 64k, and cache-aware window/mask that re-render only past 100k), as prefix-chained 64-token KV
+  blocks (maxionbench.kvsim.copilot). Counterfactual: Copilot's trajectories under each policy's
+  prompts. 4 replicas, 32 active sessions, llm-d-style prefix+load routing, LRU; KV capacity per
+  replica from tight (512k tokens) to effectively unlimited (64M).
+traces:
+  full: copilot/policy_traces/full.sessions600.jsonl
+  truncate: copilot/policy_traces/truncate.sessions600.jsonl
+  window: copilot/policy_traces/window.sessions600.jsonl
+  mask: copilot/policy_traces/mask.sessions600.jsonl
+  summarize: copilot/policy_traces/summarize.sessions600.jsonl
+  window+cache: copilot/policy_traces/window_cache.sessions600.jsonl
+  mask+cache: copilot/policy_traces/mask_cache.sessions600.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 3
+params:
+  replicas: 4
+  concurrency: 32
+  routing: prefix_load
+  eviction: lru
+  warmup_s: 1800.0
+matrix:
+  capacity_tokens: [512000, 1000000, 64000000]

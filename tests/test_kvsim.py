@@ -157,3 +157,13 @@ def test_tiered_routing_follows_kv_demoted_to_cpu():
     tiered = simulate(sessions, SimParams(**common, routing="tiered_prefix_load"), seed)
     assert gpu_only["miss_routing_share"] > 0 and gpu_only["cpu_loaded_share"] == 0
     assert tiered["miss_routing_share"] == 0 and tiered["cpu_loaded_share"] > 0
+
+
+def test_plan_adds_one_axis_per_trace_when_several_traces_are_given() -> None:
+    from maxionbench.kvsim.__main__ import plan
+
+    spec = {"traces": {"full": "a.jsonl", "mask": "b.jsonl"}, "matrix": {"capacity_tokens": [1, 2]}, "repeats": 2, "seed": 3}
+    trials = plan(spec)
+    assert len(trials) == 2 * 2 * 2
+    assert trials[0][:3] == ("trace=full/capacity_tokens=1", {"trace": "full", "capacity_tokens": 1}, 0)
+    assert {t[1]["trace"] for t in trials} == {"full", "mask"}

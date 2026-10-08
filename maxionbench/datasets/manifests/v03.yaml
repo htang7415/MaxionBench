@@ -187,3 +187,75 @@ derived:
     seed: 0
     sha256: 38b9ae0dbbb2223cb4cff2fd28fc34d6f4232e56d3a819baf413cd5cb48270e1
     license: unclear; local use only
+  copilot/policy_traces/full.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    # 600 seeded sessions of one Copilot day under a context policy, as AgentX-format KV-block traces
+    # (maxionbench.kvsim.copilot); deterministic, so the hash pins the derivation.
+    sessions: 600
+    seed: 0
+    policy: full
+    policy_params: {}
+    sha256: 6604f62be33763e128e8eb87387dd82f0306b8295d3451bb4e6cbeb6ac596ad9
+    license: CC-BY-4.0
+  copilot/policy_traces/truncate.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: truncate
+    policy_params: {max_tokens: 2000}
+    sha256: bde225b5d1e540dbe8341dfd4995469e094d92fbf44f9f2195a2911d6bab368e
+    license: CC-BY-4.0
+  copilot/policy_traces/window.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: window
+    policy_params: {keep: 8}
+    sha256: 05661e8605caa79137256d96ba5275c8576376059e88cbc033ea29fe520e28fd
+    license: CC-BY-4.0
+  copilot/policy_traces/mask.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: mask
+    policy_params: {keep: 4}
+    sha256: 15b403da20c6f73ceeaf5307d008c5d27da412c7ac75c0d0b4478d19f0d6ef42
+    license: CC-BY-4.0
+  copilot/policy_traces/summarize.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: summarize
+    policy_params: {keep: 2, trigger_tokens: 64000}
+    sha256: ccab307727afb3c1856fea601a8433aa92d3a6fee7e030265c76f4cdfba55857
+    license: CC-BY-4.0
+  copilot/policy_traces/window_cache.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: window+cache
+    policy_params: {budget_tokens: 100000, keep: 8}
+    sha256: 98c6876268bf2996aa2801a99dbb8d03b3e8ab58ffa756418c9339c7395ffeba
+    license: CC-BY-4.0
+  copilot/policy_traces/mask_cache.sessions600.jsonl:
+    group: copilot_traces
+    kind: copilot_policy_trace
+    from: copilot/date.2026-06-06.tar.gz
+    sessions: 600
+    seed: 0
+    policy: mask+cache
+    policy_params: {budget_tokens: 100000, keep: 4}
+    sha256: d6b0740caebecd8b3f07164363ea068f08e4e5fa57dc0925ff6f1abf914a36b4
+    license: CC-BY-4.0

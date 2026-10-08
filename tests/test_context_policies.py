@@ -144,3 +144,20 @@ def test_make_policy_rejects_unknown_and_stateful_wrapping() -> None:
         make_policy("summarize")
     assert make_policy("mask+cache", keep=1).name == "mask1+cache64k"
     assert isinstance(make_policy("mask", keep=1), Mask)
+
+
+def test_policies_honour_token_counts_of_metadata_only_messages() -> None:
+    def msg(role: str, tokens: int, key: str) -> dict[str, Any]:
+        return {"role": role, "content": key, "tokens": tokens}
+
+    h = [msg("system", 3_000, "s"), msg("user", 100, "u")]
+    for e in range(4):
+        h += [msg("assistant", 30, f"a{e}"), msg("tool", 10_000, f"t{e}")]
+    assert estimate_tokens(h) == 3_100 + 4 * 10_030
+    truncated = make_policy("truncate", max_tokens=2_000).view(h)
+    assert all(m["tokens"] == 2_008 and m["content"].endswith("[truncated]") for m in truncated if m["role"] == "tool")
+    masked = make_policy("mask", keep=1).view(h)
+    assert [m["content"] == MASK_TEXT and "tokens" not in m for m in masked if m["role"] == "tool"] == [True] * 3 + [False]
+    assert estimate_tokens(masked) < 3_100 + 4 * 30 + 10_000 + 3 * 30
+    summarized = make_policy("summarize", summarizer, trigger_tokens=20_000, keep=1).view(h)
+    assert estimate_tokens(summarized) <= 20_000 and summarized[2]["content"].startswith(SUMMARY_PREFIX)

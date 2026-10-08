@@ -23,14 +23,18 @@ def archive(day: str) -> str:
 
 def iter_sessions(day: str, root: Path = DATASET_ROOT, limit: int | None = None) -> Iterator[dict[str, Any]]:
     """Sessions of one day in archive order (shards as stored), without extracting to disk."""
-    n = 0
-    with tarfile.open(verified_path(archive(day), root), "r:gz") as tar:
+    for n, session in enumerate(iter_archive(verified_path(archive(day), root)), 1):
+        yield session
+        if limit is not None and n >= limit:
+            return
+
+
+def iter_archive(path: Path) -> Iterator[dict[str, Any]]:
+    """Sessions of one daily archive file (already verified by the caller)."""
+    with tarfile.open(path, "r:gz") as tar:
         for member in tar:
             if not member.name.endswith(".jsonl.gz"):
                 continue
             with gzip.open(tar.extractfile(member)) as fh:  # type: ignore[arg-type]
                 for line in fh:
                     yield json.loads(line)
-                    n += 1
-                    if limit is not None and n >= limit:
-                        return

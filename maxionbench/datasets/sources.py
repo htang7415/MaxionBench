@@ -150,7 +150,15 @@ def _iter_json_array(path: Path, chunk_chars: int = 1 << 20) -> Iterator[Any]:
             pos = end
 
 
-DERIVERS: dict[str, Callable[..., None]] = {"crag_slice": derive_crag_slice, "sharegpt_sample": derive_sharegpt_sample}
+def derive_copilot_policy_trace(src: Path, dest: Path, **params: Any) -> None:
+    from maxionbench.kvsim.copilot import derive_policy_trace  # kvsim imports this module
+
+    derive_policy_trace(src, dest, **params)
+
+
+DERIVERS: dict[str, Callable[..., None]] = {"crag_slice": derive_crag_slice, "sharegpt_sample": derive_sharegpt_sample,
+                                            "copilot_policy_trace": derive_copilot_policy_trace}
+DERIVED_META_KEYS = {"group", "kind", "from", "sha256", "license"}  # every other key is a deriver parameter
 
 
 def fetch(groups: set[str] | None = None, root: Path = DATASET_ROOT, log: Callable[[str], None] = print) -> list[str]:
@@ -171,7 +179,7 @@ def fetch(groups: set[str] | None = None, root: Path = DATASET_ROOT, log: Callab
         dest = Path(root) / rel
         if not dest.exists():
             log(f"derive {rel} from {meta['from']}")
-            params = {k: v for k, v in meta.items() if k in ("examples", "seed")}
+            params = {k: v for k, v in meta.items() if k not in DERIVED_META_KEYS}
             DERIVERS[meta["kind"]](Path(root) / meta["from"], dest, **params)
         errors += _check(dest, rel, meta, log)
     return errors
