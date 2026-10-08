@@ -14,7 +14,7 @@ The earlier vector-database benchmark lives at the `v0.1` tag and the `v0.2-cpu-
 | Local serving | vLLM on Apple Silicon (`vllm-metal`, GPU) and llama.cpp (Metal/CPU) with Qwen3 models |
 | Control plane | llm-d endpoint picker + Envoy without Kubernetes (Docker) over vllm-metal or `llm-d-inference-sim` workers |
 | Managed API | `gemini-3.5-flash-lite` under a hard spend cap shared by Python and Go (`configs/pricing/gemini.yaml`) |
-| AI gateway | `gateway/` (Go): local-first routing, fixed or predicted-wait overflow to Gemini, failover, Prometheus metrics, OpenTelemetry tracing |
+| AI gateway | `gateway/` (Go): local-first routing, fixed or predicted-wait overflow to Gemini, failover, cache-aware context management for agent sessions (`context:`; matches the Python policies), Prometheus metrics, OpenTelemetry tracing |
 | Evaluation | `maxionbench/eval`, `graders`, `agents`: QA with provided context (CRAG, HotpotQA) and a calibrated Gemini judge, offline BFCL AST grader, agentic HotpotQA over an MCP search/read server |
 | Observability | `deploy/observability/`: OTel collector, Jaeger, Prometheus, Grafana |
 | Dashboard | `dashboard/`: static TypeScript site over saved results |
@@ -59,21 +59,25 @@ steady calls. Cache hits fall with the pause before a call: 93% under 10 s, 77% 
 5–60 min; the median pause between turns is 170 s.
 
 **Accuracy and API cost (Gemini 3.5 Flash-Lite agent on BrowseComp-Plus, 50 tasks × 7 policies, each task
-searching ~800 web pages; difference vs `full` on the same tasks, 95% CI).**
+searching ~800 web pages; difference vs `full` on the same tasks, 95% CI).** Accuracy is graded by the
+calibrated Gemini judge and, strictly, by string match against the gold answer (they agree on 93% of
+answers); p is an exact McNemar test vs `full`, Holm-adjusted over the six policies.
 
-| Policy | Accuracy | Δ accuracy | Cost / task | Δ cost | Cost / correct | Cached |
-| --- | --- | --- | --- | --- | --- | --- |
-| `full` | 46% | – | $0.032 | – | $0.069 | 64% |
-| `truncate` | 40% | −6 pts [−20, +8] | $0.013 | **−58%** [−93%, −22%] | **$0.033** | 68% |
-| `window` | 58% | +12 [−1, +25] | $0.031 | −2% | $0.053 | 12% |
-| `mask` | 52% | +6 [−6, +18] | $0.024 | −25% | $0.046 | 0% |
-| `summarize` | **66%** | **+20 [+7, +33]** | $0.039 | +24% | $0.059 | 17% |
-| `window+cache` | 56% | +10 [−3, +23] | $0.022 | −29% | **$0.040** | 53% |
-| `mask+cache` | 56% | +10 [−4, +24] | $0.026 | −17% | $0.047 | 52% |
+| Policy | Judge | Δ judge | p (Holm) | Strict | Δ strict | p (Holm) | Cost / task | Δ cost | Cost / correct | Cached |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `full` | 46% | – | – | 38% | – | – | $0.032 | – | $0.069 | 64% |
+| `truncate` | 40% | −6 pts [−20, +8] | 1.0 | 36% | −2 | 1.0 | $0.013 | **−58%** [−93%, −22%] | **$0.033** | 68% |
+| `window` | 58% | +12 [−1, +25] | 0.73 | 54% | +16 | 0.13 | $0.031 | −2% | $0.053 | 12% |
+| `mask` | 52% | +6 [−6, +18] | 1.0 | 48% | +10 | 0.58 | $0.024 | −25% | $0.046 | 0% |
+| `summarize` | **66%** | **+20 [+7, +33]** | **0.04** | 54% | +16 | 0.13 | $0.039 | +24% | $0.059 | 17% |
+| `window+cache` | 56% | +10 [−3, +23] | 0.91 | 48% | +10 | 0.58 | $0.022 | −29% | **$0.040** | 53% |
+| `mask+cache` | 56% | +10 [−4, +24] | 0.91 | 50% | +12 | 0.58 | $0.026 | −17% | $0.047 | 52% |
 
-Less context made this agent more accurate (`summarize` +20 points), while the policies that rewrite
-earlier messages lost Gemini's implicit prompt cache (`mask` 0% cached). The cache-aware variants kept
-half the cache and cost 17–29% less than `full`.
+Five of six trimming policies were at least as accurate as `full` under both gradings, but at 50 tasks only
+`summarize` under the judge is significant after correction; the accuracy gain is a consistent direction,
+not an established effect. The cost results are firm: policies that rewrite earlier messages lost Gemini's
+implicit prompt cache (`mask` 0% cached), while the cache-aware variants kept half the cache and cost
+17–29% less than `full`.
 
 **Serving cost (Copilot sessions replayed under each policy as prefix-chained KV blocks; prefill
 recomputed vs `full`).** K6 is the offline KV simulator (4 replicas, 32 sessions, llm-d-style
@@ -100,6 +104,7 @@ simulator within ~3 points; on the real engine, `mask+cache` met the 1 s TTFT ta
 python -m maxionbench.datasets.sources fetch --group copilot copilot_traces browsecomp_plus
 python -m maxionbench.eval.copilot_characterize --jobs 3                     # production characterization
 python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml  # Gemini; paid, resumable
+python -m maxionbench.eval.context_regrade artifacts/context_eval/<run>       # strict grading, McNemar + Holm
 python -m maxionbench.kvsim experiments/k6_copilot_context_policies.yaml --out artifacts/kvsim
 python -m maxionbench.kvsim.live experiments/k7_llmd_copilot_context_policies.yaml --out artifacts/kvsim
 python -m maxionbench.kvsim.live experiments/k8_vllm_metal_copilot_context_policies.yaml --out artifacts/kvsim
