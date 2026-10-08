@@ -1,0 +1,36 @@
+schema_version: maxionbench-kvlive-v1
+name: k8-vllm-metal-copilot-context-policies
+description: >
+  K8 (v0.4 Step 4, real-engine check of K6): the K6 Copilot policy traces replayed live through llm-d EPP
+  v0.11 + Envoy over 2 native vllm-metal replicas of Qwen3-0.6B Q8 (Apple GPU, prefix caching on). Each
+  64-token trace block is 2 token ids (prompts 1/32 of their size: median 1.9k, max 19.3k tokens) so the
+  workload fits a 16 GB machine shared with other work; 8 active sessions, trace time uncompressed,
+  outputs scaled to 5% (max 32 tokens). Server-side prefix-cache hit ratio and TTFT come from the real
+  engine; each replica gets 10% of unified memory (~10k KV tokens, ~320k trace tokens). One repeat.
+traces:
+  full: copilot/policy_traces/full.sessions600.jsonl
+  truncate: copilot/policy_traces/truncate.sessions600.jsonl
+  window: copilot/policy_traces/window.sessions600.jsonl
+  mask: copilot/policy_traces/mask.sessions600.jsonl
+  summarize: copilot/policy_traces/summarize.sessions600.jsonl
+  window+cache: copilot/policy_traces/window_cache.sessions600.jsonl
+  mask+cache: copilot/policy_traces/mask_cache.sessions600.jsonl
+idle_cap_s: 300
+seed: 7
+repeats: 1
+replay: {concurrency: 8, horizon_s: 600, warmup_s: 120, time_scale: 1, tokens_per_block: 2, output_scale: 0.05,
+         max_output_tokens: 32, ttft_slo_s: 1.0, timeout_s: 120}
+target:
+  workers: vllm_metal
+  model: qwen3-0.6b
+  worker_params:
+    model: ~/models/Qwen3-0.6B-Q8_0.gguf
+    tokenizer: Qwen/Qwen3-0.6B
+    replicas: 2
+    base_port: 8210
+    max_model_len: 20480
+    gpu_memory_utilization: 0.10
+    max_num_seqs: 8
+    enable_prefix_caching: true
+cells:
+  - {scorer_profile: optimized-baseline}

@@ -191,8 +191,12 @@ def load_spec(path: Path) -> dict[str, Any]:
 
 
 def target_params(target: dict[str, Any], cell: dict[str, Any]) -> dict[str, Any]:
-    """llm-d target params for a cell: scorer profile plus the workers' GPU/CPU KV sizes."""
+    """llm-d target params for a cell: scorer profile plus the workers' GPU/CPU KV sizes (inference-sim
+    workers), or native vllm-metal workers configured by `worker_params`."""
     t = {**target, **cell}
+    if t.get("workers") == "vllm_metal":
+        return {"workers": "vllm_metal", "scorer_profile": t["scorer_profile"], "model": t.get("model", "qwen3"),
+                "worker_params": dict(t["worker_params"])}
     args = [*t.get("sim_args", []), "--enable-kvcache", "--kv-cache-size", str(t["gpu_kv_blocks"]),
             "--cpu-kv-cache-size", str(t.get("cpu_kv_blocks", 0))]
     return {"workers": "sim", "scorer_profile": t["scorer_profile"], "model": t.get("model", "qwen3"),

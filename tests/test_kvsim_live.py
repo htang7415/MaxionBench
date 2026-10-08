@@ -70,3 +70,13 @@ def test_precise_epp_config_uses_kv_events_and_tier_weights():
             "prefixMatchInfoProducerName": "precise-prefix-cache-producer"}
     with pytest.raises(ValueError, match="render_url"):
         render_epp_config("precise-tiered")
+
+
+def test_target_params_supports_native_vllm_metal_workers() -> None:
+    from maxionbench.kvsim.live import target_params
+
+    target = {"workers": "vllm_metal", "model": "qwen3-0.6b",
+              "worker_params": {"model": "~/models/Qwen3-0.6B-Q8_0.gguf", "replicas": 2, "max_model_len": 16384}}
+    params = target_params(target, {"scorer_profile": "optimized-baseline"})
+    assert params == {"workers": "vllm_metal", "scorer_profile": "optimized-baseline", "model": "qwen3-0.6b",
+                      "worker_params": target["worker_params"]}
