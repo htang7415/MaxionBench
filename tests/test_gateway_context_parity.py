@@ -13,7 +13,8 @@ from typing import Any
 from maxionbench.agents.context import MASK_TEXT, make_policy
 
 FIXTURE = Path(__file__).resolve().parents[1] / "gateway/internal/ctxmgr/testdata/parity.json"
-CASES = [("mask+cache", 2, 300), ("mask+cache", 4, 900), ("window+cache", 3, 300), ("window+cache", 8, 900)]
+CASES = [("mask+cache", 2, 300, 0), ("mask+cache", 4, 900, 0), ("window+cache", 3, 300, 0), ("window+cache", 8, 900, 0),
+         ("mask+cache", 1, 150, 200), ("window+cache", 3, 200, 150)]
 WORDS = ("cache", "kv", "prefix", "tool", "résumé", "naïve", "数据", "agent", "page", "search")
 
 
@@ -53,10 +54,11 @@ def build() -> dict[str, Any]:
     for seed in range(6):
         history, steps = agent_history(seed)
         histories.append({"history": history, "steps": steps})
-        for name, keep, budget in CASES:
-            policy = make_policy(name, keep=keep, budget_tokens=budget)
+        for name, keep, budget, growth in CASES:
+            policy = make_policy(name, keep=keep, budget_tokens=budget, min_growth=growth)
             views = [encode(policy.view(history[:n]), history) for n in steps]
-            cases.append({"history": seed, "policy": name, "keep": keep, "budget_tokens": budget, "views": views})
+            cases.append({"history": seed, "policy": name, "keep": keep, "budget_tokens": budget, "min_growth": growth,
+                          "views": views})
     return {"mask_text": MASK_TEXT, "histories": histories, "cases": cases}
 
 

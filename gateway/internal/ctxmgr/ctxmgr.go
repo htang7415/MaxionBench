@@ -4,6 +4,9 @@
 // a base policy (mask old tool results, or keep a window of recent exchanges). It mirrors
 // maxionbench/agents/context.py CacheAware(Mask|Window); testdata/parity.json is generated from Python.
 //
+// With min_growth, a trimmed view must grow by that many tokens before the next trim: when the base policy
+// cannot bring a long history under the budget, trimming every call would break the prefix every call.
+//
 // A pause trigger trims early: after a session has been idle longer than the provider's cache lifetime the
 // prefix is probably evicted anyway, so rewriting it costs nothing and shrinks every later call.
 package ctxmgr
@@ -36,6 +39,8 @@ type Config struct {
 	BudgetTokens int     `yaml:"budget_tokens"` // re-render when the appended view passes this
 	Keep         int     `yaml:"keep"`          // exchanges kept by mask/window
 	PauseS       float64 `yaml:"pause_s"`       // 0 disables the pause trigger
+	MinGrowth    int     `yaml:"min_growth"`    // tokens a trimmed view must grow before the next trim
+	MaskText     string  `yaml:"mask_text"`     // placeholder for masked tool results (default MaskText)
 	MaxSessions  int     `yaml:"max_sessions"`  // least recently used sessions are dropped beyond this
 }
 
@@ -61,8 +66,8 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("context.policy must be off, mask+cache or window+cache, got %q", c.Policy)
 	}
-	if c.BudgetTokens < 0 || c.Keep < 0 || c.PauseS < 0 || c.MaxSessions < 0 {
-		return fmt.Errorf("context: budget_tokens, keep, pause_s and max_sessions must be >= 0")
+	if c.BudgetTokens < 0 || c.Keep < 0 || c.PauseS < 0 || c.MinGrowth < 0 || c.MaxSessions < 0 {
+		return fmt.Errorf("context: budget_tokens, keep, pause_s, min_growth and max_sessions must be >= 0")
 	}
 	return nil
 }
@@ -71,9 +76,10 @@ func (c *Config) Validate() error {
 func (c Config) Enabled() bool { return c.Policy != "" && c.Policy != "off" }
 
 type session struct {
-	seen []string  // hashes of the client messages reflected in prev
-	prev []Message // last view sent upstream
-	last time.Time
+	seen    []string  // hashes of the client messages reflected in prev
+	prev    []Message // last view sent upstream
+	last    time.Time
+	trigger int // appended views above this are re-rendered
 }
 
 // Manager holds per-session state. Safe for concurrent use.
@@ -83,7 +89,12 @@ type Manager struct {
 	sessions map[string]*session
 }
 
-func New(cfg Config) *Manager { return &Manager{cfg: cfg, sessions: map[string]*session{}} }
+func New(cfg Config) *Manager {
+	if cfg.MaskText == "" {
+		cfg.MaskText = MaskText
+	}
+	return &Manager{cfg: cfg, sessions: map[string]*session{}}
+}
 
 // Result describes one rewrite.
 type Result struct {
@@ -116,7 +127,7 @@ func (m *Manager) Apply(key string, history []Message, now time.Time) Result {
 		res.View, res.Action = base, PauseEdit
 	default:
 		appended := append(append([]Message{}, s.prev...), tail(base, len(history)-len(s.seen))...)
-		if EstimateTokens(appended) <= m.cfg.BudgetTokens {
+		if EstimateTokens(appended) <= s.trigger {
 			res.View, res.Action = appended, Append
 		} else {
 			res.View, res.Action = base, Edit
@@ -124,6 +135,12 @@ func (m *Manager) Apply(key string, history []Message, now time.Time) Result {
 	}
 	s.prev, s.seen, s.last = res.View, hashes, now
 	res.TokensOut = EstimateTokens(res.View)
+	if res.Action != Append {
+		s.trigger = m.cfg.BudgetTokens
+		if m.cfg.MinGrowth > 0 {
+			s.trigger = max(s.trigger, res.TokensOut+m.cfg.MinGrowth)
+		}
+	}
 	return res
 }
 
@@ -180,7 +197,7 @@ func (m *Manager) base(history []Message) []Message {
 			out[i] = make([]Message, len(ex))
 			for j, msg := range ex {
 				if msg["role"] == "tool" {
-					msg = replaceContent(msg, MaskText)
+					msg = replaceContent(msg, m.cfg.MaskText)
 				}
 				out[i][j] = msg
 			}

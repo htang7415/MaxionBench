@@ -1,0 +1,31 @@
+schema_version: maxionbench-gwreplay-v1
+name: k9b-gateway-mask-min-growth-qwen3-8b
+description: >
+  K9b (v0.5 Step 2): K9's mask arms again after two fixes found in K9 repeat 1, on the same session
+  schedules (same days, sessions, seed and repeats), so they pair with K9's off and window+cache arms.
+  (1) min_growth: a trimmed view must grow by 25k full-scale tokens before the next trim; without it, a
+  long session whose masked view is still over budget re-trimmed (and missed the cache) almost every call.
+  (2) mask_text "[omitted]": the placeholder is scaled with the message text (the default ~19-token
+  placeholder against ~44-token scaled tool results understated what masking removes at full scale).
+days:
+  sat: copilot/date.2026-06-06.tar.gz
+  tue: copilot/date.2026-06-02.tar.gz
+sessions: 200
+seed: 0
+idle_cap_s: 300
+repeats: 2
+# budget_tokens and min_growth are in the gateway's estimate units at 1/16 scale (100k / 16, 25k / 16)
+arms:
+  mask+cache: {policy: mask+cache, keep: 4, budget_tokens: 6250, min_growth: 1560, mask_text: "[omitted]"}
+  mask+cache+pause: {policy: mask+cache, keep: 4, budget_tokens: 6250, min_growth: 1560, mask_text: "[omitted]",
+                     pause_s: 120}
+replay: {concurrency: 6, horizon_s: 1500, warmup_s: 300, time_scale: 1, mid_life: true, scale: 0.0625, output_scale: 0.05,
+         max_output_tokens: 16, ttft_slo_s: 5.0, timeout_s: 900}
+target:
+  model: mlx-community/Qwen3-8B-4bit
+  replicas: 1
+  base_port: 8210
+  max_model_len: 16384
+  gpu_memory_utilization: 0.75
+  max_num_seqs: 8
+  enable_prefix_caching: true
