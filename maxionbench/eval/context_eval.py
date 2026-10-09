@@ -171,7 +171,9 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                 for i, (name, params) in enumerate(policies.items()) if "gateway" in params}
     gateway_meter = Meter(price)  # the gateway commits these calls to the ledger; counted here for the budget
 
-    billed_here = [name for name in policies if name not in gateways]  # gateway arms reserve per request
+    # arms billed from Python with work left (gateway arms reserve per request)
+    billed_here = [name for name in policies if name not in gateways
+                   and any((t.task_id, name) not in finished for t in tasks)]
 
     def estimate(p: ModelPrice) -> float:  # this side's share of the remaining budget plus one task group at
         return (max(0.0, budget - spent_before) * len(billed_here) / len(policies)  # 60k uncached tokens per step
