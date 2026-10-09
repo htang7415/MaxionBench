@@ -36,17 +36,17 @@ from maxionbench.agents.browsecomp_env import SYSTEM_PROMPT, BrowseTask, load_ta
 from maxionbench.agents.context import Message, estimate_tokens, make_policy
 from maxionbench.agents.loop import ChatPolicy
 from maxionbench.eval.agent_trial import JUDGE, MAX_TOKENS, run_task
-from maxionbench.eval.batch import Call, Meter, bound_send, metered, retryable, run_calls
+from maxionbench.eval.batch import Call, Meter, bound_send, estimated_prompt_tokens, retryable, run_calls
 from maxionbench.eval.tool_client import chat_tools
 from maxionbench.graders.judge import RUBRIC_VERSION, judge_messages, parse_label
-from maxionbench.harness.budget import ModelPrice, cost_usd
+from maxionbench.harness.budget import BudgetExceededError, BudgetLedger, ModelPrice, cost_usd
 from maxionbench.harness.gateway import AIGateway
 from maxionbench.harness.provenance import make_provenance, scrubber
 from maxionbench.harness.results import (
     RESULT_SCHEMA_VERSION, ExperimentResult, TrialResult, aggregate_cells, mean_ci,
 )
 from maxionbench.harness.targets import GeminiTarget
-from maxionbench.rag.llm_client import chat_completion
+from maxionbench.rag.llm_client import CompletionResult, chat_completion
 from maxionbench.schemas.result_schema import utc_now_iso
 
 SCHEMA = "maxionbench-context-v1"
@@ -169,21 +169,29 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
     gateways = {name: AIGateway({"policy": "remote_only", "port": 8090 + i, "context": params["gateway"],
                                  "remote": {"enabled": True, **spec["model"]}}, out_dir / f"gateway-{name}")
                 for i, (name, params) in enumerate(policies.items()) if "gateway" in params}
+    meter = Meter(price)
     gateway_meter = Meter(price)  # the gateway commits these calls to the ledger; counted here for the budget
-
-    # arms billed from Python with work left (gateway arms reserve per request)
-    billed_here = [name for name in policies if name not in gateways
-                   and any((t.task_id, name) not in finished for t in tasks)]
-
-    def estimate(p: ModelPrice) -> float:  # this side's share of the remaining budget plus one task group at
-        return (max(0.0, budget - spent_before) * len(billed_here) / len(policies)  # 60k uncached tokens per step
-                + len(billed_here) * max_steps * cost_usd(p, input_tokens=60_000, output_tokens=MAX_TOKENS))
+    # Like the gateway, every direct request reserves its worst case and commits what it cost, so the two
+    # share the cap without either holding budget the other needs.
+    ledger, label = BudgetLedger(target.pricing()[2]), f"context-eval/{spec['name']}"
 
     def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, url: str | None = None,
                      **kwargs: Any) -> Any:
         for attempt in range(3):
+            reservation = None
+            if url is None:  # calls through the gateway are reserved by the gateway
+                try:
+                    reservation = ledger.reserve(cost_usd(price, input_tokens=estimated_prompt_tokens(messages),
+                                                          output_tokens=max_tokens), label)
+                except BudgetExceededError as exc:
+                    stop.append(str(exc)[:200])
+                    return CompletionResult("", "error", None, 0.0, 0, 0, 0, f"budget: {exc}")
+            spend, usage = meter.spend_usd, dict(meter.usage)
             r = fn(url or target.base_urls[0], messages, max_tokens=max_tokens, timeout_s=120.0, **kwargs)
             meter.add(r, messages, max_tokens)
+            if reservation is not None:
+                ledger.commit(reservation, max(0.0, meter.spend_usd - spend),
+                              {k: meter.usage[k] - usage[k] for k in usage})
             if _fatal(r.error):
                 stop.append(scrubber()[0](r.error or "")[:200])
                 return r
@@ -197,7 +205,7 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
         _write_jsonl(out_dir / "answers.jsonl",  # local only: answers can contain benchmark text
                      [{"task_id": k[0], "policy": k[1], "answer": v} for k, v in answers.items()])
 
-    with target, metered(target, estimate, f"context-eval/{spec['name']}") as meter, \
+    with target, \
             tempfile.TemporaryDirectory() as tmp, ExitStack() as stack:
         for gw in gateways.values():
             stack.enter_context(gw)
