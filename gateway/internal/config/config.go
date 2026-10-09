@@ -41,7 +41,7 @@ type Remote struct {
 	KeyFile         string         `yaml:"key_file"` // used only if GEMINI_API_KEY is unset
 	ReasoningEffort string         `yaml:"reasoning_effort"`
 	PricingFile     string         `yaml:"pricing_file"`
-	StripFields     []string       `yaml:"strip_fields"` // engine-specific fields the provider rejects
+	StripFields     []string       `yaml:"strip_fields"` // engine-specific fields (and prompt_cache_key) the provider rejects
 	TimeoutS        float64        `yaml:"timeout_s"`
 	Price           budget.Price   `yaml:"-"`
 	CapUSD          float64        `yaml:"-"`
@@ -79,7 +79,7 @@ func Load(path string) (*Config, error) {
 		Policy: LocalFirst,
 		Local:  Local{MaxInflight: 8, TimeoutS: 300, WindowS: 10, MinSamples: 8},
 		Remote: Remote{ChatPath: "/chat/completions", TimeoutS: 120,
-			StripFields: []string{"chat_template_kwargs", "ignore_eos", "cache_prompt"}},
+			StripFields: []string{"chat_template_kwargs", "ignore_eos", "cache_prompt", "prompt_cache_key"}},
 		Budget: Budget{LedgerPath: "~/.maxionbench/budget/gemini_ledger.jsonl"},
 	}
 	dec := yaml.NewDecoder(strings.NewReader(string(raw)))

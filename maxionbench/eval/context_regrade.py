@@ -18,7 +18,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from maxionbench.agents.browsecomp_env import load_tasks
+from maxionbench.eval.context_eval import spec_tasks
 from maxionbench.graders.qa import agent_success
 
 
@@ -65,7 +65,7 @@ def regrade(run_dir: Path) -> dict[str, Any]:
     answers = {(a["task_id"], a["policy"]): a["answer"] for line in
                (run_dir / "answers.jsonl").read_text(encoding="utf-8").splitlines() if line for a in [json.loads(line)]}
     n = int(spec["tasks"]) if spec.get("_task_limit") is None else min(int(spec["tasks"]), int(spec["_task_limit"]))
-    gold = {t.task_id: t.answer for t in load_tasks(n, int(spec["seed"]), pool=int(spec["pool"]))}
+    gold = {t.task_id: t.answer for t in spec_tasks(spec, n)}
     policies = list(spec["policies"])
     judge = {(it["task_id"], it["policy"]): bool(it["correct"]) for it in items}
     strict = {k: agent_success(answers.get(k), gold[k[0]]) for k in judge}

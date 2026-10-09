@@ -6,6 +6,12 @@ between runs (policies on one task would otherwise reuse each other's cached pro
 Gemini bills: input at the cached or uncached rate as reported, plus output and reasoning tokens, plus
 summarizer calls. Correctness comes from the calibrated judge. Outputs hold ids and numbers only.
 
+A policy with a `gateway:` block is run through the Go gateway (remote_only to Gemini) with that `context:`
+config: the agent sends its full history with a per-run `prompt_cache_key` and the gateway trims it. The
+gateway bills those calls to the ledger itself. `pair_with: <run dir>` compares against another run's
+policies on the same tasks (so a new arm needs no rerun of `full`); `exclude_tasks_from: <run dir>` draws
+tasks that run did not use.
+
     python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml [--limit 3]
     python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml --resume artifacts/context_eval/<run>
 """
@@ -13,7 +19,9 @@ summarizer calls. Correctness comes from the calibrated judge. Outputs hold ids 
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from contextlib import ExitStack
 from datetime import datetime, timezone
+import functools
 import json
 from pathlib import Path
 import sys
@@ -32,6 +40,7 @@ from maxionbench.eval.batch import Call, Meter, bound_send, metered, retryable, 
 from maxionbench.eval.tool_client import chat_tools
 from maxionbench.graders.judge import RUBRIC_VERSION, judge_messages, parse_label
 from maxionbench.harness.budget import ModelPrice, cost_usd
+from maxionbench.harness.gateway import AIGateway
 from maxionbench.harness.provenance import make_provenance, scrubber
 from maxionbench.harness.results import (
     RESULT_SCHEMA_VERSION, ExperimentResult, TrialResult, aggregate_cells, mean_ci,
@@ -57,9 +66,16 @@ def load_spec(path: Path) -> dict[str, Any]:
     spec = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if spec.get("schema_version") != SCHEMA:
         raise ValueError(f"schema_version must be {SCHEMA!r}")
-    if "full" not in spec["policies"]:
-        raise ValueError("policies must include the `full` baseline")
+    if "full" not in spec["policies"] and not spec.get("pair_with"):
+        raise ValueError("policies must include the `full` baseline, or pair_with a run that has it")
     return spec
+
+
+def spec_tasks(spec: dict[str, Any], n: int) -> list[BrowseTask]:
+    """The spec's tasks: `n` seeded draws, skipping those of `exclude_tasks_from`."""
+    exclude = {it["task_id"] for it in _read_jsonl(Path(spec["exclude_tasks_from"]) / "items.jsonl")} \
+        if spec.get("exclude_tasks_from") else set()
+    return load_tasks(n, int(spec["seed"]), pool=int(spec["pool"]), exclude=exclude)
 
 
 def transcript(messages: Sequence[Message]) -> str:
@@ -131,9 +147,9 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                                            encoding="utf-8")
     started_at = utc_now_iso()
     n = int(spec["tasks"]) if limit is None else min(int(spec["tasks"]), limit)
-    seed, pool, max_steps, budget = int(spec["seed"]), int(spec["pool"]), int(spec["max_steps"]), float(spec["budget_usd"])
+    seed, max_steps, budget = int(spec["seed"]), int(spec["max_steps"]), float(spec["budget_usd"])
     policies: dict[str, dict[str, Any]] = {name: dict(params or {}) for name, params in spec["policies"].items()}
-    tasks = load_tasks(n, seed, pool=pool)
+    tasks = spec_tasks(spec, n)
     by_id = {t.task_id: t for t in tasks}
 
     # keep only complete task groups from earlier attempts; a partial group is rerun
@@ -151,14 +167,19 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
     price = target.pricing()[1]
     send_tools, send_text = bound_send(target, chat_tools), bound_send(target, chat_completion)
     stop: list[str] = []
+    gateways = {name: AIGateway({"policy": "remote_only", "port": 8090 + i, "context": params["gateway"],
+                                 "remote": {"enabled": True, **spec["model"]}}, out_dir / f"gateway-{name}")
+                for i, (name, params) in enumerate(policies.items()) if "gateway" in params}
+    gateway_meter = Meter(price)  # the gateway commits these calls to the ledger; counted here for the budget
 
     def estimate(p: ModelPrice) -> float:  # the remaining budget plus one task group at 60k uncached tokens per step
         return max(0.0, budget - spent_before) + len(policies) * max_steps * cost_usd(
             p, input_tokens=60_000, output_tokens=MAX_TOKENS)
 
-    def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, **kwargs: Any) -> Any:
+    def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, url: str | None = None,
+                     **kwargs: Any) -> Any:
         for attempt in range(3):
-            r = fn(target.base_urls[0], messages, max_tokens=max_tokens, timeout_s=120.0, **kwargs)
+            r = fn(url or target.base_urls[0], messages, max_tokens=max_tokens, timeout_s=120.0, **kwargs)
             meter.add(r, messages, max_tokens)
             if _fatal(r.error):
                 stop.append(scrubber()[0](r.error or "")[:200])
@@ -174,17 +195,21 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                      [{"task_id": k[0], "policy": k[1], "answer": v} for k, v in answers.items()])
 
     with target, metered(target, estimate, f"context-eval/{spec['name']}") as meter, \
-            tempfile.TemporaryDirectory() as tmp:
+            tempfile.TemporaryDirectory() as tmp, ExitStack() as stack:
+        for gw in gateways.values():
+            stack.enter_context(gw)
         for i, task in enumerate(tasks):
             if task.task_id in done:
                 continue
-            if spent_before + meter.spend_usd >= budget:
+            if spent_before + meter.spend_usd + gateway_meter.spend_usd >= budget:
                 _log(f"budget ${budget:.2f} reached after {i} tasks")
                 break
             group = []
             for name, params in policies.items():
-                item, answer = run_one(task, name, params, max_steps, Path(tmp), meter, price, with_retries,
-                                       send_tools, send_text)
+                gw = gateways.get(name)
+                item, answer = run_one(task, name, params, max_steps, Path(tmp), gateway_meter if gw else meter,
+                                       price, with_retries, send_tools, send_text,
+                                       gateway_url=gw.base_urls[0] if gw else None)
                 if stop:
                     break
                 group.append((item, answer))
@@ -196,8 +221,9 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                     answers[(item["task_id"], item["policy"])] = answer
             done.add(task.task_id)
             save()
-            _log(f"task {i + 1}/{len(tasks)} done, spend ${spent_before + meter.spend_usd:.4f}")
-    agent_spend = spent_before + meter.spend_usd
+            _log(f"task {i + 1}/{len(tasks)} done, spend ${spent_before + meter.spend_usd + gateway_meter.spend_usd:.4f}")
+        gateway_stats = {name: scrape_context_metrics(gw.base_urls[0]) for name, gw in gateways.items()}
+    agent_spend = spent_before + meter.spend_usd + gateway_meter.spend_usd
     (out_dir / "spec.yaml").write_text(yaml.safe_dump({**spec, "_agent_spend_usd": round(agent_spend, 6)},
                                                       sort_keys=False), encoding="utf-8")
     if stop:
@@ -248,19 +274,36 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
             "tasks_completed": len(task_ids), "resumed": resume is not None, "spend_usd": spend}),
         trials=trials, cells=aggregate_cells(trials, {name: {"policy": name, **p} for name, p in policies.items()}))
     (out_dir / "results.json").write_text(scrub(json.dumps(result.to_dict(), indent=2)) + "\n", encoding="utf-8")
-    summary = {"tasks": len(task_ids), "spend_usd": spend,
-               "overall": {name: metrics([it for it in items if it["policy"] == name]) for name in policies},
-               "paired_vs_full": paired_vs_full(items, list(policies))}
+    summary: dict[str, Any] = {
+        "tasks": len(task_ids), "spend_usd": spend,
+        "overall": {name: metrics([it for it in items if it["policy"] == name]) for name in policies}}
+    if gateway_stats:
+        summary["gateway_context"] = gateway_stats  # this session only (a resumed run restarts the gateway)
+    paired = items
+    if spec.get("pair_with"):
+        other = [it for it in _read_jsonl(Path(spec["pair_with"]) / "items.jsonl") if it["task_id"] in set(task_ids)
+                 and it["policy"] not in policies]
+        paired = items + other
+        summary["paired_with"] = {"run": Path(spec["pair_with"]).name, "overall": {
+            name: metrics([it for it in other if it["policy"] == name]) for name in dict.fromkeys(it["policy"] for it in other)}}
+    summary["paired_vs_full"] = paired_vs_full(paired, list(policies))
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     _log(f"wrote {out_dir}")
     return out_dir
 
 
 def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int, workdir: Path, meter: Meter,
-            price: ModelPrice, with_retries: Any, send_tools: Any, send_text: Any,
+            price: ModelPrice, with_retries: Any, send_tools: Any, send_text: Any, gateway_url: str | None = None,
             ) -> tuple[dict[str, Any], str | None]:
-    """One agent run: (item with ids and numbers only, the answer text or None)."""
+    """One agent run: (item with ids and numbers only, the answer text or None). With `gateway_url` the agent
+    sends its full history to the gateway, which applies the context policy."""
     summaries: list[Any] = []
+    nonce = f"run {uuid.uuid4().hex}\n"  # unique first tokens: no implicit-cache sharing across runs
+    if gateway_url:
+        send_tools = functools.partial(chat_tools, extra_body={"prompt_cache_key": nonce.split()[1]})
+        retry = functools.partial(with_retries, url=gateway_url)
+    else:
+        retry = with_retries
 
     def summarizer(messages: Sequence[Message]) -> str:
         prompt = [{"role": "system", "content": SUMMARIZE_PROMPT}, {"role": "user", "content": transcript(messages)}]
@@ -268,9 +311,9 @@ def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int,
         summaries.append(r)
         return r.text.strip() if r.status == "ok" else "(summary unavailable)"
 
-    context = Recorder(make_policy(name, summarizer if name.startswith("summarize") else None, **params))
-    agent = ChatPolicy(lambda messages, tools: with_retries(send_tools, meter, messages, MAX_TOKENS, tools=tools))
-    nonce = f"run {uuid.uuid4().hex}\n"  # unique first tokens: no implicit-cache sharing across runs
+    context = Recorder(make_policy("full") if gateway_url else
+                       make_policy(name, summarizer if name.startswith("summarize") else None, **params))
+    agent = ChatPolicy(lambda messages, tools: retry(send_tools, meter, messages, MAX_TOKENS, tools=tools))
     run = run_task(task, agent, max_steps, workdir, context, nonce + SYSTEM_PROMPT)
     steps = [r for r in agent.results if r.status == "ok"]
     prompt = sum(r.prompt_tokens for r in steps)
@@ -289,6 +332,16 @@ def run_one(task: BrowseTask, name: str, params: dict[str, Any], max_steps: int,
         "summary_cost_usd": round(_call_cost(price, summaries), 6),
     }
     return item, (run.answer if run.status == "answered" and run.answer else None)
+
+
+def scrape_context_metrics(base_url: str) -> dict[str, float]:
+    """The gateway's context-manager counters (requests by action, tokens in/out)."""
+    import urllib.request
+
+    with urllib.request.urlopen(base_url + "/metrics", timeout=5) as resp:
+        lines = resp.read().decode("utf-8", "replace").splitlines()
+    return {line.rsplit(" ", 1)[0].removeprefix("maxion_gateway_"): float(line.rsplit(" ", 1)[1])
+            for line in lines if line.startswith("maxion_gateway_context_")}
 
 
 def metrics(items: Sequence[dict[str, Any]]) -> dict[str, float]:

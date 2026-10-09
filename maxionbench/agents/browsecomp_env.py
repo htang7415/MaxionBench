@@ -16,6 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 import random
+from typing import Collection
 
 import bm25s
 import pyarrow.parquet as pq
@@ -51,11 +52,13 @@ class BrowseTask:
     gold_doc_ids: tuple[str, ...]
 
 
-def load_tasks(n: int, seed: int = 0, root: Path = DATASET_ROOT, pool: int = 1) -> list[BrowseTask]:
-    """`n` seeded queries, decrypted. Each task searches its own documents plus those of `pool - 1` other
-    queries (a separate seeded draw, so the tasks are the same for every pool size)."""
+def load_tasks(n: int, seed: int = 0, root: Path = DATASET_ROOT, pool: int = 1,
+               exclude: Collection[str] = ()) -> list[BrowseTask]:
+    """`n` seeded queries, decrypted, none of them in `exclude`. Each task searches its own documents plus
+    those of `pool - 1` other queries (a separate seeded draw, so the tasks are the same for every pool size)."""
     paths = [verified_path(rel, root) for rel in SHARDS]
-    ids = sorted(qid for p in paths for qid in pq.read_table(p, columns=["query_id"]).column("query_id").to_pylist())
+    ids = sorted(qid for p in paths for qid in pq.read_table(p, columns=["query_id"]).column("query_id").to_pylist()
+                 if qid not in exclude)
     chosen = random.Random(seed).sample(ids, n)
     extras = random.Random(seed + 1).sample(sorted(set(ids) - set(chosen)), n * (pool - 1))
     rows: dict[str, dict] = {}
