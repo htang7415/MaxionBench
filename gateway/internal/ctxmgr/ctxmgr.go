@@ -82,18 +82,25 @@ type session struct {
 	trigger int // appended views above this are re-rendered
 }
 
-// Manager holds per-session state. Safe for concurrent use.
+// maxPerKey bounds the sessions kept under one key (clients whose sessions share a key, or parallel runs of
+// one task); the least recently used is dropped beyond it.
+const maxPerKey = 8
+
+// Manager holds per-session state. Safe for concurrent use. Sessions that share a key (different clients
+// with the same opening messages, or parallel runs of one task) each keep their own state: a request
+// continues the session whose history it extends.
 type Manager struct {
 	cfg      Config
 	mu       sync.Mutex
-	sessions map[string]*session
+	sessions map[string][]*session
+	count    int
 }
 
 func New(cfg Config) *Manager {
 	if cfg.MaskText == "" {
 		cfg.MaskText = MaskText
 	}
-	return &Manager{cfg: cfg, sessions: map[string]*session{}}
+	return &Manager{cfg: cfg, sessions: map[string][]*session{}}
 }
 
 // Result describes one rewrite.
@@ -112,11 +119,20 @@ func (m *Manager) Apply(key string, history []Message, now time.Time) Result {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.sessions[key]
+	var s *session
+	for _, c := range m.sessions[key] { // the longest history this request extends
+		if extends(hashes, c.seen) && (s == nil || len(c.seen) > len(s.seen)) {
+			s = c
+		}
+	}
 	if s == nil {
+		if len(m.sessions[key]) >= maxPerKey {
+			m.remove(key, oldest(m.sessions[key]))
+		}
 		m.evictIfFull()
 		s = &session{}
-		m.sessions[key] = s
+		m.sessions[key] = append(m.sessions[key], s)
+		m.count++
 	}
 	res := Result{TokensIn: EstimateTokens(history)}
 	base := m.base(history)
@@ -161,21 +177,47 @@ func SessionKey(promptCacheKey string, history []Message) string {
 func (m *Manager) Sessions() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.sessions)
+	return m.count
 }
 
 func (m *Manager) evictIfFull() {
-	if len(m.sessions) < m.cfg.MaxSessions {
+	if m.count < m.cfg.MaxSessions {
 		return
 	}
-	var oldest string
-	var t time.Time
-	for k, s := range m.sessions {
-		if oldest == "" || s.last.Before(t) {
-			oldest, t = k, s.last
+	var key string
+	var victim *session
+	for k, list := range m.sessions {
+		if s := oldest(list); victim == nil || s.last.Before(victim.last) {
+			key, victim = k, s
 		}
 	}
-	delete(m.sessions, oldest)
+	m.remove(key, victim)
+}
+
+func (m *Manager) remove(key string, s *session) {
+	list := m.sessions[key]
+	for i, c := range list {
+		if c == s {
+			list = append(list[:i:i], list[i+1:]...)
+			break
+		}
+	}
+	if len(list) == 0 {
+		delete(m.sessions, key)
+	} else {
+		m.sessions[key] = list
+	}
+	m.count--
+}
+
+func oldest(list []*session) *session {
+	var o *session
+	for _, s := range list {
+		if o == nil || s.last.Before(o.last) {
+			o = s
+		}
+	}
+	return o
 }
 
 func (m *Manager) base(history []Message) []Message {

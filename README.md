@@ -120,7 +120,8 @@ gateway (`gateway/internal/ctxmgr`, `context:` in its config) keeps, per agent s
 else the system prompt and task), the view it last sent upstream and only appends to it, so the engine's
 prefix cache keeps hitting. It trims (masks old tool results, or keeps the last N exchanges) only when the
 view passes a token budget, or when the history it sees is new or rewritten and the prefix is cold anyway.
-After a trim the view must grow by `min_growth` tokens before the next one. Without that, long sessions
+Sessions that share a key (clients with the same opening messages, or parallel runs of one task) keep
+separate state: a request continues the session whose history it extends. After a trim the view must grow by `min_growth` tokens before the next one. Without that, long sessions
 whose trimmed view was still over budget were trimmed again on almost every call, and each trim missed
 the cache. The Go code produces the same views as `agents/context.py` on a fixture generated from
 Python, and the gateway reports each decision in a response header, Prometheus counters and trace

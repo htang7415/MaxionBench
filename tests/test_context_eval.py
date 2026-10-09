@@ -133,17 +133,11 @@ def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
         return ({c.id: CompletionResult('{"label": "correct"}', "ok", None, 0.1, 10, 0, 5) for c in calls},
                 {"spend_usd": 0.0})
 
-    class FakeMeter:
-        def __enter__(self) -> Meter:
-            return Meter(PRICE)
-
-        def __exit__(self, *exc: object) -> None:
-            pass
-
     monkeypatch.setattr(context_eval, "load_tasks", lambda n, seed, pool, exclude: tasks[:n])
     monkeypatch.setattr(context_eval, "GeminiTarget", FakeTarget)
     monkeypatch.setattr(context_eval, "bound_send", lambda target, send: tools if send.__name__ == "chat_tools" else None)
-    monkeypatch.setattr(context_eval, "metered", lambda *a, **k: FakeMeter())
+    budget_dir = tmp_path.parent / f"{tmp_path.name}-budget"
+    monkeypatch.setenv("MAXIONBENCH_BUDGET_DIR", str(budget_dir))
     monkeypatch.setattr(context_eval, "run_calls", judge)
     spec = {"schema_version": context_eval.SCHEMA, "name": "t", "seed": 0, "pool": 1, "tasks": 3, "max_steps": 4,
             "shards": 3, "budget_usd": 10.0, "model": {}, "policies": {"full": {}, "mask": {"keep": 1}}}
@@ -155,6 +149,11 @@ def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
     saved = [json.loads(line) for line in (run_dir / "items.jsonl").read_text().splitlines()]
     assert sorted({i["task_id"] for i in saved}) == ["0", "1"] and len(saved) == 4  # task 2's partial group dropped
     assert not (run_dir / "results.json").exists() and state["judged"] == []
+    # every direct request reserved its worst case and committed what it cost: 9 billed calls (task 2's first
+    # run was billed although its group is discarded), and the refused 10th costs nothing
+    events = [json.loads(line)["event"] for line in (budget_dir / "gemini_ledger.jsonl").read_text().splitlines()]
+    assert events.count("reserve") == events.count("commit") == state["calls"] == 10
+    assert BudgetLedger(100.0).spent_usd() == pytest.approx(9 * (1_000 * 1.0 + 10 * 10.0) / 1e6)
 
     state["refuse_after"], calls_before = None, state["calls"]
     out = context_eval.run_context_eval({}, tmp_path, resume=run_dir)
@@ -233,3 +232,25 @@ def test_gateway_arm_trims_in_the_gateway_and_bills_the_ledger(tmp_path: Path, m
     assert len(_FakeGemini.bodies[-1]["messages"]) < 2 + 2 * 3
     assert sum(v for k, v in stats.items() if k.startswith("context_requests_total")) == 4
     assert BudgetLedger(10.0).spent_usd() == pytest.approx(4 * (1_000 * 0.30 + 10 * 2.50) / 1e6)
+
+
+def test_run_stops_when_the_shared_cap_refuses_a_reservation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MAXIONBENCH_BUDGET_DIR", str(tmp_path.parent / f"{tmp_path.name}-budget"))
+    calls: list[int] = []
+
+    def tools(base_url: str, messages: Any, *, max_tokens: int, timeout_s: float, tools: Any) -> CompletionResult:
+        calls.append(1)
+        return CompletionResult(json.dumps({"role": "assistant", "content": "paper"}), "ok", None, 0.1, 1_000, 0, 10)
+
+    class TinyCap(FakeTarget):
+        def pricing(self) -> tuple[str, ModelPrice, float]:
+            return "fake", PRICE, 1e-9  # no request fits under the cap
+
+    monkeypatch.setattr(context_eval, "load_tasks", lambda n, seed, pool, exclude: [TASK])
+    monkeypatch.setattr(context_eval, "GeminiTarget", TinyCap)
+    monkeypatch.setattr(context_eval, "bound_send", lambda target, send: tools if send.__name__ == "chat_tools" else None)
+    spec = {"schema_version": context_eval.SCHEMA, "name": "t", "seed": 0, "pool": 1, "tasks": 1, "max_steps": 4,
+            "shards": 1, "budget_usd": 10.0, "model": {}, "policies": {"full": {}}}
+    with pytest.raises(context_eval.CreditsExhausted, match="exceeds remaining"):
+        context_eval.run_context_eval(spec, tmp_path)
+    assert calls == []  # refused before anything was sent

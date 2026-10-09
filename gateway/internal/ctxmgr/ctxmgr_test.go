@@ -139,6 +139,52 @@ func TestDivergedHistoryRestarts(t *testing.T) {
 	}
 }
 
+// withResults gives each tool result its own text, so two sessions with the same opening diverge.
+func withResults(h []Message, tag string) []Message {
+	out := append([]Message{}, h...)
+	for i, msg := range out {
+		if msg["role"] == "tool" {
+			out[i] = replaceContent(msg, fmt.Sprintf("%s-%d %v", tag, i, msg["content"]))
+		}
+	}
+	return out
+}
+
+func TestSessionsSharingAKeyKeepTheirOwnState(t *testing.T) {
+	m := New(Config{Policy: "window+cache", Keep: 2, BudgetTokens: 100_000, MaxSessions: 100})
+	now := time.Unix(0, 0)
+	// two clients with the same system prompt and task (same fallback key), interleaved
+	for e := 1; e <= 6; e++ {
+		for _, tag := range []string{"a", "b"} {
+			r := m.Apply("same", withResults(agentHistory(e, 100), tag), now)
+			if want := map[bool]string{true: Start, false: Append}[e == 1]; r.Action != want {
+				t.Fatalf("exchange %d, client %s: got %s, want %s", e, tag, r.Action, want)
+			}
+		}
+	}
+	if m.Sessions() != 2 {
+		t.Fatalf("sessions %d, want 2", m.Sessions())
+	}
+}
+
+func TestSessionsPerKeyAreBounded(t *testing.T) {
+	m := New(Config{Policy: "window+cache", Keep: 2, BudgetTokens: 100_000, MaxSessions: 100})
+	t0 := time.Unix(0, 0)
+	for i := range maxPerKey + 3 {
+		m.Apply("same", withResults(agentHistory(1, 10), fmt.Sprint(i)), t0.Add(time.Duration(i)*time.Second))
+	}
+	if m.Sessions() != maxPerKey {
+		t.Fatalf("sessions %d, want %d", m.Sessions(), maxPerKey)
+	}
+	// the newest survives, the oldest was dropped
+	if r := m.Apply("same", withResults(agentHistory(2, 10), fmt.Sprint(maxPerKey+2)), t0.Add(time.Hour)); r.Action != Append {
+		t.Fatalf("newest: got %s", r.Action)
+	}
+	if r := m.Apply("same", withResults(agentHistory(2, 10), "0"), t0.Add(time.Hour)); r.Action != Start {
+		t.Fatalf("oldest: got %s", r.Action)
+	}
+}
+
 func TestPauseTriggerTrimsEarly(t *testing.T) {
 	cfg := Config{Policy: "mask+cache", Keep: 1, BudgetTokens: 100_000, PauseS: 300, MaxSessions: 10}
 	m := New(cfg)
