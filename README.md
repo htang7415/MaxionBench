@@ -113,13 +113,57 @@ python -m maxionbench.kvsim.live experiments/k8_vllm_metal_copilot_context_polic
 BrowseComp-Plus text must not be published: result files hold task ids and numbers only, and model
 answers stay in a local file.
 
+## v0.5: cache-aware context management in the gateway
+
+v0.4 measured context policies as a client library. v0.5 puts the policy in the serving path: the Go
+gateway (`gateway/internal/ctxmgr`, `context:` in its config) keeps, per agent session (`prompt_cache_key`,
+else the system prompt and task), the view it last sent upstream and only appends to it, so the engine's
+prefix cache keeps hitting. It trims (masks old tool results, or keeps the last N exchanges) only when the
+view passes a token budget, or when the history it sees is new or rewritten and the prefix is cold anyway.
+After a trim the view must grow by `min_growth` tokens before the next one. Without that, long sessions
+whose trimmed view was still over budget were trimmed again on almost every call, and each trim missed
+the cache. The Go code produces the same views as `agents/context.py` on a fixture generated from
+Python, and the gateway reports each decision in a response header, Prometheus counters and trace
+attributes.
+
+**K9: Copilot traffic through the gateway onto a real engine.** Copilot coding-agent sessions (a Saturday
+and a Tuesday, the Tuesday with ~5x the daily traffic) are replayed as full chat histories in real trace
+time; message text is deterministic filler at 1/16 of each message's tokens. Requests go through the
+gateway to one vllm-metal replica of Qwen3-8B (MLX 4-bit, Apple M4 GPU, 24.7k-token KV cache, ~180 tok/s cold
+prefill), 6 sessions at a time, budget 100k full-scale tokens. Two seeded session draws per day; each
+arm replays the same schedule as `off`.
+
+| Arm | Sat, draw 1 | Sat, draw 2 | Tue, draw 1 | Tue, draw 2 |
+| --- | --- | --- | --- | --- |
+| `off` (full history), recomputed tokens/request | 290 | 197 | 301 | 303 |
+| `window+cache` (8 exchanges) | **−14%** | **−30%** | **−39%** | **−27%** |
+| `mask+cache` (4 exchanges, `min_growth` 25k) | −10% | +37% | −31% | −19% |
+| `mask+cache` + trim after 120 s idle | −9% | +36% | −26% | −20% |
+| `mask+cache` without `min_growth` | +2% | +84% | −25% | −12% |
+
+`window+cache` cut prefill recompute in every pair, by 14–39%. Most of the gain comes from trimming
+when a session first appears or the agent rewrites its own history (8–11% of requests), when the prefix is
+not cached anyway. Every later call then appends to a smaller view. The budget itself fired on under 2% of
+requests. On the heavier Saturday draw, full histories drove the 90th-percentile prompt to 14k tokens of a
+16k context, and the server fell behind (median TTFT 80 s, 17% of requests under 5 s). `window+cache`
+kept it under capacity (median TTFT 1.0 s, 92% under 5 s). Masking keeps every assistant message, so on
+long sessions its views stay large and it recomputed more than `off` on that draw, though its TTFT still
+fell from 80 s to 15 s. The idle trigger rarely fired (≤3.5% of requests) and added nothing over
+`mask+cache`. Recomputed tokens repeat exactly across reruns. TTFT depends on other load on the host:
+one trial whose engine ran at half its usual prefill speed was rerun and is reported from the rerun.
+
+```bash
+python -m maxionbench.kvsim.gateway_replay experiments/k9_gateway_context_8b.yaml --out artifacts/kvsim
+python -m maxionbench.kvsim.gateway_replay experiments/k9b_gateway_mask_growth_8b.yaml --out artifacts/kvsim
+```
+
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
 | `maxionbench/` | Harness, evaluation, graders, agents, datasets, KV-cache simulator, and runtime metadata. |
 | `configs/` | API pricing configuration. |
-| `experiments/` | Experiment specs: v0.3 E1–E6, v0.4 C1 (context policies on Gemini) and K1–K8 (KV cache and serving replays), CI smoke runs. |
+| `experiments/` | Experiment specs: v0.3 E1–E6, v0.4 C1 (context policies on Gemini) and K1–K8 (KV cache and serving replays), v0.5 K9 (gateway context management on vllm-metal), CI smoke runs. |
 | `gateway/` | Go AI gateway (routing, overflow, spend cap, metrics, tracing). |
 | `dashboard/` | TypeScript results dashboard built from saved result files. |
 | `deploy/` | llm-d without Kubernetes (EPP + Envoy) and the observability stack. |
