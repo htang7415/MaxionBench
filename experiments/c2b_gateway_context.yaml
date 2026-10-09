@@ -8,7 +8,7 @@ pool: 10
 tasks: 50
 max_steps: 15
 shards: 5
-budget_usd: 2.9  # set at launch to what is left of the $5 Step 3 allowance
+budget_usd: 3.4  # what was left of the $5 Step 3 allowance after c2a, minus a margin for one task group and the judge
 model: {model: gemini-3.5-flash-lite, reasoning_effort: minimal}
 exclude_tasks_from: artifacts/context_eval/20261007T221717Z-c1-context-policies
 policies:

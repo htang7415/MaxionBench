@@ -165,6 +165,19 @@ def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
     answers = (out / "answers.jsonl").read_text()
     assert answers.count("paper") == 6 and "paper" not in (out / "results.json").read_text()
 
+    # a resume reruns only missing (task, policy) pairs: drop one arm's run of task 0
+    kept = [line for line in (out / "items.jsonl").read_text().splitlines()
+            if not ('"task_id": "0"' in line and '"policy": "mask"' in line)]
+    (out / "items.jsonl").write_text("\n".join(kept) + "\n")
+    calls_before = state["calls"]
+    context_eval.run_context_eval({}, tmp_path, resume=out)
+    assert state["calls"] - calls_before == 2 and len((out / "items.jsonl").read_text().splitlines()) == 6
+
+
+def test_gateway_budget_refusal_stops_the_run() -> None:
+    assert context_eval._fatal('http 429: {"error":{"message":"remote budget exhausted"}}')
+    assert not context_eval._fatal("http 429: rate limited")
+
 
 class _FakeGemini(BaseHTTPRequestHandler):
     """Non-streaming provider: three searches, then an answer; records each body it receives."""
