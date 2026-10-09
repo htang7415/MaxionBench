@@ -157,13 +157,37 @@ python -m maxionbench.kvsim.gateway_replay experiments/k9_gateway_context_8b.yam
 python -m maxionbench.kvsim.gateway_replay experiments/k9b_gateway_mask_growth_8b.yaml --out artifacts/kvsim
 ```
 
+**C2: accuracy and API cost with the gateway in front of Gemini.** The same Flash-Lite agent as C1 sends
+its full history to the gateway (Gemini only, `window+cache`: last 2 exchanges, budget 48k tokens,
+`min_growth` 16k), which trims it before Gemini. C2a ran the C1 tasks and is paired with C1's runs; C2b
+ran `full` and the gateway on 50 new tasks. 100 paired tasks in all:
+
+| 100 tasks | Judge | Strict | Billed cost / task | Prompt tokens / task | Cost / correct | Cached |
+| --- | --- | --- | --- | --- | --- | --- |
+| `full` | 44% | 38% | $0.035 | 287k | $0.081 | 66% |
+| gateway `window+cache` | 52% | 48% | −12% [−36%, +13%] | **−50%** [−80%, −20%] | $0.060 | 32% |
+| difference (wins/losses, p, Holm p) | +8 (17/9, p 0.17, 0.51) | +10 (17/7, p 0.064, 0.19) | | | | |
+
+Trimming in the gateway halved the prompt tokens Gemini billed, and accuracy did not drop. Accuracy was
+higher on both task sets, but not significant at 100 tasks. Billed cost fell less than tokens: each trim
+loses Gemini's implicit cache, and the cached share fell from 66% to 32%. On the C1 tasks the gateway
+matched the in-agent `window+cache` policy (56% vs 56% judge, 7 wins and 7 losses). Running the policy in
+the gateway costs no accuracy. Gemini rejects `prompt_cache_key` (HTTP 400), so the gateway uses it as the
+session key and strips it before forwarding.
+
+```bash
+python -m maxionbench.eval.context_eval experiments/c2a_gateway_context.yaml   # Gemini; paid, resumable
+python -m maxionbench.eval.context_eval experiments/c2b_gateway_context.yaml
+python -m maxionbench.eval.gateway_accuracy <c1 run> <c2a run> <c2b run> --out gateway_accuracy.json
+```
+
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
 | `maxionbench/` | Harness, evaluation, graders, agents, datasets, KV-cache simulator, and runtime metadata. |
 | `configs/` | API pricing configuration. |
-| `experiments/` | Experiment specs: v0.3 E1–E6, v0.4 C1 (context policies on Gemini) and K1–K8 (KV cache and serving replays), v0.5 K9 (gateway context management on vllm-metal), CI smoke runs. |
+| `experiments/` | Experiment specs: v0.3 E1–E6, v0.4 C1 (context policies on Gemini) and K1–K8 (KV cache and serving replays), v0.5 K9 (gateway context management on vllm-metal) and C2 (gateway on Gemini), CI smoke runs. |
 | `gateway/` | Go AI gateway (routing, overflow, spend cap, metrics, tracing). |
 | `dashboard/` | TypeScript results dashboard built from saved result files. |
 | `deploy/` | llm-d without Kubernetes (EPP + Envoy) and the observability stack. |

@@ -1,7 +1,7 @@
 {
   "name": "maxionbench-dashboard",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "types": "json2ts -i ../maxionbench/harness/result.schema.json -o src/types/result.ts --bannerComment '/* Generated from maxionbench/harness/result.schema.json by `npm run types`; do not edit. */'",

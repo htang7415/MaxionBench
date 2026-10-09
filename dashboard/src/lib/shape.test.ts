@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CellSummary, ExperimentResult, TrialResult } from "../types/result";
-import { bars, fmt, gatewayByCell, gatewayEconomics, sweep, toRows } from "./shape";
+import { bars, byDraw, fmt, gatewayByCell, gatewayEconomics, sweep, toRows } from "./shape";
 
 const ci = (mean: number) => ({ mean, ci_low: mean - 1, ci_high: mean + 1, std: 0.5, n: 3 });
 
@@ -70,5 +70,31 @@ describe("bars and fmt", () => {
     expect(fmt(1234.5)).toBe("1,235");
     expect(fmt(0.12345, 3)).toBe("0.123");
     expect(fmt(NaN)).toBe("–");
+  });
+});
+
+describe("byDraw", () => {
+  const run = (name: string, arms: string[], values: number[][]) => ({
+    name,
+    cells: arms.map((a) => cell(a, { day: "sat", arm: a }, {})),
+    trials: values.flatMap((row, repeat) => row.map((v, i) => ({
+      ...trial(arms[i], {}, 0), repeat, metrics: { recomputed: v },
+    }))),
+  }) as unknown as ExperimentResult;
+
+  it("pairs arms with the baseline of the same repeat, across results", () => {
+    const k9 = run("k9", ["off", "window"], [[200, 150], [100, 90]]);
+    const k9b = run("k9b", ["mask"], [[260], [130]]);
+    const series = byDraw([{ result: k9, arms: { window: "window" } }, { result: k9b, arms: { mask: "mask" } }],
+      "recomputed", "arm", "day", "off");
+    expect(series.map((s) => s.name)).toEqual(["sat, draw 1", "sat, draw 2"]);
+    expect(series[0].points.map((p) => [p.x, Math.round(p.mean)])).toEqual([["window", -25], ["mask", 30]]);
+    expect(series[1].points.map((p) => [p.x, Math.round(p.mean)])).toEqual([["window", -10], ["mask", 30]]);
+  });
+
+  it("returns raw values in the arms' order without a baseline", () => {
+    const k9 = run("k9", ["window", "off"], [[150, 200]]);
+    const series = byDraw([{ result: k9, arms: { off: "off", window: "window" } }], "recomputed", "arm", "day");
+    expect(series[0].points.map((p) => [p.x, p.mean])).toEqual([["off", 200], ["window", 150]]);
   });
 });

@@ -7,6 +7,8 @@ const PAGES = [
   ["scheduling", "llm-d scheduling (E3)"],
   ["hybrid", "Hybrid serving and cost (E4)"],
   ["quality", "Quality and cost (E5)"],
+  ["context", "Context policies for agents (v0.4)"],
+  ["gateway", "Context management in the gateway (v0.5)"],
   ["provenance", "Run provenance"],
 ] as const;
 
