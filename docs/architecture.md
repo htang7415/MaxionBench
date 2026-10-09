@@ -121,5 +121,6 @@ experiments/*.yaml
 ## Generated state
 
 `artifacts/`, `results/`, `release/`, and `dataset/` (except the small frozen
-`dataset/processed/hotpot_portable/` fixture) contain local or generated state, as does
-`dashboard/public/data/`. Source, tests, configs, experiment specs, and public documentation remain in Git.
+`dataset/processed/hotpot_portable/` fixture) contain local or generated state.
+`dashboard/public/data/` is the exception: the exported result snapshot is committed, and the `pages`
+workflow publishes the dashboard built from it to GitHub Pages. Source, tests, configs, experiment specs, and public documentation remain in Git.

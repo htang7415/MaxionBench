@@ -76,7 +76,7 @@ def _bundle(root: Path, run_id: str, name: str, done: int, planned: int | None, 
         "schema_version": "maxionbench-harness-result-v1", "run_id": run_id, "name": name, "description": "",
         "spec": {}, "trials": [], "cells": [],
         "provenance": {"git_commit": "abc", "git_dirty": False, "spec_fingerprint": "f", "started_at": "s",
-                       "finished_at": "2026-10-06T00:00:00Z", "host": {},
+                       "finished_at": "2026-10-06T00:00:00Z", "host": {"model": f"{Path.home()}/models/m.gguf"},
                        "tools": {"trials_completed": done} if planned is None else
                        {"trials_planned": planned, "trials_completed": done}},
     }
@@ -99,6 +99,7 @@ def test_export_picks_latest_complete_run_and_validates(tmp_path: Path) -> None:
         ("e2-prefix-caching", "caching", "20261002T000000Z-e2"),
         ("k9-gateway-context-qwen3-8b", "gateway", "20261002T000000Z-k9")]
     assert (tmp_path / "data" / "e2-prefix-caching.json").exists()
+    assert str(Path.home()) not in (tmp_path / "data" / "e2-prefix-caching.json").read_text()  # home paths -> ~
     _bundle(runs, "20261004T000000Z-e2", "e2-prefix-caching", 1, 1, valid=False)
     with pytest.raises(TypeError, match="missing or unexpected"):
         export(tmp_path / "data2", (runs,))

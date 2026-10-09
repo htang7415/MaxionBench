@@ -51,8 +51,9 @@ results), and the CPU performance smoke runs in `experiments/ci_smoke_*.yaml` fo
 Keep changes focused. Add tests for behavior changes. When the result dataclasses change, regenerate
 the schema (`python -m maxionbench.harness schema --write`) and the dashboard types (`npm run types`).
 
-Generated files under `artifacts/`, `results/`, `release/`, and `dashboard/public/data/` are not
-source files and should not be committed. Experiments that call paid APIs must go through the spend
+Generated files under `artifacts/`, `results/`, and `release/` are not source files and should not be
+committed. `dashboard/public/data/` is the published result snapshot: refresh it with `npm run data` after
+a new published run and commit it; the `pages` workflow redeploys the dashboard. Experiments that call paid APIs must go through the spend
 ledger (`harness.budget`: per-request reservations, or `eval.batch.metered` for a batch run alone on the
 cap) and never run in CI.
 

@@ -1,0 +1,148 @@
+{
+  "experiments": [
+    {
+      "name": "c1-context-policies",
+      "page": "context",
+      "run_id": "20261007T221717Z-c1-context-policies",
+      "file": "c1-context-policies.json",
+      "git_commit": "0e20d7ee9ca5cb85879660ceaf2d204e7b8caa59",
+      "git_dirty": false,
+      "finished_at": "2026-10-08T05:47:39+00:00"
+    },
+    {
+      "name": "c2a-gateway-context",
+      "page": "gateway",
+      "run_id": "20261009T052742Z-c2a-gateway-context",
+      "file": "c2a-gateway-context.json",
+      "git_commit": "c85f506f93e3bfc480d6ac7d195164b680a196b1",
+      "git_dirty": false,
+      "finished_at": "2026-10-09T05:37:06+00:00"
+    },
+    {
+      "name": "c2b-gateway-context",
+      "page": "gateway",
+      "run_id": "20261009T053830Z-c2b-gateway-context",
+      "file": "c2b-gateway-context.json",
+      "git_commit": "8947fe369805258c0bcd5a832ed6db0206e4a019",
+      "git_dirty": false,
+      "finished_at": "2026-10-09T13:47:32+00:00"
+    },
+    {
+      "name": "e1-engines-cpu",
+      "page": "engines",
+      "run_id": "20261006T050553Z-e1-engines-cpu",
+      "file": "e1-engines-cpu.json",
+      "git_commit": "161a0da94edc601a237055e1384a0c7182714dbc",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T05:14:54+00:00"
+    },
+    {
+      "name": "e1-engines-gpu",
+      "page": "engines",
+      "run_id": "20261006T043437Z-e1-engines-gpu",
+      "file": "e1-engines-gpu.json",
+      "git_commit": "161a0da94edc601a237055e1384a0c7182714dbc",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T05:05:51+00:00"
+    },
+    {
+      "name": "e2-prefix-caching",
+      "page": "caching",
+      "run_id": "20261006T051532Z-e2-prefix-caching",
+      "file": "e2-prefix-caching.json",
+      "git_commit": "161a0da94edc601a237055e1384a0c7182714dbc",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T05:26:08+00:00"
+    },
+    {
+      "name": "e3-llmd-sim",
+      "page": "scheduling",
+      "run_id": "20261006T133118Z-e3-llmd-sim",
+      "file": "e3-llmd-sim.json",
+      "git_commit": "7115c9be2705648658fadf56fe6bf249141ab887",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T13:40:08+00:00"
+    },
+    {
+      "name": "e4-hybrid-gateway",
+      "page": "hybrid",
+      "run_id": "20261006T161707Z-e4-hybrid-gateway",
+      "file": "e4-hybrid-gateway.json",
+      "git_commit": "7121c5de0a46fe3e38a4ace950638518a2a6eccc",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T16:29:04+00:00"
+    },
+    {
+      "name": "e4b-slo-overflow",
+      "page": "hybrid",
+      "run_id": "20261006T194001Z-e4b-slo-overflow",
+      "file": "e4b-slo-overflow.json",
+      "git_commit": "534df3952a595dc7acc0885e01fe66d869f386b6",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T19:49:01+00:00"
+    },
+    {
+      "name": "e5-gemini",
+      "page": "quality",
+      "run_id": "20261006T192119Z-e5-gemini",
+      "file": "e5-gemini.json",
+      "git_commit": "534df3952a595dc7acc0885e01fe66d869f386b6",
+      "git_dirty": false,
+      "finished_at": "2026-10-06T19:44:17+00:00"
+    },
+    {
+      "name": "e6-gemini-caching",
+      "page": "caching",
+      "run_id": "20261006T194427Z-e6-gemini-caching",
+      "file": "e6-gemini-caching.json",
+      "git_commit": "534df3952a595dc7acc0885e01fe66d869f386b6",
+      "git_dirty": true,
+      "finished_at": "2026-10-06T19:56:46+00:00"
+    },
+    {
+      "name": "k6-copilot-context-policies",
+      "page": "context",
+      "run_id": "20261008T001729Z-k6-copilot-context-policies",
+      "file": "k6-copilot-context-policies.json",
+      "git_commit": "5e46ede17e9847bff1aa1998f0aaffe1b6a91a02",
+      "git_dirty": true,
+      "finished_at": "2026-10-08T00:17:31+00:00"
+    },
+    {
+      "name": "k7-llmd-copilot-context-policies",
+      "page": "context",
+      "run_id": "20261008T002108Z-k7-llmd-copilot-context-policies",
+      "file": "k7-llmd-copilot-context-policies.json",
+      "git_commit": "befbe06a7301f23baefb33b1cfb4146a24bfbafa",
+      "git_dirty": true,
+      "finished_at": "2026-10-08T01:47:31+00:00"
+    },
+    {
+      "name": "k8-vllm-metal-copilot-context-policies",
+      "page": "context",
+      "run_id": "20261008T023909Z-k8-vllm-metal-copilot-context-policies",
+      "file": "k8-vllm-metal-copilot-context-policies.json",
+      "git_commit": "9cff5abb5efe771e3f121c5b9fc9312647615a2a",
+      "git_dirty": true,
+      "finished_at": "2026-10-08T03:53:20+00:00"
+    },
+    {
+      "name": "k9-gateway-context-qwen3-8b",
+      "page": "gateway",
+      "run_id": "20261008T160744Z-k9-gateway-context-qwen3-8b",
+      "file": "k9-gateway-context-qwen3-8b.json",
+      "git_commit": "4c9faf1b63b0a56758b53336bbabe3676be84dd3",
+      "git_dirty": false,
+      "finished_at": "2026-10-08T23:06:50+00:00"
+    },
+    {
+      "name": "k9b-gateway-mask-min-growth-qwen3-8b",
+      "page": "gateway",
+      "run_id": "20261008T230734Z-k9b-gateway-mask-min-growth-qwen3-8b",
+      "file": "k9b-gateway-mask-min-growth-qwen3-8b.json",
+      "git_commit": "734e7841a08a0ac9f96ad71a8df89dbe5ca88298",
+      "git_dirty": false,
+      "finished_at": "2026-10-09T03:31:07+00:00"
+    }
+  ]
+}

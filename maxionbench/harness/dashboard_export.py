@@ -1,7 +1,8 @@
 """Copy the latest results.json of each published experiment into the dashboard's static data dir.
 
 The dashboard reads only these files (plus index.json); nothing is fetched at runtime. Each file is
-validated against the result model first, so a stale or hand-edited bundle fails the export.
+validated against the result model first, so a stale or hand-edited bundle fails the export. The exported
+files are committed and published with the site, so paths under the home directory are written as `~`.
 
     python -m maxionbench.harness.dashboard_export [--out dashboard/public/data]
 """
@@ -61,7 +62,8 @@ def export(out_dir: Path, search_dirs: tuple[Path, ...] = SEARCH_DIRS) -> dict[s
     for name, path in sorted(latest_results(search_dirs).items()):
         data = json.loads(path.read_text(encoding="utf-8"))
         result: ExperimentResult = from_dict(ExperimentResult, data)  # strict schema check
-        (out_dir / f"{name}.json").write_text(json.dumps(data, separators=(",", ":")) + "\n", encoding="utf-8")
+        text = json.dumps(data, separators=(",", ":")).replace(str(Path.home()), "~")  # published: no local user paths
+        (out_dir / f"{name}.json").write_text(text + "\n", encoding="utf-8")
         entries.append({"name": name, "page": EXPERIMENTS[name], "run_id": result.run_id, "file": f"{name}.json",
                         "git_commit": result.provenance.git_commit, "git_dirty": result.provenance.git_dirty,
                         "finished_at": result.provenance.finished_at})
