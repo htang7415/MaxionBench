@@ -12,7 +12,9 @@ python -m pip install --no-deps --no-build-isolation -e .
 python -m pip install -e ".[agents]"       # MCP agent server and BM25 search
 ```
 
-The Go gateway needs the Go version in `gateway/go.mod`; the dashboard needs Node 24.
+The Go gateway needs the Go version in `gateway/go.mod`; the dashboard needs Node 24. Experiments on
+the Mac GPU use vLLM with the `vllm-metal` plugin from a separate environment (default
+`~/.venv-vllm-metal/bin/vllm`, set `vllm:` in a target to override).
 
 Keep the virtual environment on an internal disk. On exFAT or other external volumes, macOS writes
 `._*` AppleDouble files that break Python imports and pytest collection, and imports run up to 10x
@@ -22,10 +24,11 @@ slower. Remove stray metadata before testing or committing:
 find . -name '._*' -not -path './.git/*' -not -path './dashboard/node_modules/*' -delete
 ```
 
-Datasets for v0.3 experiments are downloaded and checked against pinned SHA-256 values:
+Datasets are downloaded and checked against pinned SHA-256 values:
 
 ```bash
-python -m maxionbench.datasets.sources fetch     # into dataset/v03/ (git-ignored)
+python -m maxionbench.datasets.sources fetch                    # all groups, into dataset/v03/ (git-ignored)
+python -m maxionbench.datasets.sources fetch --group copilot     # one group (repeat --group for more)
 python -m maxionbench.datasets.sources verify
 ```
 
@@ -50,7 +53,8 @@ the schema (`python -m maxionbench.harness schema --write`) and the dashboard ty
 
 Generated files under `artifacts/`, `results/`, `release/`, and `dashboard/public/data/` are not
 source files and should not be committed. Experiments that call paid APIs must go through the spend
-ledger (`harness.budget` / `eval.batch.metered`) and never run in CI.
+ledger (`harness.budget`: per-request reservations, or `eval.batch.metered` for a batch run alone on the
+cap) and never run in CI.
 
 After changing dependencies, regenerate the lock file with Python 3.12:
 

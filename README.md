@@ -101,7 +101,7 @@ only policies that win under pressure without losing much otherwise. Live hit ra
 simulator within ~3 points; on the real engine, `mask+cache` met the 1 s TTFT target for 98% of requests vs 90% for `full`.
 
 ```bash
-python -m maxionbench.datasets.sources fetch --group copilot copilot_traces browsecomp_plus
+python -m maxionbench.datasets.sources fetch --group copilot --group copilot_traces --group browsecomp_plus
 python -m maxionbench.eval.copilot_characterize --jobs 3                     # production characterization
 python -m maxionbench.eval.context_eval experiments/c1_context_policies.yaml  # Gemini; paid, resumable
 python -m maxionbench.eval.context_regrade artifacts/context_eval/<run>       # strict grading, McNemar + Holm
