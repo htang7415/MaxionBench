@@ -18,4 +18,4 @@ Describe the change and why it is needed.
 
 ## References
 
-- CI policy: `docs/ci/branch_protection.md`
+- CI policy: `.github/CONTRIBUTING.md` (CI and branch protection)

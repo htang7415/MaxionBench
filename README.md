@@ -1,6 +1,6 @@
 # MaxionBench
 
-**[View the results dashboard →](https://htang7415.github.io/MaxionBench/)**
+**[View the results dashboard →](https://htang7415.github.io/MaxionBench/)** · [Architecture](ARCHITECTURE.md)
 
 MaxionBench measures how to serve LLM agents efficiently. It runs real engines (vLLM on Apple GPUs via
 `vllm-metal`, llama.cpp), llm-d request scheduling, and a Go AI gateway in front of a local fleet and the
