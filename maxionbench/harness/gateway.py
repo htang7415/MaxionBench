@@ -64,11 +64,13 @@ class AIGateway(Target):
 
     def __init__(self, params: Mapping[str, Any], log_dir: Path) -> None:
         _check_keys(self.kind, params, self.KEYS)
-        local = dict(params.get("local") or {})
-        if "kind" not in local:
-            raise ValueError("ai_gateway.local must be a target spec with kind and params")
-        self.inner = make_target(str(local["kind"]), dict(local.get("params") or {}), log_dir / "local")
         self.policy = str(params.get("policy", "local_first"))
+        local = dict(params.get("local") or {})
+        if "kind" not in local and self.policy != "remote_only":
+            raise ValueError("ai_gateway.local must be a target spec with kind and params")
+        # remote_only needs no fleet
+        self.inner = make_target(str(local["kind"]), dict(local.get("params") or {}), log_dir / "local") \
+            if "kind" in local else None
         self.failover = bool(params.get("failover", True))
         self.max_inflight = int(params.get("max_inflight", 8))
         # local_first_slo: overflow when in-flight x recent per-request service time exceeds slo_ttft_s
@@ -89,7 +91,7 @@ class AIGateway(Target):
             "listen": f"127.0.0.1:{self.port}",
             "policy": self.policy,
             "failover": self.failover,
-            "local": {"upstreams": self.inner.base_urls, "max_inflight": self.max_inflight, "timeout_s": 300},
+            "local": {"upstreams": self.inner.base_urls if self.inner else [], "max_inflight": self.max_inflight, "timeout_s": 300},
             "budget": {"ledger_path": str(ledger_dir / "gemini_ledger.jsonl")},  # same ledger as Python
             "remote": {"enabled": remote_enabled},
         }
@@ -117,7 +119,8 @@ class AIGateway(Target):
         self.log_dir.mkdir(parents=True, exist_ok=True)
         cfg_path = self.log_dir / "gateway.yaml"
         cfg_path.write_text(yaml.safe_dump(self.render_config(), sort_keys=False))
-        self.inner.__enter__()
+        if self.inner:
+            self.inner.__enter__()
         try:
             log = (self.log_dir / "gateway.log").open("ab")
             self.proc = subprocess.Popen([str(binary), "-config", str(cfg_path)], stdout=log, stderr=subprocess.STDOUT)
@@ -135,18 +138,20 @@ class AIGateway(Target):
             except subprocess.TimeoutExpired:
                 self.proc.kill()
             self.proc = None
-        self.inner.__exit__(None, None, None)
+        if self.inner:
+            self.inner.__exit__(None, None, None)
 
     def picker(self) -> EndpointPicker:
         return PICKERS["round_robin"](1)
 
     def request_options(self) -> dict[str, Any]:
-        return self.inner.request_options()  # engine fields pass through; the gateway strips them for Gemini
+        return self.inner.request_options() if self.inner else {}  # engine fields pass through; the gateway strips them for Gemini
 
     def collect(self) -> dict[str, Any]:
-        return {"gateway": scrape_gateway_metrics(self.base_urls[0]), "local": self.inner.collect()}
+        return {"gateway": scrape_gateway_metrics(self.base_urls[0]), "local": self.inner.collect() if self.inner else {}}
 
     def describe(self) -> dict[str, Any]:
         cfg = self.render_config()
         cfg["remote"].pop("key_file", None)  # the path is harmless, but keep provenance about behaviour only
-        return {"kind": self.kind, "engine": "maxion-gateway", "config": cfg, "local": self.inner.describe()}
+        return {"kind": self.kind, "engine": "maxion-gateway", "config": cfg,
+                "local": self.inner.describe() if self.inner else None}

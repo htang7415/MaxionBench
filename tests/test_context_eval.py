@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import shutil
+import threading
 from typing import Any
 
 import pytest
@@ -10,7 +13,8 @@ from maxionbench.agents.browsecomp_env import BrowseTask
 from maxionbench.agents.context import MASK_TEXT
 from maxionbench.eval import context_eval
 from maxionbench.eval.batch import Meter
-from maxionbench.harness.budget import ModelPrice
+from maxionbench.harness.budget import BudgetLedger, ModelPrice
+from maxionbench.harness.gateway import AIGateway
 from maxionbench.rag.llm_client import CompletionResult
 
 PRICE = ModelPrice(input_per_m=1.0, output_per_m=10.0, cached_input_per_m=0.1, cache_storage_per_m_hour=0.0,
@@ -136,7 +140,7 @@ def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
         def __exit__(self, *exc: object) -> None:
             pass
 
-    monkeypatch.setattr(context_eval, "load_tasks", lambda n, seed, pool: tasks[:n])
+    monkeypatch.setattr(context_eval, "load_tasks", lambda n, seed, pool, exclude: tasks[:n])
     monkeypatch.setattr(context_eval, "GeminiTarget", FakeTarget)
     monkeypatch.setattr(context_eval, "bound_send", lambda target, send: tools if send.__name__ == "chat_tools" else None)
     monkeypatch.setattr(context_eval, "metered", lambda *a, **k: FakeMeter())
@@ -160,3 +164,59 @@ def test_run_stops_on_refused_credits_and_resume_finishes_only_missing_tasks(
     assert summary["tasks"] == 3 and summary["overall"]["full"]["accuracy"] == 1.0
     answers = (out / "answers.jsonl").read_text()
     assert answers.count("paper") == 6 and "paper" not in (out / "results.json").read_text()
+
+
+class _FakeGemini(BaseHTTPRequestHandler):
+    """Non-streaming provider: three searches, then an answer; records each body it receives."""
+    bodies: list[dict[str, Any]] = []
+
+    def do_POST(self) -> None:  # noqa: N802
+        body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        type(self).bodies.append(body)
+        step = len(type(self).bodies)
+        message = ({"role": "assistant", "content": None, "tool_calls": [{"id": f"c{step}", "type": "function",
+                    "function": {"name": "search", "arguments": '{"query": "mill"}'}}]} if step <= 3 else
+                   {"role": "assistant", "content": "paper"})
+        raw = json.dumps({"choices": [{"message": message}], "usage": {"prompt_tokens": 1_000, "completion_tokens": 10,
+                                                                         "total_tokens": 1_010}}).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="Go toolchain not installed")
+def test_gateway_arm_trims_in_the_gateway_and_bills_the_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "FAKE-context-eval-key-abcdefghijkl")
+    monkeypatch.setenv("MAXIONBENCH_BUDGET_DIR", str(tmp_path / "budget"))
+    remote = ThreadingHTTPServer(("127.0.0.1", 0), _FakeGemini)
+    threading.Thread(target=remote.serve_forever, daemon=True).start()
+    _FakeGemini.bodies = []
+
+    def retry(fn: Any, meter: Meter, messages: Any, max_tokens: int, url: str | None = None, **kwargs: Any) -> Any:
+        r = fn(url, messages, max_tokens=max_tokens, timeout_s=10.0, **kwargs)
+        meter.add(r, messages, max_tokens)
+        return r
+
+    params = {"gateway": {"policy": "window+cache", "keep": 1, "budget_tokens": 5_000}}
+    gw = AIGateway({"policy": "remote_only", "port": 18091, "context": params["gateway"],
+                    "remote": {"enabled": True, "model": "gemini-3.5-flash-lite", "base_url": f"http://127.0.0.1:{remote.server_port}"}},
+                   tmp_path / "gw")
+    try:
+        with gw:
+            meter = Meter(PRICE)
+            item, answer = context_eval.run_one(TASK, "gw-window+cache", params, 6, tmp_path, meter, PRICE, retry,
+                                                None, None, gateway_url=gw.base_urls[0])
+            stats = context_eval.scrape_context_metrics(gw.base_urls[0])
+    finally:
+        remote.shutdown()
+    assert answer == "paper" and item["model_calls"] == 4 and meter.usage["requests"] == 4
+    assert all("prompt_cache_key" not in b for b in _FakeGemini.bodies)  # Gemini rejects the field
+    # each search adds ~3k tokens: the gateway trims once the history passes the 5k budget
+    assert len(_FakeGemini.bodies[-1]["messages"]) < 2 + 2 * 3
+    assert sum(v for k, v in stats.items() if k.startswith("context_requests_total")) == 4
+    assert BudgetLedger(10.0).spent_usd() == pytest.approx(4 * (1_000 * 0.30 + 10 * 2.50) / 1e6)

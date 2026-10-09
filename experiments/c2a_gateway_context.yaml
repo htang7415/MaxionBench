@@ -1,0 +1,17 @@
+schema_version: maxionbench-context-v1
+name: c2a-gateway-context
+description: >
+  Step 3a: the C1 tasks (same seed, pool and agent) with one new arm, the Go gateway's window+cache context
+  manager in front of Gemini. The agent sends its full history; the gateway trims it. Paired against the C1
+  run's policies on the same tasks. The budget is set below C1's 96k so trimming fires on ~40% of tasks
+  (C1 full: 20 of 50 peak above 48k); min_growth stops re-trimming on every call.
+seed: 0
+pool: 10
+tasks: 50
+max_steps: 15
+shards: 5
+budget_usd: 2.0
+model: {model: gemini-3.5-flash-lite, reasoning_effort: minimal}
+pair_with: artifacts/context_eval/20261007T221717Z-c1-context-policies
+policies:
+  gateway-window+cache: {gateway: {policy: window+cache, keep: 2, budget_tokens: 48000, min_growth: 16000}}

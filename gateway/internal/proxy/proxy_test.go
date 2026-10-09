@@ -80,7 +80,7 @@ func newHarness(t *testing.T, local http.HandlerFunc, policy string, maxInflight
 		Local: config.Local{Upstreams: []string{localSrv.URL}, Model: "qwen3-0.6b", MaxInflight: maxInflight, TimeoutS: 10},
 		Remote: config.Remote{Enabled: true, BaseURL: remoteSrv.URL, ChatPath: "/chat/completions",
 			Model: "gemini-3.5-flash-lite", ReasoningEffort: "minimal", TimeoutS: 10,
-			StripFields: []string{"chat_template_kwargs", "ignore_eos", "cache_prompt"},
+			StripFields: []string{"chat_template_kwargs", "ignore_eos", "cache_prompt", "prompt_cache_key"},
 			Price:       budget.Price{InputPerM: 1.0, OutputPerM: 10.0, CachedInputPerM: 0.1}, CapUSD: capUSD},
 	}
 	ledger, err := budget.Open(filepath.Join(t.TempDir(), "ledger.jsonl"), capUSD)
@@ -96,7 +96,7 @@ func newHarness(t *testing.T, local http.HandlerFunc, policy string, maxInflight
 
 func (h *harness) post(t *testing.T) (*http.Response, string) {
 	t.Helper()
-	body := `{"model":"qwen3","stream":true,"max_tokens":16,"ignore_eos":true,
+	body := `{"model":"qwen3","stream":true,"max_tokens":16,"ignore_eos":true,"prompt_cache_key":"s1",
 	"chat_template_kwargs":{"enable_thinking":false},"messages":[{"role":"user","content":"` + strings.Repeat("x", 300) + `"}]}`
 	resp, err := http.Post(h.srv.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
 	if err != nil {
@@ -148,7 +148,7 @@ func TestOverflowToRemoteWhenSaturatedAndBillActualUsage(t *testing.T) {
 	if sent["model"] != "gemini-3.5-flash-lite" || sent["reasoning_effort"] != "minimal" {
 		t.Fatalf("remote body: %v", sent)
 	}
-	for _, f := range []string{"chat_template_kwargs", "ignore_eos"} {
+	for _, f := range []string{"chat_template_kwargs", "ignore_eos", "prompt_cache_key"} {
 		if _, ok := sent[f]; ok {
 			t.Fatalf("engine field %q leaked to provider", f)
 		}
