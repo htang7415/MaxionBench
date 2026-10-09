@@ -37,7 +37,7 @@ python -m maxionbench.datasets.sources verify
 These mirror the `v03-ci` workflow:
 
 ```bash
-python -m ruff check maxionbench scripts tests
+python -m ruff check maxionbench tests
 python -m maxionbench.harness schema --check
 python -m pytest -q
 (cd gateway && gofmt -l . && go vet ./... && go test -race ./...)
