@@ -1,7 +1,7 @@
 # Architecture
 
 MaxionBench is a Python package plus a Go gateway and a TypeScript dashboard. The earlier
-vector-database benchmark lives at the `v0.1` tag and the `v0.2-cpu-infra` branch.
+vector-database benchmark lives at the `v0.1` and `v0.2` tags.
 
 ## v0.3 serving harness
 

@@ -2,8 +2,8 @@
 
 ## Workflow
 
-All checks run in one workflow, `.github/workflows/v03_ci.yml` (name `v03-ci`), on pushes to `main`
-and `v0.3-harness`, on pull requests, and on manual dispatch. It makes no paid API calls and uses no
+All checks run in one workflow, `.github/workflows/v03_ci.yml` (name `v03-ci`), on pushes to `main`,
+on pull requests, and on manual dispatch. It makes no paid API calls and uses no
 secrets.
 
 | Job | What it checks |

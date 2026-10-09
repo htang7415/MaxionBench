@@ -4,7 +4,7 @@ MaxionBench is a reproducible decision harness for LLM serving, RAG, and agents.
 self-hosted vLLM fleet routed by llm-d with a managed Gemini API, and hybrids of the two, under one SLO
 model. Every headline number comes from repeated trials with confidence intervals and provenance.
 
-The earlier vector-database benchmark lives at the `v0.1` tag and the `v0.2-cpu-infra` branch.
+The earlier vector-database benchmark lives at the `v0.1` and `v0.2` tags.
 
 ## v0.3 harness
 

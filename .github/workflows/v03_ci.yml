@@ -6,7 +6,7 @@ name: v03-ci
 on:
   pull_request:
   push:
-    branches: [main, v0.3-harness]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
