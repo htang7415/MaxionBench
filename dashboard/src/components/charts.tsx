@@ -14,7 +14,7 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { fmt, toRows, type Point, type Series } from "../lib/shape";
+import { fmt, niceTicks, toRows, type Point, type Series } from "../lib/shape";
 
 const TOKENS = ["--surface", "--ink", "--ink-2", "--muted", "--grid", "--axis", "--s1", "--s2", "--s3", "--s4",
   "--s5", "--s6", "--s7", "--s8"] as const;
@@ -182,6 +182,20 @@ export function LineCI({ series, xLabel, format = (v: number) => fmt(v), axisFor
   );
 }
 
+/** A column with a 4px rounded data end and a square baseline end, for positive and negative values. */
+function DataEndBar({ x = 0, y = 0, width = 0, height = 0, fill, value }: {
+  x?: number; y?: number; width?: number; height?: number; fill?: string; value?: number | number[];
+}) {
+  const top = Math.min(y, y + height), h = Math.abs(height);
+  if (h === 0 || width === 0) return null;
+  const v = Array.isArray(value) ? value[1] : value;
+  const r = Math.min(4, width / 2, h);
+  const d = (v ?? 0) < 0  // rounded at the bottom (data end) for negative values
+    ? `M${x},${top} h${width} v${h - r} q0,${r} ${-r},${r} h${-(width - 2 * r)} q${-r},0 ${-r},${-r} Z`
+    : `M${x},${top + h} v${-(h - r)} q0,${-r} ${r},${-r} h${width - 2 * r} q${r},0 ${r},${r} v${h - r} Z`;
+  return <path d={d} fill={fill} />;
+}
+
 /** Category label on two lines (after a comma, else before a "+" suffix), so many bars fit a half-width card. */
 function WrappedTick({ x, y, payload, fill }: { x?: number; y?: number; payload?: { value: string }; fill: string }) {
   const label = String(payload?.value ?? "");
@@ -203,6 +217,8 @@ export function BarCI({ groups, format = (v: number) => fmt(v), axisFormat = (v:
 }) {
   const theme = useTheme();
   const categories = [...new Set(groups.flatMap((g) => g.points.map((p) => String(p.x))))];
+  const values = groups.flatMap((g) => g.points.flatMap((p) => [p.mean, Math.max(0, p.lo), p.hi]));
+  const ticks = niceTicks(Math.min(...values), Math.max(...values));
   const rows = categories.map((c) => {
     const row: Record<string, unknown> = { x: c };
     for (const g of groups) {
@@ -232,19 +248,23 @@ export function BarCI({ groups, format = (v: number) => fmt(v), axisFormat = (v:
   };
   return (
     <>
-      <Legend names={groups.map((g) => g.name)} kind="rect" />
+      {groups.length > 1 && <Legend names={groups.map((g) => g.name)} kind="rect" />}
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 4, left: 0 }} barGap={2}>
           <CartesianGrid stroke={theme["--grid"]} vertical={false} />
           {categories.length > 3
             ? <XAxis dataKey="x" {...axisProps(theme)} interval={0} height={36} tick={<WrappedTick fill={theme["--muted"]} />} />
             : <XAxis dataKey="x" {...axisProps(theme)} interval={0} />}
-          <YAxis {...axisProps(theme)} axisLine={false} width={48} domain={[0, "auto"]} tickFormatter={axisFormat} />
+          <YAxis {...axisProps(theme)} axisLine={false} width={48} tickFormatter={axisFormat}
+            ticks={ticks} domain={[ticks[0], ticks[ticks.length - 1]]} />
           <Tooltip content={content} cursor={{ fill: theme["--grid"], fillOpacity: 0.4 }} />
           {groups.map((g, i) => (
-            <Bar key={g.name} dataKey={g.name} fill={seriesColor(theme, i, g.name)} maxBarSize={24} radius={[4, 4, 0, 0]}
+            <Bar key={g.name} dataKey={g.name} fill={seriesColor(theme, i, g.name)} maxBarSize={24}
+              shape={(props: unknown) => <DataEndBar {...(props as Parameters<typeof DataEndBar>[0])} />}
               isAnimationActive={false}>
-              <ErrorBar dataKey={`${g.name}_err`} stroke={theme["--ink-2"]} strokeWidth={1} width={6} />
+              {g.points.some((p) => p.hi > p.lo) && (
+                <ErrorBar dataKey={`${g.name}_err`} stroke={theme["--ink-2"]} strokeWidth={1} width={6} />
+              )}
             </Bar>
           ))}
         </BarChart>

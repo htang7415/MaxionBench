@@ -149,3 +149,16 @@ export function byDraw(
     name, points: points.sort((p, q) => order.indexOf(String(p.x)) - order.indexOf(String(q.x))),
   }));
 }
+
+/** Round axis ticks covering [min, max] and zero: about `count` steps of 1, 2, 2.5 or 5 × 10^k. */
+export function niceTicks(min: number, max: number, count = 4): number[] {
+  const lo = Math.min(0, min), hi = Math.max(0, max);
+  if (lo === hi) return [0];
+  const raw = (hi - lo) / count, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
+  const ticks: number[] = [];
+  for (let t = Math.floor(lo / step) * step; t <= Math.ceil(hi / step) * step + step / 2; t += step) {
+    ticks.push(Math.round(t / step) * step);
+  }
+  return ticks;
+}

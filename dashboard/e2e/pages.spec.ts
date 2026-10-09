@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const PAGES = [
-  ["overview", "Overview"],
+  ["overview", "Serving LLM agents efficiently"],
   ["engines", "Engines (E1)"],
   ["caching", "Caching (E2, E6)"],
   ["scheduling", "llm-d scheduling (E3)"],
@@ -44,4 +44,12 @@ test("provenance lists every exported run", async ({ page }) => {
   for (const e of index.experiments) {
     await expect(page.getByRole("cell", { name: e.run_id })).toBeVisible();
   }
+});
+
+test("theme switch overrides the system setting", async ({ page }) => {
+  await page.goto("/#/overview");
+  await page.getByRole("radio", { name: "dark" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("radio", { name: "system" }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
 });

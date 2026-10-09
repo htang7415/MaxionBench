@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CellSummary, ExperimentResult, TrialResult } from "../types/result";
-import { bars, byDraw, fmt, gatewayByCell, gatewayEconomics, sweep, toRows } from "./shape";
+import { bars, byDraw, fmt, niceTicks, gatewayByCell, gatewayEconomics, sweep, toRows } from "./shape";
 
 const ci = (mean: number) => ({ mean, ci_low: mean - 1, ci_high: mean + 1, std: 0.5, n: 3 });
 
@@ -96,5 +96,14 @@ describe("byDraw", () => {
     const k9 = run("k9", ["window", "off"], [[150, 200]]);
     const series = byDraw([{ result: k9, arms: { off: "off", window: "window" } }], "recomputed", "arm", "day");
     expect(series[0].points.map((p) => [p.x, p.mean])).toEqual([["off", 200], ["window", 150]]);
+  });
+});
+
+describe("niceTicks", () => {
+  it("covers the data and zero with round steps", () => {
+    expect(niceTicks(-38.6, -14.2)).toEqual([-40, -30, -20, -10, 0]);
+    expect(niceTicks(0, 0.92)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+    expect(niceTicks(0, 414_000)).toEqual([0, 200_000, 400_000, 600_000]);
+    expect(niceTicks(-41, 84)).toEqual([-50, 0, 50, 100]);
   });
 });
