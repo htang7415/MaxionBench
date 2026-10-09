@@ -41,12 +41,11 @@ function Missing({ what }: { what: string }) {
   return <p className="text-sm" style={{ color: "var(--muted)" }}>No published run for {what} yet.</p>;
 }
 
-function Section({ title, eyebrow, intro, children }: { title: string; eyebrow?: string; intro?: string; children: ReactNode }) {
+function Section({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
   return (
     <div className="space-y-5">
       <div>
-        {eyebrow && <div className="text-[12px] font-medium uppercase tracking-wide" style={{ color: "var(--muted)" }}>{eyebrow}</div>}
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
         {intro && <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>{intro}</p>}
       </div>
       {children}
@@ -168,8 +167,7 @@ export function Overview({ data }: { data: Data }) {
   return (
     <div className="space-y-12">
       <section>
-        <div className="text-[12px] font-medium uppercase tracking-wide" style={{ color: "var(--muted)" }}>v0.5 · Latest release</div>
-        <h2 className="mt-2 max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">Serving LLM agents efficiently</h2>
+        <h2 className="max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">Serving LLM agents efficiently</h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed" style={{ color: "var(--ink-2)" }}>
           Agents re-send a growing history every step, and engines are fast only when that history is already in the
           KV cache. MaxionBench measures the trade-off on production traces, real engines, and a paid API, and puts
@@ -207,12 +205,12 @@ export function Overview({ data }: { data: Data }) {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-lg font-semibold">The v0.5 result</h3>
+        <h3 className="text-lg font-semibold">Headline result</h3>
         <K9RecomputeCard data={data} all={false} />
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-lg font-semibold">Serving baselines (v0.3)</h3>
+        <h3 className="text-lg font-semibold">Serving baselines</h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{tiles}</div>
       </section>
     </div>
@@ -222,7 +220,7 @@ export function Overview({ data }: { data: Data }) {
 export function Engines({ data }: { data: Data }) {
   const gpu = data.results["e1-engines-gpu"], cpu = data.results["e1-engines-cpu"];
   return (
-    <Section title="Engines (E1)" eyebrow="v0.3 · Serving" intro="vLLM (vllm-metal) vs llama.cpp on the Mac GPU with the same Qwen3-0.6B Q8_0 file, closed-loop concurrency sweep, 128 output tokens, prefix caching off; plus llama.cpp CPU-only.">
+    <Section title="Engines (E1)" intro="vLLM (vllm-metal) vs llama.cpp on the Mac GPU with the same Qwen3-0.6B Q8_0 file, closed-loop concurrency sweep, 128 output tokens, prefix caching off; plus llama.cpp CPU-only.">
       {gpu ? (
         <Grid>
           <SweepCard r={gpu} title="Output throughput" subtitle="Tokens per second, all clients" metric="output_tokens_per_s" seriesKey="target.variant" />
@@ -239,7 +237,7 @@ export function Caching({ data }: { data: Data }) {
   const e2 = data.results["e2-prefix-caching"], e6 = data.results["e6-gemini-caching"];
   const variant = (c: CellSummary) => param(c, "target.variant");
   return (
-    <Section title="Caching (E2, E6)" eyebrow="v0.3 · Serving" intro="Local prefix caching on multi-turn RAG sessions (E2), and Gemini implicit vs explicit context caching vs the Batch API on shared-document sessions (E6).">
+    <Section title="Caching (E2, E6)" intro="Local prefix caching on multi-turn RAG sessions (E2), and Gemini implicit vs explicit context caching vs the Batch API on shared-document sessions (E6).">
       {e2 ? (
         <Grid>
           <BarCard r={e2} title="TTFT p50 by cache setting" subtitle="Milliseconds; vLLM automatic prefix caching and llama.cpp prompt cache, on vs off" metric="ttft_p50_ms" by={variant} format={ms} />
@@ -262,7 +260,7 @@ export function Scheduling({ data }: { data: Data }) {
   const sim = data.results["e3-llmd-sim"], metal = data.results["e3-llmd-metal"];
   const profile = (c: CellSummary) => param(c, "target.scorer_profile");
   return (
-    <Section title="llm-d scheduling (E3)" eyebrow="v0.3 · Serving" intro="llm-d EPP scorer profiles over 8 simulated workers with a small KV cache (mode A); real vllm-metal replicas (mode C) when published. Simulated latencies use vLLM's per-token TTFT at concurrency 4 plus the simulator's own load factor, so absolute latencies likely overstate load; compare profiles, not milliseconds.">
+    <Section title="llm-d scheduling (E3)" intro="llm-d EPP scorer profiles over 8 simulated workers with a small KV cache (mode A); real vllm-metal replicas (mode C) when published. Simulated latencies use vLLM's per-token TTFT at concurrency 4 plus the simulator's own load factor, so absolute latencies likely overstate load; compare profiles, not milliseconds.">
       {sim ? (
         <Grid>
           <BarCard r={sim} title="Goodput at SLO" subtitle="Requests per second meeting TTFT and E2E targets" metric="goodput_rps" by={profile} />
@@ -304,7 +302,7 @@ function hybridCards(r: ExperimentResult) {
 export function Hybrid({ data }: { data: Data }) {
   const e4 = data.results["e4-hybrid-gateway"], e4b = data.results["e4b-slo-overflow"];
   return (
-    <Section title="Hybrid serving and cost (E4)" eyebrow="v0.3 · Serving" intro="Go AI gateway in front of llm-d over simulated local workers, overflowing to Gemini 3.5 Flash-Lite under a hard spend cap. Simulated local latency likely counts load twice (loaded per-token rate plus the simulator's load factor), which favors overflow; Gemini latency and spend are real. E4b compares the fixed in-flight threshold with predicted-wait overflow (in-flight × recent time per completed request, an end-to-end estimate compared against the TTFT target): it triggers earlier, but gains stay within the CIs.">
+    <Section title="Hybrid serving and cost (E4)" intro="Go AI gateway in front of llm-d over simulated local workers, overflowing to Gemini 3.5 Flash-Lite under a hard spend cap. Simulated local latency likely counts load twice (loaded per-token rate plus the simulator's load factor), which favors overflow; Gemini latency and spend are real. E4b compares the fixed in-flight threshold with predicted-wait overflow (in-flight × recent time per completed request, an end-to-end estimate compared against the TTFT target): it triggers earlier, but gains stay within the CIs.">
       {e4 ? hybridCards(e4) : <Missing what="E4" />}
       <h3 className="pt-2 text-base font-semibold">E4b: predicted-wait (SLO-aware) overflow</h3>
       {e4b ? hybridCards(e4b) : <Missing what="E4b" />}
@@ -325,7 +323,7 @@ export function Quality({ data }: { data: Data }) {
       Number.isFinite(m("usd_per_correct")) ? `$${fmt(1000 * m("usd_per_correct"), 2)}` : "–"];
   }));
   return (
-    <Section title="Quality and cost (E5)" eyebrow="v0.3 · Serving" intro="Question answering with provided context — CRAG with the dataset's search snippets, HotpotQA with its gold paragraphs plus distractors (no retrieval is measured) — judged by Gemini against a rubric; BFCL v3 single-turn tool calls (AST grader); and agentic HotpotQA over an MCP search/read server, where the model must find the evidence itself. Judge vs 100 reference labels: κ = 0.96 overall, 0.86 on answered items; it missed 2 of 9 wrong answers, so judged accuracy is a slight upper bound. Requests at concurrency 1; CIs over 5 item shards.">
+    <Section title="Quality and cost (E5)" intro="Question answering with provided context — CRAG with the dataset's search snippets, HotpotQA with its gold paragraphs plus distractors (no retrieval is measured) — judged by Gemini against a rubric; BFCL v3 single-turn tool calls (AST grader); and agentic HotpotQA over an MCP search/read server, where the model must find the evidence itself. Judge vs 100 reference labels: κ = 0.96 overall, 0.86 on answered items; it missed 2 of 9 wrong answers, so judged accuracy is a slight upper bound. Requests at concurrency 1; CIs over 5 item shards.">
       <Grid>
         <Card title="Accuracy by suite" table={barTable(groups("accuracy"), pct)}>
           <BarCI groups={groups("accuracy")} format={pct} axisFormat={pct} />
@@ -351,7 +349,7 @@ export function ContextPolicies({ data }: { data: Data }) {
     points: bars({ ...k6, cells: k6.cells.filter((c) => param(c, "capacity_tokens") === cap) }, "recomputed_tokens_per_request", trace),
   })) : [];
   return (
-    <Section title="Context policies for agents (v0.4)" eyebrow="v0.4 · Agents" intro="What an agent sends the model each step: the whole history (full), or a trimmed view. C1: a Gemini 3.5 Flash-Lite agent on 50 BrowseComp-Plus tasks per policy, graded by the calibrated judge; CIs over 5 task shards. K6–K8: GitHub Copilot coding-agent sessions replayed under each policy, measuring prefill tokens the server recomputes.">
+    <Section title="Context policies for agents" intro="What an agent sends the model each step: the whole history (full), or a trimmed view. C1: a Gemini 3.5 Flash-Lite agent on 50 BrowseComp-Plus tasks per policy, graded by the calibrated judge; CIs over 5 task shards. K6–K8: GitHub Copilot coding-agent sessions replayed under each policy, measuring prefill tokens the server recomputes.">
       {c1 ? (
         <Grid>
           <BarCard r={c1} title="Accuracy (C1)" subtitle="Judge-graded; at 50 tasks only summarize is significant vs full after Holm correction" metric="accuracy" by={policy} format={pct} />
@@ -386,7 +384,7 @@ export function GatewayContext({ data }: { data: Data }) {
       (c) => (c.cell_id === "full" ? "full" : "in-agent window+cache")), ...bars(c2a, "accuracy", policy)],
   }] : [];
   return (
-    <Section title="Context management in the gateway (v0.5)" eyebrow="v0.5 · Gateway" intro="The Go gateway keeps each agent session's view append-only, so the prefix cache keeps hitting, and trims (keeps the last N exchanges, or masks old tool results) only past a token budget or when the history is new or rewritten. K9: Copilot sessions replayed as full chat histories through the gateway onto one vllm-metal Qwen3-8B replica; arms pair with full history (off) on the same schedule. C2: a Gemini agent behind the gateway.">
+    <Section title="Context management in the gateway" intro="The Go gateway keeps each agent session's view append-only, so the prefix cache keeps hitting, and trims (keeps the last N exchanges, or masks old tool results) only past a token budget or when the history is new or rewritten. K9: Copilot sessions replayed as full chat histories through the gateway onto one vllm-metal Qwen3-8B replica; arms pair with full history (off) on the same schedule. C2: a Gemini agent behind the gateway.">
       {k9 ? (
         <Grid>
           <K9RecomputeCard data={data} all />
@@ -416,7 +414,7 @@ export function GatewayContext({ data }: { data: Data }) {
 
 export function Provenance({ data }: { data: Data }) {
   return (
-    <Section title="Run provenance" eyebrow="Data" intro="The exact run behind every page: git commit (dirty means uncommitted code was used), finish time, host, and trial counts.">
+    <Section title="Run provenance" intro="The exact run behind every page: git commit (dirty means uncommitted code was used), finish time, host, and trial counts.">
       <Card title="Published runs">
         <DataTable
           columns={["Experiment", "Page", "Run", "Commit", "Clean tree", "Trials", "Finished"]}

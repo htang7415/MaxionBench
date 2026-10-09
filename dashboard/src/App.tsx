@@ -10,13 +10,13 @@ interface PageDef {
   Page: (props: { data: Data }) => React.JSX.Element;
 }
 
-// Grouped by release, newest first.
+// Grouped by topic.
 const GROUPS: { label: string | null; pages: PageDef[] }[] = [
   { label: null, pages: [{ id: "overview", title: "Overview", Page: Overview }] },
-  { label: "v0.5 · Gateway", pages: [{ id: "gateway", title: "Gateway context", Page: GatewayContext }] },
-  { label: "v0.4 · Agents", pages: [{ id: "context", title: "Agent context", Page: ContextPolicies }] },
+  { label: "Gateway", pages: [{ id: "gateway", title: "Gateway context", Page: GatewayContext }] },
+  { label: "Agents", pages: [{ id: "context", title: "Agent context", Page: ContextPolicies }] },
   {
-    label: "v0.3 · Serving",
+    label: "Serving",
     pages: [
       { id: "engines", title: "Engines", Page: Engines },
       { id: "caching", title: "Caching", Page: Caching },
@@ -92,8 +92,6 @@ export default function App() {
         style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--page) 85%, transparent)" }}>
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3 md:px-8">
           <a href="#/overview" className="text-[15px] font-semibold tracking-tight">MaxionBench</a>
-          <span className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-            style={{ borderColor: "var(--border)", color: "var(--ink-2)" }}>v0.5.0</span>
           <div className="ml-auto flex items-center gap-3">
             <a href={REPO} className="hidden text-sm sm:inline" style={{ color: "var(--ink-2)" }}>GitHub</a>
             <ThemeSwitch />
