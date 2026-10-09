@@ -119,8 +119,9 @@ class CreditsExhausted(RuntimeError):
     """The provider refused a request for billing or quota reasons; the run stops and can be resumed."""
 
 
-def _fatal(error: str | None) -> bool:
-    return bool(error) and (error.startswith("http 402") or "RESOURCE_EXHAUSTED" in error)
+def _fatal(error: str | None) -> bool:  # provider out of credit or quota, or the gateway refused the spend
+    return bool(error) and (error.startswith("http 402") or "RESOURCE_EXHAUSTED" in error
+                            or "remote budget exhausted" in error)
 
 
 def _write_jsonl(path: Path, rows: Sequence[dict[str, Any]]) -> None:
@@ -152,15 +153,13 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
     tasks = spec_tasks(spec, n)
     by_id = {t.task_id: t for t in tasks}
 
-    # keep only complete task groups from earlier attempts; a partial group is rerun
+    # runs saved by earlier attempts are kept; a resume runs only the missing (task, policy) pairs
     items = _read_jsonl(out_dir / "items.jsonl")
     if items and not (out_dir / "answers.jsonl").exists():
         raise ValueError(f"{out_dir} has no answers.jsonl (made before resume support); start a new run")
-    done = {tid for tid in {it["task_id"] for it in items}
-            if {it["policy"] for it in items if it["task_id"] == tid} == set(policies)}
-    items = [it for it in items if it["task_id"] in done]
-    answers = {(a["task_id"], a["policy"]): a["answer"] for a in _read_jsonl(out_dir / "answers.jsonl")
-               if a["task_id"] in done}
+    finished = {(it["task_id"], it["policy"]) for it in items}
+    done = {tid for tid, _ in finished if all((tid, name) in finished for name in policies)}
+    answers = {(a["task_id"], a["policy"]): a["answer"] for a in _read_jsonl(out_dir / "answers.jsonl")}
     spent_before = float(spec.get("_agent_spend_usd", 0.0))
 
     target, judge = GeminiTarget(spec["model"]), GeminiTarget(JUDGE)
@@ -172,9 +171,11 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                 for i, (name, params) in enumerate(policies.items()) if "gateway" in params}
     gateway_meter = Meter(price)  # the gateway commits these calls to the ledger; counted here for the budget
 
-    def estimate(p: ModelPrice) -> float:  # the remaining budget plus one task group at 60k uncached tokens per step
-        return max(0.0, budget - spent_before) + len(policies) * max_steps * cost_usd(
-            p, input_tokens=60_000, output_tokens=MAX_TOKENS)
+    billed_here = [name for name in policies if name not in gateways]  # gateway arms reserve per request
+
+    def estimate(p: ModelPrice) -> float:  # this side's share of the remaining budget plus one task group at
+        return (max(0.0, budget - spent_before) * len(billed_here) / len(policies)  # 60k uncached tokens per step
+                + len(billed_here) * max_steps * cost_usd(p, input_tokens=60_000, output_tokens=MAX_TOKENS))
 
     def with_retries(fn: Any, meter: Meter, messages: Any, max_tokens: int, url: str | None = None,
                      **kwargs: Any) -> Any:
@@ -206,6 +207,8 @@ def run_context_eval(spec: dict[str, Any], out_root: Path, limit: int | None = N
                 break
             group = []
             for name, params in policies.items():
+                if (task.task_id, name) in finished:
+                    continue
                 gw = gateways.get(name)
                 item, answer = run_one(task, name, params, max_steps, Path(tmp), gateway_meter if gw else meter,
                                        price, with_retries, send_tools, send_text,
