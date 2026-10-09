@@ -28,7 +28,6 @@ const LABELS: Record<string, string> = {
 const label = (v: string) => LABELS[v] ?? v;
 const ms = (v: number) => `${fmt(v, 0)} ms`;
 const pct = (v: number) => `${fmt(100 * v, 0)}%`;
-const per1k = (v: number) => `$${fmt(1000 * v, 2)}`;
 const usd = (v: number) => `$${fmt(v, 3)}`;
 const kTok = (v: number) => `${fmt(v / 1000, 0)}k`;
 const signedPct = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${fmt(Math.abs(v), 0)}%`;
@@ -101,13 +100,11 @@ function k9Recompute(data: Data, all: boolean) {
   ], "recomputed_tokens_per_request", "arm", "day", "off");
 }
 
-function K9RecomputeCard({ data, all }: { data: Data; all: boolean }) {
-  const draws = k9Recompute(data, all);
-  // one arm: one bar per paired draw in a single color; several arms: grouped by arm, one color per draw
-  const series = all ? draws : [{ name: "window+cache vs full history", points: draws.map((d) => ({ ...d.points[0], x: d.name })) }];
+function K9RecomputeCard({ data }: { data: Data }) {
+  const series = k9Recompute(data, true);
   return (
     <Card title="Prefill recomputed vs full history (K9)"
-      subtitle="% change per paired draw, Copilot traffic through the gateway onto vllm-metal Qwen3-8B; recomputed tokens repeat exactly across reruns"
+      subtitle="% change per paired draw"
       table={barTable(series, signedPct)}>
       <BarCI groups={series} format={signedPct} axisFormat={signedPct} />
     </Card>
@@ -149,19 +146,12 @@ export function Overview({ data }: { data: Data }) {
       value={`+${fmt(100 * (lf.metrics.goodput_rps.mean / lo.metrics.goodput_rps.mean - 1), 0)}% goodput`}
       note={`${pct(gatewayByCell(e4).get(lf.cell_id)?.remoteShare ?? NaN)} of requests sent remote (E4)`} />);
   }
-  const e5 = r["e5-gemini"];
-  if (e5) {
-    for (const c of e5.cells) {
-      tiles.push(<StatTile key={`e5-${c.cell_id}`} label={`Gemini Flash-Lite, ${label(c.cell_id)}`}
-        value={pct(c.metrics.accuracy.mean)} note={`${per1k(c.metrics.usd_per_correct?.mean ?? NaN)} per 1k correct answers (E5)`} />);
-    }
-  }
   const e6 = r["e6-gemini-caching"];
   if (e6) {
-    for (const c of e6.cells) {
-      tiles.push(<StatTile key={`e6-${c.cell_id}`} label={`${label(c.cell_id)}, cost per 1k requests`}
-        value={`$${fmt(c.metrics.usd_per_1k_requests.mean, 2)}`} note={`${pct(c.metrics.cached_token_ratio.mean)} of prompt tokens cached (E6)`} />);
-    }
+    const cost = (id: string) => e6.cells.find((c) => c.cell_id === id)?.metrics.usd_per_1k_requests?.mean;
+    const ex = cost("explicit"), im = cost("implicit");
+    if (ex && im) tiles.push(<StatTile key="e6" label="Gemini explicit vs implicit caching" value={`${fmt(im / ex, 1)}× cheaper`}
+      note={`$${fmt(ex, 2)} vs $${fmt(im, 2)} per 1k requests on a shared document (E6)`} />);
   }
   const changes = k9Recompute(data, false).flatMap((x) => x.points.map((p) => p.mean));
   return (
@@ -178,7 +168,7 @@ export function Overview({ data }: { data: Data }) {
             <div className="text-5xl font-semibold tracking-tight md:text-6xl">
               {signedPct(Math.max(...changes))} to {signedPct(Math.min(...changes))}
             </div>
-            <div className="max-w-sm pb-2 text-sm" style={{ color: "var(--ink-2)" }}>
+            <div className="max-w-md pb-2 text-sm" style={{ color: "var(--ink-2)" }}>
               prefill recompute with gateway context management, in all {changes.length} paired runs of replayed GitHub
               Copilot traffic on Qwen3-8B (K9)
             </div>
@@ -205,13 +195,8 @@ export function Overview({ data }: { data: Data }) {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-lg font-semibold">Headline result</h3>
-        <K9RecomputeCard data={data} all={false} />
-      </section>
-
-      <section className="space-y-4">
         <h3 className="text-lg font-semibold">Serving baselines</h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{tiles}</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{tiles}</div>
       </section>
     </div>
   );
@@ -220,7 +205,7 @@ export function Overview({ data }: { data: Data }) {
 export function Engines({ data }: { data: Data }) {
   const gpu = data.results["e1-engines-gpu"], cpu = data.results["e1-engines-cpu"];
   return (
-    <Section title="Engines (E1)" intro="vLLM (vllm-metal) vs llama.cpp on the Mac GPU with the same Qwen3-0.6B Q8_0 file, closed-loop concurrency sweep, 128 output tokens, prefix caching off; plus llama.cpp CPU-only.">
+    <Section title="Engines (E1)" intro="vLLM (vllm-metal) vs llama.cpp on one Mac GPU, same Qwen3-0.6B Q8_0 file, concurrency sweep; plus llama.cpp on CPU.">
       {gpu ? (
         <Grid>
           <SweepCard r={gpu} title="Output throughput" subtitle="Tokens per second, all clients" metric="output_tokens_per_s" seriesKey="target.variant" />
@@ -237,10 +222,10 @@ export function Caching({ data }: { data: Data }) {
   const e2 = data.results["e2-prefix-caching"], e6 = data.results["e6-gemini-caching"];
   const variant = (c: CellSummary) => param(c, "target.variant");
   return (
-    <Section title="Caching (E2, E6)" intro="Local prefix caching on multi-turn RAG sessions (E2), and Gemini implicit vs explicit context caching vs the Batch API on shared-document sessions (E6).">
+    <Section title="Caching (E2, E6)" intro="Local prefix caching on multi-turn RAG (E2); Gemini implicit vs explicit caching vs the Batch API (E6).">
       {e2 ? (
         <Grid>
-          <BarCard r={e2} title="TTFT p50 by cache setting" subtitle="Milliseconds; vLLM automatic prefix caching and llama.cpp prompt cache, on vs off" metric="ttft_p50_ms" by={variant} format={ms} />
+          <BarCard r={e2} title="TTFT p50 by cache setting" subtitle="Milliseconds" metric="ttft_p50_ms" by={variant} format={ms} />
           <BarCard r={e2} title="Prefix cache hit ratio" metric="prefix_cache_hit_ratio" by={variant} format={pct} />
         </Grid>
       ) : <Missing what="E2" />}
@@ -260,7 +245,7 @@ export function Scheduling({ data }: { data: Data }) {
   const sim = data.results["e3-llmd-sim"], metal = data.results["e3-llmd-metal"];
   const profile = (c: CellSummary) => param(c, "target.scorer_profile");
   return (
-    <Section title="llm-d scheduling (E3)" intro="llm-d EPP scorer profiles over 8 simulated workers with a small KV cache (mode A); real vllm-metal replicas (mode C) when published. Simulated latencies use vLLM's per-token TTFT at concurrency 4 plus the simulator's own load factor, so absolute latencies likely overstate load; compare profiles, not milliseconds.">
+    <Section title="llm-d scheduling (E3)" intro="llm-d scorer profiles over 8 simulated workers with small KV caches. Latency is simulated: compare profiles, not milliseconds.">
       {sim ? (
         <Grid>
           <BarCard r={sim} title="Goodput at SLO" subtitle="Requests per second meeting TTFT and E2E targets" metric="goodput_rps" by={profile} />
@@ -292,7 +277,7 @@ function hybridCards(r: ExperimentResult) {
       <SweepCard r={r} title="SLO attainment" subtitle="Share of requests within TTFT 1 s and E2E 3 s" metric="slo_attainment" seriesKey="target.policy" format={pct} />
       <SweepCard r={r} title="Goodput at SLO" subtitle="Requests per second" metric="goodput_rps" seriesKey="target.policy" />
       <SweepCard r={r} title="TTFT p99" subtitle="Milliseconds" metric="ttft_p99_ms" seriesKey="target.policy" format={ms} />
-      <Card title="Share of requests sent to Gemini" subtitle="Mean over repeats (from gateway route counters)" table={sweepTable(share, "Concurrency", pct)}>
+      <Card title="Share of requests sent to Gemini" table={sweepTable(share, "Concurrency", pct)}>
         <LineCI series={share} xLabel="Concurrency" format={pct} axisFormat={pct} />
       </Card>
     </Grid>
@@ -302,7 +287,7 @@ function hybridCards(r: ExperimentResult) {
 export function Hybrid({ data }: { data: Data }) {
   const e4 = data.results["e4-hybrid-gateway"], e4b = data.results["e4b-slo-overflow"];
   return (
-    <Section title="Hybrid serving and cost (E4)" intro="Go AI gateway in front of llm-d over simulated local workers, overflowing to Gemini 3.5 Flash-Lite under a hard spend cap. Simulated local latency likely counts load twice (loaded per-token rate plus the simulator's load factor), which favors overflow; Gemini latency and spend are real. E4b compares the fixed in-flight threshold with predicted-wait overflow (in-flight × recent time per completed request, an end-to-end estimate compared against the TTFT target): it triggers earlier, but gains stay within the CIs.">
+    <Section title="Hybrid serving and cost (E4)" intro="The Go gateway overflows from simulated local workers to Gemini under a spend cap. E4b predicts local wait before overflowing; its gains stay within the CIs.">
       {e4 ? hybridCards(e4) : <Missing what="E4" />}
       <h3 className="pt-2 text-base font-semibold">E4b: predicted-wait (SLO-aware) overflow</h3>
       {e4b ? hybridCards(e4b) : <Missing what="E4b" />}
@@ -323,12 +308,12 @@ export function Quality({ data }: { data: Data }) {
       Number.isFinite(m("usd_per_correct")) ? `$${fmt(1000 * m("usd_per_correct"), 2)}` : "–"];
   }));
   return (
-    <Section title="Quality and cost (E5)" intro="Question answering with provided context — CRAG with the dataset's search snippets, HotpotQA with its gold paragraphs plus distractors (no retrieval is measured) — judged by Gemini against a rubric; BFCL v3 single-turn tool calls (AST grader); and agentic HotpotQA over an MCP search/read server, where the model must find the evidence itself. Judge vs 100 reference labels: κ = 0.96 overall, 0.86 on answered items; it missed 2 of 9 wrong answers, so judged accuracy is a slight upper bound. Requests at concurrency 1; CIs over 5 item shards.">
+    <Section title="Quality and cost (E5)" intro="Gemini 3.5 Flash-Lite on QA with given context, BFCL tool calls, and agentic HotpotQA. Judge κ = 0.96 against reference labels.">
       <Grid>
         <Card title="Accuracy by suite" table={barTable(groups("accuracy"), pct)}>
           <BarCI groups={groups("accuracy")} format={pct} axisFormat={pct} />
         </Card>
-        <Card title="Latency p50" subtitle="Milliseconds per request; agentic: per task (several model calls)" table={barTable(groups("latency_p50_ms"), ms)}>
+        <Card title="Latency p50" subtitle="Milliseconds; agentic: per task" table={barTable(groups("latency_p50_ms"), ms)}>
           <BarCI groups={groups("latency_p50_ms")} format={ms} />
         </Card>
       </Grid>
@@ -349,24 +334,24 @@ export function ContextPolicies({ data }: { data: Data }) {
     points: bars({ ...k6, cells: k6.cells.filter((c) => param(c, "capacity_tokens") === cap) }, "recomputed_tokens_per_request", trace),
   })) : [];
   return (
-    <Section title="Context policies for agents" intro="What an agent sends the model each step: the whole history (full), or a trimmed view. C1: a Gemini 3.5 Flash-Lite agent on 50 BrowseComp-Plus tasks per policy, graded by the calibrated judge; CIs over 5 task shards. K6–K8: GitHub Copilot coding-agent sessions replayed under each policy, measuring prefill tokens the server recomputes.">
+    <Section title="Context policies for agents" intro="What an agent sends each step: its whole history (full) or a trimmed view. C1: Gemini agent, 50 BrowseComp-Plus tasks per policy. K6–K8: Copilot sessions replayed under each policy.">
       {c1 ? (
         <Grid>
-          <BarCard r={c1} title="Accuracy (C1)" subtitle="Judge-graded; at 50 tasks only summarize is significant vs full after Holm correction" metric="accuracy" by={policy} format={pct} />
-          <BarCard r={c1} title="Gemini cost per task (C1)" subtitle="Billed: cached and uncached input, output, reasoning, summaries" metric="cost_usd_per_task" by={policy} format={usd} />
+          <BarCard r={c1} title="Accuracy (C1)" subtitle="Judge-graded; only summarize is significant vs full" metric="accuracy" by={policy} format={pct} />
+          <BarCard r={c1} title="Gemini cost per task (C1)" metric="cost_usd_per_task" by={policy} format={usd} />
           <BarCard r={c1} title="Share of prompt tokens served from cache (C1)" subtitle="Rewriting earlier messages loses Gemini's implicit cache" metric="cached_share" by={policy} format={pct} />
           <BarCard r={c1} title="Cost per correct answer (C1)" metric="usd_per_correct" by={policy} format={usd} />
         </Grid>
       ) : <Missing what="C1" />}
       {k6 ? (
-        <Card title="Prefill recomputed per request (K6, offline KV simulator)" subtitle="Tokens; 4 replicas, llm-d-style prefix+load routing, mean of 3 repeats"
+        <Card title="Prefill recomputed per request (K6, offline KV simulator)" subtitle="Tokens per request; 4 replicas, 3 repeats"
           table={barTable(k6Groups, (v) => fmt(v, 0))}>
           <BarCI groups={k6Groups} format={(v) => fmt(v, 0)} />
         </Card>
       ) : <Missing what="K6" />}
       <Grid>
-        {k7 ? <BarCard r={k7} title="Prefill recomputed per request (K7, live llm-d)" subtitle="Tokens; llm-d EPP + Envoy over 4 inference-sim workers, tight KV" metric="recomputed_tokens_per_request" by={trace} format={(v) => fmt(v, 0)} /> : <Missing what="K7" />}
-        {k8 ? <BarCard r={k8} title="Prefill recomputed per request (K8, vllm-metal)" subtitle="Tokens; one Qwen3-0.6B replica on the Mac GPU, prompts at 1/32 scale" metric="recomputed_tokens_per_request" by={trace} format={(v) => fmt(v, 0)} /> : <Missing what="K8" />}
+        {k7 ? <BarCard r={k7} title="Prefill recomputed per request (K7, live llm-d)" subtitle="Tokens per request; 4 simulated workers" metric="recomputed_tokens_per_request" by={trace} format={(v) => fmt(v, 0)} /> : <Missing what="K7" />}
+        {k8 ? <BarCard r={k8} title="Prefill recomputed per request (K8, vllm-metal)" subtitle="Tokens per request; Qwen3-0.6B, prompts at 1/32 scale" metric="recomputed_tokens_per_request" by={trace} format={(v) => fmt(v, 0)} /> : <Missing what="K8" />}
       </Grid>
     </Section>
   );
@@ -384,11 +369,11 @@ export function GatewayContext({ data }: { data: Data }) {
       (c) => (c.cell_id === "full" ? "full" : "in-agent window+cache")), ...bars(c2a, "accuracy", policy)],
   }] : [];
   return (
-    <Section title="Context management in the gateway" intro="The Go gateway keeps each agent session's view append-only, so the prefix cache keeps hitting, and trims (keeps the last N exchanges, or masks old tool results) only past a token budget or when the history is new or rewritten. K9: Copilot sessions replayed as full chat histories through the gateway onto one vllm-metal Qwen3-8B replica; arms pair with full history (off) on the same schedule. C2: a Gemini agent behind the gateway.">
+    <Section title="Context management in the gateway" intro="The gateway keeps each session's prompt append-only and trims only past a budget or when the history is new. K9: Copilot traffic onto vllm-metal Qwen3-8B. C2: a Gemini agent behind the gateway.">
       {k9 ? (
         <Grid>
-          <K9RecomputeCard data={data} all />
-          <Card title="Requests with TTFT under 5 s (K9)" subtitle="Per draw; on the heavier Saturday draw (2) full history overloaded the engine (TTFT p50 80 s vs 1.0 s)"
+          <K9RecomputeCard data={data} />
+          <Card title="Requests with TTFT under 5 s (K9)" subtitle="Per draw; sat draw 2 overloaded the engine under full history"
             table={barTable(slo, pct)}>
             <BarCI groups={slo} format={pct} axisFormat={pct} />
           </Card>
@@ -396,8 +381,8 @@ export function GatewayContext({ data }: { data: Data }) {
       ) : <Missing what="K9" />}
       {c2b ? (
         <Grid>
-          <BarCard r={c2b} title="Accuracy, 50 new tasks (C2b)" subtitle="Judge-graded; with C2a, 52% vs 44% over 100 paired tasks (Holm p 0.51)" metric="accuracy" by={policy} format={pct} />
-          <BarCard r={c2b} title="Prompt tokens per task (C2b)" subtitle="Thousands of tokens billed per task" metric="prompt_tokens_per_task" by={policy} format={kTok} axisFormat={kTok} />
+          <BarCard r={c2b} title="Accuracy, 50 new tasks (C2b)" subtitle="Judge-graded; over 100 paired tasks 52% vs 44%, not significant" metric="accuracy" by={policy} format={pct} />
+          <BarCard r={c2b} title="Prompt tokens per task (C2b)" metric="prompt_tokens_per_task" by={policy} format={kTok} axisFormat={kTok} />
           <BarCard r={c2b} title="Gemini cost per task (C2b)" metric="cost_usd_per_task" by={policy} format={usd} />
           <BarCard r={c2b} title="Share of prompt tokens served from cache (C2b)" subtitle="Each trim loses Gemini's implicit cache" metric="cached_share" by={policy} format={pct} />
         </Grid>
@@ -413,38 +398,30 @@ export function GatewayContext({ data }: { data: Data }) {
 }
 
 export function Provenance({ data }: { data: Data }) {
+  const machines = [...new Set(data.index.map((e) => machine(data.results[e.name].provenance.host)))];
   return (
-    <Section title="Run provenance" intro="The exact run behind every page: git commit (dirty means uncommitted code was used), finish time, host, and trial counts.">
+    <Section title="Run provenance" intro={`The run behind every chart. All runs: ${machines.join("; ")}.`}>
       <Card title="Published runs">
         <DataTable
-          columns={["Experiment", "Page", "Run", "Commit", "Clean tree", "Trials", "Finished"]}
+          columns={["Experiment", "Finished", "Commit", "Trials or tasks"]}
           rows={data.index.map((e) => {
-            const r = data.results[e.name];
-            const tools = r.provenance.tools as Record<string, unknown>;
-            return [e.name, e.page, e.run_id, e.git_commit.slice(0, 7), e.git_dirty ? "no" : "yes",
-              tools.trials_planned === undefined ? String(tools.trials_completed ?? "–") : `${tools.trials_completed}/${tools.trials_planned}`, e.finished_at.replace("T", " ").slice(0, 19)];
+            const tools = data.results[e.name].provenance.tools as Record<string, unknown>;
+            return [e.name, e.finished_at.slice(0, 10), `${e.git_commit.slice(0, 7)}${e.git_dirty ? " (modified)" : ""}`,
+              tools.tasks_completed !== undefined ? `${tools.tasks_completed} tasks`
+                : tools.trials_planned === undefined ? String(tools.trials_completed ?? "–") : `${tools.trials_completed}/${tools.trials_planned}`];
           })}
-        />
-      </Card>
-      <Card title="Hosts">
-        <DataTable
-          columns={["Experiment", "Host details"]}
-          rows={data.index.map((e) => [e.name, hostSummary(data.results[e.name].provenance.host)])}
         />
       </Card>
     </Section>
   );
 }
 
-function hostSummary(host: Record<string, unknown>): string {
+/** Hardware only (chip, threads, memory); software versions are in each result file. */
+function machine(host: Record<string, unknown>): string {
   const parts = [
     host.apple_silicon_model,
     host.cpu_count_logical !== undefined ? `${host.cpu_count_logical} CPU threads` : undefined,
     typeof host.total_memory_bytes === "number" ? `${fmt(host.total_memory_bytes / 2 ** 30, 0)} GB` : undefined,
-    host.macos_version !== undefined ? `macOS ${host.macos_version}` : host.platform,
-    host.python_version !== undefined ? `Python ${host.python_version}` : undefined,
-    host.docker_version,
   ];
-  return parts.filter((v) => v !== undefined && v !== null).map(String).join(" · ") || "–";
+  return parts.filter((v) => v !== undefined && v !== null).map(String).join(", ") || "unknown";
 }
-

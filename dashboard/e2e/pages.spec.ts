@@ -42,7 +42,7 @@ test("provenance lists every exported run", async ({ page }) => {
   const index = await (await page.request.get("/data/index.json")).json();
   await page.goto("/#/provenance");
   for (const e of index.experiments) {
-    await expect(page.getByRole("cell", { name: e.run_id })).toBeVisible();
+    await expect(page.getByRole("cell", { name: e.name, exact: true })).toBeVisible();
   }
 });
 
