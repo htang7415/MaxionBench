@@ -69,7 +69,7 @@ def test_chat_tools_reports_http_errors_without_raising(fake: str) -> None:
     assert r.status == "error" and r.prompt_tokens == 0
 
 
-def _bundle(root: Path, run_id: str, name: str, done: int, planned: int, valid: bool = True) -> None:
+def _bundle(root: Path, run_id: str, name: str, done: int, planned: int | None, valid: bool = True) -> None:
     out = root / run_id
     out.mkdir(parents=True)
     result = {
@@ -77,7 +77,8 @@ def _bundle(root: Path, run_id: str, name: str, done: int, planned: int, valid: 
         "spec": {}, "trials": [], "cells": [],
         "provenance": {"git_commit": "abc", "git_dirty": False, "spec_fingerprint": "f", "started_at": "s",
                        "finished_at": "2026-10-06T00:00:00Z", "host": {},
-                       "tools": {"trials_planned": planned, "trials_completed": done}},
+                       "tools": {"trials_completed": done} if planned is None else
+                       {"trials_planned": planned, "trials_completed": done}},
     }
     if not valid:
         del result["description"]
@@ -90,11 +91,13 @@ def test_export_picks_latest_complete_run_and_validates(tmp_path: Path) -> None:
     _bundle(runs, "20261002T000000Z-e2", "e2-prefix-caching", 12, 12)
     _bundle(runs, "20261003T000000Z-e2", "e2-prefix-caching", 5, 12)  # still running: skipped
     _bundle(runs, "20261002T000000Z-x", "not-published", 1, 1)  # not a dashboard experiment
+    _bundle(runs, "20261002T000000Z-k9", "k9-gateway-context-qwen3-8b", 16, None)  # no plan recorded: complete
     assert {k: v.parent.name for k, v in latest_results((runs,)).items()} == {
-        "e2-prefix-caching": "20261002T000000Z-e2"}
+        "e2-prefix-caching": "20261002T000000Z-e2", "k9-gateway-context-qwen3-8b": "20261002T000000Z-k9"}
     index = export(tmp_path / "data", (runs,))
     assert [(e["name"], e["page"], e["run_id"]) for e in index["experiments"]] == [
-        ("e2-prefix-caching", "caching", "20261002T000000Z-e2")]
+        ("e2-prefix-caching", "caching", "20261002T000000Z-e2"),
+        ("k9-gateway-context-qwen3-8b", "gateway", "20261002T000000Z-k9")]
     assert (tmp_path / "data" / "e2-prefix-caching.json").exists()
     _bundle(runs, "20261004T000000Z-e2", "e2-prefix-caching", 1, 1, valid=False)
     with pytest.raises(TypeError, match="missing or unexpected"):

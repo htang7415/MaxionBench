@@ -27,8 +27,17 @@ EXPERIMENTS = {
     "e4b-slo-overflow": "hybrid",
     "e5-gemini": "quality",
     "e5-qwen3-4b": "quality",
+    "c1-context-policies": "context",
+    "k6-copilot-context-policies": "context",
+    "k7-llmd-copilot-context-policies": "context",
+    "k8-vllm-metal-copilot-context-policies": "context",
+    "k9-gateway-context-qwen3-8b": "gateway",
+    "k9b-gateway-mask-min-growth-qwen3-8b": "gateway",
+    "c2a-gateway-context": "gateway",
+    "c2b-gateway-context": "gateway",
 }
-SEARCH_DIRS = (Path("artifacts/harness"), Path("artifacts/e5"), Path("artifacts/e6"))
+SEARCH_DIRS = (Path("artifacts/harness"), Path("artifacts/e5"), Path("artifacts/e6"), Path("artifacts/kvsim"),
+               Path("artifacts/context_eval"))
 
 
 def latest_results(search_dirs: tuple[Path, ...] = SEARCH_DIRS) -> dict[str, Path]:
@@ -38,8 +47,8 @@ def latest_results(search_dirs: tuple[Path, ...] = SEARCH_DIRS) -> dict[str, Pat
         for path in sorted(root.glob("*/results.json")):
             data = json.loads(path.read_text(encoding="utf-8"))
             tools = data["provenance"]["tools"]
-            if tools.get("trials_completed") != tools.get("trials_planned"):
-                continue  # interrupted or still running
+            if "trials_planned" in tools and tools.get("trials_completed") != tools["trials_planned"]:
+                continue  # interrupted or still running (runners without a plan write results only when done)
             name, run_id = data["name"], data["run_id"]
             if name in EXPERIMENTS and (name not in found or run_id > found[name][0]):
                 found[name] = (run_id, path)

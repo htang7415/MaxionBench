@@ -182,6 +182,18 @@ export function LineCI({ series, xLabel, format = (v: number) => fmt(v), axisFor
   );
 }
 
+/** Category label on two lines (after a comma, else before a "+" suffix), so many bars fit a half-width card. */
+function WrappedTick({ x, y, payload, fill }: { x?: number; y?: number; payload?: { value: string }; fill: string }) {
+  const label = String(payload?.value ?? "");
+  const cut = label.includes(", ") ? label.indexOf(", ") + 1 : Math.max(0, label.lastIndexOf("+"));
+  const lines = cut > 0 ? [label.slice(0, cut).trim(), label.slice(cut).trim()] : [label];
+  return (
+    <text x={x} y={y} textAnchor="middle" fill={fill} fontSize={11}>
+      {lines.map((line, i) => <tspan key={i} x={x} dy={i === 0 ? 12 : 13}>{line}</tspan>)}
+    </text>
+  );
+}
+
 /** Columns with 95% CI whiskers; `groups` > 1 draws side-by-side bars per category. */
 export function BarCI({ groups, format = (v: number) => fmt(v), axisFormat = (v: number) => fmt(v), height = 220 }: {
   groups: { name: string; points: Point[] }[];
@@ -224,7 +236,9 @@ export function BarCI({ groups, format = (v: number) => fmt(v), axisFormat = (v:
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 4, left: 0 }} barGap={2}>
           <CartesianGrid stroke={theme["--grid"]} vertical={false} />
-          <XAxis dataKey="x" {...axisProps(theme)} interval={0} />
+          {categories.length > 3
+            ? <XAxis dataKey="x" {...axisProps(theme)} interval={0} height={36} tick={<WrappedTick fill={theme["--muted"]} />} />
+            : <XAxis dataKey="x" {...axisProps(theme)} interval={0} />}
           <YAxis {...axisProps(theme)} axisLine={false} width={48} domain={[0, "auto"]} tickFormatter={axisFormat} />
           <Tooltip content={content} cursor={{ fill: theme["--grid"], fillOpacity: 0.4 }} />
           {groups.map((g, i) => (

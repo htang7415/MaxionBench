@@ -116,3 +116,36 @@ export function fmt(value: number, digits = 2): string {
 export function fmtCI(p: Point, digits = 2, scale = 1): string {
   return `${fmt(p.mean * scale, digits)} [${fmt(p.lo * scale, digits)}, ${fmt(p.hi * scale, digits)}]`;
 }
+
+/**
+ * Per-repeat values of `metric` by arm, one series per `groupKey` value and repeat: raw values, or with a
+ * `baseline` arm the % change against it in the same group and repeat (seeded repeats replay the same
+ * schedule, so arms pair by repeat). `arms` picks and labels the arms of each result, in display order.
+ */
+export function byDraw(
+  sources: { result: ExperimentResult; arms: Record<string, string> }[],
+  metric: string, armKey: string, groupKey: string, baseline: string | null = null,
+): Series[] {
+  const order = sources.flatMap((s) => Object.values(s.arms));
+  const rows = sources.flatMap(({ result, arms }) => {
+    const cells = new Map(result.cells.map((c) => [c.cell_id, c]));
+    return result.trials.filter((t) => t.status === "ok" && t.metrics[metric] !== undefined).map((t) => {
+      const cell = cells.get(t.cell_id);
+      const arm = cell ? param(cell, armKey) : "";
+      return { group: cell ? param(cell, groupKey) : "", repeat: t.repeat, arm, label: arms[arm], value: t.metrics[metric] };
+    });
+  });
+  const base = new Map(rows.filter((r) => r.arm === baseline).map((r) => [`${r.group}/${r.repeat}`, r.value]));
+  const out = new Map<string, Point[]>();
+  for (const r of rows) {
+    if (r.label === undefined || (baseline !== null && r.arm === baseline)) continue;
+    const b = base.get(`${r.group}/${r.repeat}`);
+    if (baseline !== null && !b) continue;
+    const v = baseline === null ? r.value : 100 * (r.value / (b as number) - 1);
+    const name = `${r.group}, draw ${r.repeat + 1}`;
+    out.set(name, [...(out.get(name) ?? []), { x: r.label, mean: v, lo: v, hi: v, n: 1 }]);
+  }
+  return [...out.entries()].map(([name, points]) => ({
+    name, points: points.sort((p, q) => order.indexOf(String(p.x)) - order.indexOf(String(q.x))),
+  }));
+}

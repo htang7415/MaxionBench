@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useData } from "./data";
-import { Caching, Engines, Hybrid, Overview, Provenance, Quality, Scheduling } from "./pages/pages";
+import { Caching, ContextPolicies, Engines, GatewayContext, Hybrid, Overview, Provenance, Quality, Scheduling } from "./pages/pages";
 
 const PAGES = [
   { id: "overview", title: "Overview", Page: Overview },
@@ -9,6 +9,8 @@ const PAGES = [
   { id: "scheduling", title: "llm-d scheduling", Page: Scheduling },
   { id: "hybrid", title: "Hybrid serving", Page: Hybrid },
   { id: "quality", title: "Quality and cost", Page: Quality },
+  { id: "context", title: "Agent context", Page: ContextPolicies },
+  { id: "gateway", title: "Gateway context", Page: GatewayContext },
   { id: "provenance", title: "Provenance", Page: Provenance },
 ] as const;
 

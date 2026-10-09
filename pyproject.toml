@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maxionbench"
-version = "0.3.0.dev0"
+version = "0.5.0"
 description = "MaxionBench: reproducible LLM serving, routing, and evaluation harness"
 readme = "README.md"
 requires-python = ">=3.11"
